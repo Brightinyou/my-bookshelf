@@ -26,12 +26,36 @@ PDF/TXT  →  Text conversion  →  Chapter split  →  Translation (English doc
 
 ### macOS
 
-1. Download `MyBookshelf-vX.Y.Z-mac.zip` from the [latest release](https://github.com/Brightinyou/my-bookshelf-for-mac/releases/latest) and unzip it.
-2. Move `MyBookshelf.app` to your **Applications** folder.
-3. For the first launch, **right-click → Open** (an expected warning for an unsigned personal build).
-4. The first run auto-installs the required Python packages (a few minutes). After that, double-click the icon to open the native window.
+#### Step 1 — Download
+
+On the [**latest release**](https://github.com/Brightinyou/my-bookshelf-for-mac/releases/latest) page, under **Assets**, grab one of:
+
+- **`MyBookshelf-vX.Y.Z.dmg`** — recommended. Opens the familiar "drag to install" window.
+- `MyBookshelf-vX.Y.Z-mac.zip` — unzipping gives just the app file. (Having no separate installer is normal — the app installs itself.)
+
+#### Step 2 — Put it in Applications
+
+- **DMG**: double-click the `.dmg`, then **drag `MyBookshelf.app` onto the `Applications` folder** in the window.
+- **zip**: unzip and move the resulting `MyBookshelf.app` into your **Applications** folder.
+
+#### Step 3 — First time only: pass the security warning ⚠️
+
+This app is a **personal build without Apple signing/notarization**, so the first launch shows an *"unidentified developer"* warning. **It is not malware** — it just skips the (US$99/yr) signing cost. Allow it once as follows. (The DMG does **not** remove this step — it's a signing matter, independent of packaging.)
+
+- **Try first**: **right-click (or control-click)** the `MyBookshelf` icon in Applications → **Open** → **Open** in the dialog.
+- **If that doesn't open it** (recent macOS blocks the right-click bypass):
+  1. Double-click once so the warning appears (you can dismiss it).
+  2. Go to ** menu → System Settings → Privacy & Security**.
+  3. Scroll down to *"'MyBookshelf' was blocked"* and click **[Open Anyway]**, then **Open** in the dialog.
+
+> Once allowed, just **double-click** the icon from then on.
+
+#### Step 4 — First-run setup (automatic)
+
+The first launch **auto-installs** the Python environment and packages (**5–20 min** depending on your network; the window may show "preparing"). When done, the native app window appears. Later launches open in seconds.
 
 > Requires Python 3.10+. If missing, install from [python.org](https://www.python.org/downloads/).
+> If setup seems stuck, check the log: `~/Library/Application Support/MyBookshelf/app.log`
 
 ### Windows
 
