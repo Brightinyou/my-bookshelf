@@ -2440,6 +2440,18 @@ if _active_view == "settings":
     else:
         st.info(t("사용 가능한 API 키나 활성화된 CLI가 없습니다. 아래에서 API 키를 입력하거나 CLI 사용을 켜세요."))
     st.caption(t("번역과 별개로, 위키 노트 생성에 쓸 모델입니다. 구조화 출력은 공급자별로 자동 처리됩니다."))
+
+    # 요약 분량 — 원문 대비 % 슬라이더 (chapter_wiki.wiki_pct, 2026-07-23)
+    import chapter_wiki as _cw_len
+    _pct_cur = _cw_len.wiki_pct()
+    _pct_new = st.slider(
+        t("요약 분량 (원문 대비 %)"),
+        min_value=_cw_len.WIKI_PCT_MIN, max_value=_cw_len.WIKI_PCT_MAX,
+        value=_pct_cur, step=1, format="%d%%", key="wiki_length_pct_sl")
+    if int(_pct_new) != _pct_cur:
+        llm.set_pref("wiki_length_pct", int(_pct_new))
+    st.caption(t("장별 요약 본문을 원문 글자수 대비 몇 %로 만들지 정합니다 (권장 15%). 짧은 장은 최소 분량을 보장합니다. 다음 요약부터 적용됩니다."))
+    st.caption(t(":material/info: 분량(%)이 커질수록 생성되는 요약이 길어져 **출력 토큰 소비·API 비용이 늘어납니다.** (원문을 보내는 입력 토큰은 분량과 무관하게 동일합니다.)"))
     st.divider()
 
     # 🖥 CLI 구독 도구 — API 등록보다 앞(우선) · Claude/Codex 컴팩트 토글 (2026-07-10)
