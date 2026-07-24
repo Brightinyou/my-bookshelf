@@ -632,8 +632,9 @@ if st.query_params.get("view") in {tid for tid, _ in _STAGE_TASKS}:
             st.session_state.pop("active_view", None)
         else:
             st.session_state["active_view"] = _view
-        st.query_params.clear()
-        st.rerun()
+    # 탭을 누를 때마다(같은 탭 재클릭 포함) 쿼리를 비우고 rerun → 매번 큐·파일 상태를 새로 읽음
+    st.query_params.clear()
+    st.rerun()
 
 with st.expander(t("📁 저장 위치"), expanded=False):
     _loc_rows = [
