@@ -276,8 +276,8 @@ def load_overview_file(path: Path) -> dict | None:
             return None
         return {"category": category, "summary": summary, "intro": intro,
                 "author": ma.group(1).strip() if ma else "",
-                "published_date": mp.group(1).strip() if mp else "",
-                "publisher": mpub.group(1).strip() if mpub else "",
+                "published_date": mp.group(1).strip().strip('"') if mp else "",
+                "publisher": mpub.group(1).strip().strip('"') if mpub else "",
                 "model": mm.group(1).strip() if mm else ""}
     except Exception:
         return None
@@ -348,7 +348,7 @@ def summarize_book_overview(ws_name: str, stem: str) -> tuple[bool, str]:
         + (f"author: {author}\n" if author else "")
         + f"category: {ov.get('category', '기타')}\n"
         + (f"published: {published}\n" if published else "")
-        + (f"publisher: {publisher}\n" if publisher else "")
+        + (f'publisher: "{publisher.replace(chr(34), chr(39))}"\n' if publisher else "")
         + f"model: {model}\n"
         f"generated: {date.today().isoformat()}\n"
         "---\n"
