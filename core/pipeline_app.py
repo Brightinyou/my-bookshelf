@@ -72,6 +72,7 @@ from services.wiki import (
     check_wiki_orphans, ensure_obsidian_vault, list_obsidian_vaults,
     open_wiki_vault, set_wiki_dir, wiki_generator_running,
 )
+from services.docx_export import build_docx_from_chapter_summaries
 from services.i18n import get_lang, set_lang, t, tf
 
 # ── 설정 ─────────────────────────────────────────────────
@@ -1973,11 +1974,17 @@ if _active_view == "4_summary":
                 pass
         st.session_state.pop("summ4_touched", None)
         st.session_state.pop("_flow_books", None)
-        # 위키 반영 질문 — A: 이미 반영됨(교체) / B: 미반영(반영)
+        # 위키 반영 질문 — C: 옵시디언 미사용(DOC) / A: 이미 반영됨(교체) / B: 미반영(반영)
+        _use_ob4 = bool(llm.get_pref("use_obsidian", True))
         _vault4 = _current_wiki_dir()
         _vstems4 = {_nfc(p.stem) for p in _vault4.rglob("*.md")} if _vault4.exists() else set()
         _already4 = [s for s in _touched4 if _nfc(s) in _vstems4]
-        if _touched4 and _already4:
+        if not _use_ob4:
+            _q4 = (tf("요약한 「%s」을(를) Word(.docx) 문서로 내보낼까요?", _touched4[0])
+                   if len(_touched4) == 1 else
+                   tf("요약된 %d권을 Word(.docx) 문서로 내보낼까요?", len(_touched4))) \
+                if _touched4 else t("요약된 문서를 Word(.docx) 문서로 내보낼까요?")
+        elif _touched4 and _already4:
             _q4 = (tf("「%s」이(가) 이미 옵시디언 위키에 반영되어 있습니다. 방금 요약한 내용으로 교체할까요?", _touched4[0])
                    if len(_touched4) == 1 else
                    tf("요약한 %d권 중 일부가 이미 위키에 있습니다. 방금 요약으로 교체·반영할까요?", len(_touched4)))
@@ -2195,8 +2202,16 @@ if _active_view == "4_summary":
 # ── 5: Wiki반영 ─────────────────────────────────────────
 if _active_view == "5_wiki":
     _cur_wiki5_path = _current_wiki_dir()
+    _use_obsidian5 = bool(llm.get_pref("use_obsidian", True))
+    _docx_dir5 = cfg.BASE_DIR / "5_위키문서(DOCX)"
 
     def _proc_wiki5(stem):
+        # 옵시디언 미사용 시: 허브 노트를 Word(.docx)로 내보낸다
+        if not _use_obsidian5:
+            _dok, _dmsg = build_docx_from_chapter_summaries(DEFAULT_WS, stem, _docx_dir5)
+            if _dok:
+                queue_remove("tab5_ready", [stem])
+            return _dok, f"{stem}: {Path(_dmsg).name if _dok else str(_dmsg)[:70]}"
         # 1단계: 챕터별 개별 노트, 2단계: 허브 노트(책 전체요약 + 링크)
         _cdir = chapters_dir(DEFAULT_WS, stem)
         _cfail = 0
@@ -2212,10 +2227,10 @@ if _active_view == "5_wiki":
 
     def _wiki5_on_done():
         _set_stage_completion(
-            t("5-Wiki 반영 완료"),
-            t("Wiki 반영을 마쳤습니다."),
+            t("5-Wiki 반영 완료") if _use_obsidian5 else t("5-Word 문서 내보내기 완료"),
+            t("Wiki 반영을 마쳤습니다.") if _use_obsidian5 else t("Word(.docx) 문서로 내보냈습니다."),
             next_stage=None,
-            open_target=_stage_folder("5_wiki"),
+            open_target=(_stage_folder("5_wiki") if _use_obsidian5 else _docx_dir5),
         )
 
     _, _, _json_n5f = _chapter_counts()
@@ -2223,19 +2238,34 @@ if _active_view == "5_wiki":
     _vault5f = _current_wiki_dir()
     _n_notes5f = sum(1 for _ in _vault5f.rglob("*.md")) if _vault5f.exists() else 0
     if _run_active("wiki5"):
-        _run_panel("wiki5", "위키반영 처리 중", _proc_wiki5, on_done=_wiki5_on_done)
+        _run_panel("wiki5", "위키반영 처리 중" if _use_obsidian5 else "Word 문서 내보내는 중",
+                   _proc_wiki5, on_done=_wiki5_on_done)
         st.stop()
+    _n_docx5 = len(list(_docx_dir5.glob("*.docx"))) if _docx_dir5.exists() else 0
     _stage_flow_panel(
-        ":material/menu_book: 위키반영",
-        "챕터 요약(_wiki.md)들을 합쳐 Obsidian 보관함(Vault)에 위키 노트로 저장합니다.",
+        ":material/menu_book: 위키반영" if _use_obsidian5 else ":material/description: Word 문서 내보내기",
+        "챕터 요약(_wiki.md)들을 합쳐 Obsidian 보관함(Vault)에 위키 노트로 저장합니다."
+        if _use_obsidian5 else
+        "챕터 요약을 합쳐 편집 가능한 Word(.docx) 문서로 내보냅니다 (옵시디언 미사용).",
         [
             ("① 처리전 · 요약 (_wiki.md)", _ch_root5f, tf("%d개", _json_n5f)),
-            ("② 처리후 · Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f)),
+            ("② 처리후 · Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f)) if _use_obsidian5
+            else ("② 처리후 · Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5)),
         ],
         "flow5",
     )
 
-    # ── 위키 저장 보관함(Vault) 선택 ──────────────────────────────────
+    # ── 출력 방식: 옵시디언 위키 vs Word(.docx) ──────────────────────
+    _ob_new5 = st.toggle(
+        t("옵시디언 위키 사용"), value=_use_obsidian5, key="wiki5_use_obsidian",
+        help=t("끄면 옵시디언 대신 편집 가능한 Word(.docx) 문서로 내보냅니다."))
+    if bool(_ob_new5) != _use_obsidian5:
+        llm.set_pref("use_obsidian", bool(_ob_new5))
+        st.rerun()
+    if not _use_obsidian5:
+        st.caption(tf("Word 문서는 여기에 저장됩니다: `%s`", str(_docx_dir5)))
+
+    # ── 위키 저장 보관함(Vault) 선택 (옵시디언 사용 시 의미) ──────────────
     _vaults5 = list_obsidian_vaults()
     # 세션에 저장된 보관함(Vault) 경로가 있으면 우선 사용, 없으면 기본값
     _cur_wiki5_path = _current_wiki_dir()

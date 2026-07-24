@@ -647,4 +647,19 @@ _EN.update({
     "장별로 요약된 「%s」 문서를 옵시디언 위키에 반영할까요?":
         "Reflect the chapter-summarized \"%s\" into the Obsidian wiki?",
     "요약된 %d권을 옵시디언 위키에 반영할까요?": "Reflect %d summarized books into the Obsidian wiki?",
+    # 옵시디언 미사용 → Word(.docx) 내보내기 (Phase 2, 2026-07-24)
+    "옵시디언 위키 사용": "Use Obsidian wiki",
+    "끄면 옵시디언 대신 편집 가능한 Word(.docx) 문서로 내보냅니다.":
+        "When off, exports an editable Word (.docx) document instead of Obsidian.",
+    "Word 문서는 여기에 저장됩니다: `%s`": "Word documents are saved here: `%s`",
+    "5-Word 문서 내보내기 완료": "5 - Word export complete",
+    "Word(.docx) 문서로 내보냈습니다.": "Exported as a Word (.docx) document.",
+    "Word 문서 내보내는 중": "Exporting Word document",
+    ":material/description: Word 문서 내보내기": ":material/description: Word export",
+    "챕터 요약을 합쳐 편집 가능한 Word(.docx) 문서로 내보냅니다 (옵시디언 미사용).":
+        "Merges chapter summaries into an editable Word (.docx) document (no Obsidian).",
+    "② 처리후 · Word 문서(DOCX)": "② After · Word document (DOCX)",
+    "요약한 「%s」을(를) Word(.docx) 문서로 내보낼까요?": "Export the summarized \"%s\" as a Word (.docx) document?",
+    "요약된 %d권을 Word(.docx) 문서로 내보낼까요?": "Export %d summarized books as Word (.docx) documents?",
+    "요약된 문서를 Word(.docx) 문서로 내보낼까요?": "Export the summarized document as a Word (.docx) file?",
 })
