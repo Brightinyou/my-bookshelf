@@ -798,6 +798,11 @@ def _render_update_notice() -> None:
 
 
 def _render_stage_completion_notice() -> None:
+    # 처리 중(자동 실행 포함)에는 완료 팝업을 띄우지 않는다 — 진행바·중단 버튼을 가리지
+    # 않도록. 실행 시작 시 닫히고, 처리가 끝나면(_run_lock 해제 + on_done이 payload 설정)
+    # 다음 렌더에서 다시 뜬다. (2026-07-24)
+    if st.session_state.get("_run_lock"):
+        return
     payload = st.session_state.get("_stage_completion")
     if not payload:
         return
