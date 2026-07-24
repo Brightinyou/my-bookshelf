@@ -651,22 +651,26 @@ def generate_chapter(book, chap_title, chap_text):
 OVERVIEW_PROMPT = """다음은 책 『{book}』를 장별로 요약한 것입니다. 이를 바탕으로 책 전체 개요를 쓰세요.
 한국어만·평서체·저자의 핵심 주장과 결론 중심. 장 요약에 없는 내용 지어내기 금지.
 전문 용어는 처음 나올 때 한글 번역(원어) 병기. 해당 분야 훈련이 없는 독자도 읽도록 쉬운 문장으로 풀어 쓴다.
+서지 정보(저자·출판사·출판일)는 아래 [책 원문 일부]의 표제지·판권면에서 우선 확인하고, 없으면 장 요약에서 확인한다. 어느 쪽에서도 확실하지 않으면 빈 문자열로 둔다(지어내기 금지).
 [출력] JSON only:
 {{ "category":"신학자|교회|윤리|AI개념|사회학 중 하나",
-   "author":"저자 이름(장 요약에서 확인될 때만. 확실치 않으면 빈 문자열)",
-   "published_date":"장 요약에서 명시적으로 확인되는 출판일/발행일. YYYY-MM-DD 또는 YYYY. 확실치 않으면 빈 문자열",
-   "publisher":"장 요약에서 명시적으로 확인되는 출판사/발행처. 확실치 않으면 빈 문자열",
+   "author":"저자 이름. 확실치 않으면 빈 문자열",
+   "published_date":"출판일/발행일(원서가 아니라 이 판본 기준). YYYY-MM-DD 또는 YYYY. 확실치 않으면 빈 문자열",
+   "publisher":"출판사/발행처. 확실치 않으면 빈 문자열",
    "summary":"책 전체 2~3문장 요약",
    "intro":"(저자의 핵심 주장과 책 전체 논지를 {intro_sent}문장으로 충분히. 문제의식→전체 논증의 흐름→결론과 의의가 드러나게. 머리말 '## 책 개요' 없이 본문만)",
    "keywords":"책 전체 핵심 개념 5~8개. 한 줄에 하나씩 '#키워드 — 개념 해설 1~2문장' 형식(줄바꿈 \\n 구분). 키워드는 공백 없는 한국어, 원어는 해설 쪽에" }}
+[책 원문 일부(표제지·판권면 가능)]
+{head}
 [장별 요약]
 {secs}"""
 
-def generate_overview(book, sections):
+def generate_overview(book, sections, head_text=""):
     intro_sent = _length_params(0)["intro_sent"]   # 책 개요 문장수도 pct에 연동
     secs = "\n".join(f"{s['idx']}. {s['title']}: {s['summary']}" for s in sections)
     try:
-        return _gen_json(OVERVIEW_PROMPT.format(book=book, secs=secs, intro_sent=intro_sent), 8192)
+        return _gen_json(OVERVIEW_PROMPT.format(
+            book=book, secs=secs, intro_sent=intro_sent, head=(head_text or "(제공되지 않음)")), 8192)
     except Exception:
         return {"category": "기타", "summary": "", "intro": ""}
 
