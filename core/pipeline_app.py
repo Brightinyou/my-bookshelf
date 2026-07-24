@@ -2179,6 +2179,10 @@ if _active_view == "5_wiki":
     _wiki_refresh5: list[dict] = []
     for _stem5 in _q5_stems:
         _ch5 = chapters_dir(DEFAULT_WS, _stem5)
+        # 유령 항목 자동 정리: 챕터 폴더가 없으면(삭제·프래그먼트 잔재) 큐에서 제거하고 건너뜀
+        if not _ch5.exists():
+            queue_remove("tab5_ready", [_stem5])
+            continue
         _jsons5 = list_summary_files(_ch5)
         _total5 = len([f for f in _ch5.glob("??_*.txt")
                        if not f.stem.endswith(("_ko", "_wiki"))]) if _ch5.exists() else 0
