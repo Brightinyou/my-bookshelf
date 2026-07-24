@@ -659,6 +659,8 @@ _EN.update({
     "챕터 요약을 합쳐 편집 가능한 Word(.docx) 문서로 내보냅니다 (옵시디언 미사용).":
         "Merges chapter summaries into an editable Word (.docx) document (no Obsidian).",
     "② 처리후 · Word 문서(DOCX)": "② After · Word document (DOCX)",
+    "DOCX 생성": "Create DOCX",
+    "요약을 편집 가능한 Word(.docx) 문서로 저장": "Save summaries as an editable Word (.docx) document",
     "요약한 「%s」을(를) Word(.docx) 문서로 내보낼까요?": "Export the summarized \"%s\" as a Word (.docx) document?",
     "요약된 %d권을 Word(.docx) 문서로 내보낼까요?": "Export %d summarized books as Word (.docx) documents?",
     "요약된 문서를 Word(.docx) 문서로 내보낼까요?": "Export the summarized document as a Word (.docx) file?",

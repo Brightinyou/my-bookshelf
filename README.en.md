@@ -1,6 +1,6 @@
 # My Bookshelf
 
-**A personal research tool that turns PDF/TXT documents into Obsidian Wiki notes** — Text conversion → Chapter split → Summaries → Obsidian Wiki, all in one flow.
+**A personal research tool that turns PDF/TXT documents into Obsidian Wiki notes (or Word documents)** — Text conversion → Chapter split → Summaries → **Obsidian Wiki or Word (.docx)**, all in one flow.
 
 > 🇰🇷 한국어 설명서: [README.md](README.md)
 
@@ -13,7 +13,7 @@ This repository shares one core (`core/`) across macOS and Windows. Only the ins
 Feed a book or paper as PDF/TXT, and it produces **readable summary Wiki notes** saved into your Obsidian vault through these stages:
 
 ```
-PDF/TXT  →  Text conversion  →  Chapter split  →  Translation (English docs only)  →  Summaries  →  Obsidian Wiki
+PDF/TXT  →  Text conversion  →  Chapter split  →  Translation (English docs only)  →  Summaries  →  Obsidian Wiki or Word (.docx)
 ```
 
 - Works on **text-based PDFs** (with a text layer) or TXT — not raw scans.
@@ -109,9 +109,11 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 - **Length control**: in the Settings tab or the collapsible **"Adjust summary length"** here, set the summary body to **5–40 % of the source** (15 % default). Higher values make longer notes and increase **output tokens / API cost** (input tokens for the source stay the same). Short chapters keep a minimum length.
 - Select queued items and press **[▶ Start]**.
 
-### ④ 📖 Wiki
-- Merges summaries into a **hub note + per-chapter notes** in the Obsidian vault.
-- The note's frontmatter is auto-filled with **author, publication date, and publisher (`Place: Publisher`)**, extracted from the source's title/colophon page (left blank if not confidently found).
+### ④ 📖 Wiki / Create DOCX
+- The output of this stage depends on the **"Use Obsidian wiki" toggle** (switch it at the top of the tab). The top menu name changes accordingly between **"Wiki" ↔ "Create DOCX"**.
+  - **On (Obsidian Wiki)**: merges summaries into a **hub note + per-chapter notes** in the Obsidian vault.
+  - **Off (Word document)**: for when you don't use Obsidian — merges summaries into an editable **Word (.docx)** document saved in the `5_위키문서(DOCX)` folder (handy to share with or cite for others).
+- The note/document frontmatter is auto-filled with **author, publication date, and publisher (`Place: Publisher`)**, extracted from the source's title/colophon page (left blank if not confidently found).
 - If a book is already reflected, the popup asks **"Replace?"** to update it in place.
 - Use **[Select all]/[Clear]** in the queue, then **[▶ Start]**.
 

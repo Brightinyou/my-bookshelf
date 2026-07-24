@@ -531,6 +531,15 @@ TASKS = [
     ("settings", "설정", "API 키와 위키 생성 모델 설정"),
 ]
 
+# 5단계(출력) 라벨·아이콘·설명: 옵시디언 사용 여부에 따라 '위키반영' ↔ 'DOCX 생성'
+_use_ob_nav = bool(llm.get_pref("use_obsidian", True))
+def _stage_label(tid: str, label: str) -> str:
+    return "DOCX 생성" if (tid == "5_wiki" and not _use_ob_nav) else label
+def _stage_icon(tid: str) -> str:
+    return "description" if (tid == "5_wiki" and not _use_ob_nav) else _STAGE_ICONS.get(tid, "")
+def _stage_desc(tid: str, desc: str) -> str:
+    return "요약을 편집 가능한 Word(.docx) 문서로 저장" if (tid == "5_wiki" and not _use_ob_nav) else desc
+
 _active_view = st.session_state.get("active_view")
 # 영어 UI에서 번역 탭에 머물러 있으면 메뉴로 되돌린다 (번역 단계 숨김)
 if _active_view == "3_translate" and not _translation_on:
@@ -581,11 +590,11 @@ if not _active_view:
         if not _translation_on and _tid == "3_translate":
             continue  # 영어 UI: 번역 메뉴 숨김
         _clicked = st.query_params.get("view") == _tid
-        _mico = f'<span class="msr" style="font-size:1.2rem">{_STAGE_ICONS.get(_tid, "")}</span>'
+        _mico = f'<span class="msr" style="font-size:1.2rem">{_stage_icon(_tid)}</span>'
         st.markdown(
             f'<a class="menu-card" href="?view={_tid}" target="_self">'
-            f'<span class="menu-title">{_mico}{t(_title)}</span>'
-            f'<span class="menu-desc">{t(_desc)}</span>'
+            f'<span class="menu-title">{_mico}{t(_stage_label(_tid, _title))}</span>'
+            f'<span class="menu-desc">{t(_stage_desc(_tid, _desc))}</span>'
             f'</a>',
             unsafe_allow_html=True,
         )
@@ -613,7 +622,8 @@ _nav_tasks = [x for x in _STAGE_TASKS if _translation_on or x[0] != "3_translate
 _nav_cols = st.columns(len(_nav_tasks))
 for _col, (_tid, _label) in zip(_nav_cols, _nav_tasks):
     _active_cls = " active" if _active_view == _tid else ""
-    _ico = f'<span class="msr">{_STAGE_ICONS.get(_tid, "")}</span>'
+    _label = _stage_label(_tid, _label)
+    _ico = f'<span class="msr">{_stage_icon(_tid)}</span>'
     with _col:
         if _run_lock:
             st.markdown(
