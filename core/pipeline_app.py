@@ -2712,6 +2712,9 @@ if _active_view == "settings":
         if _upd_info:
             st.session_state["_update_info"] = _upd_info
             st.session_state.pop("_update_dismissed", None)
+            # 수동으로 확인한 거라, 예전에 이 버전을 '나중에'로 미뤄뒀어도
+            # 항상 팝업을 보여준다 (2026-07-25).
+            llm.set_pref("update_dismissed_version", "")
             st.rerun()
         elif sys.platform != "win32":
             st.info(t("앱 내 업데이트는 Windows에서만 지원됩니다."))
