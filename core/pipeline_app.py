@@ -70,7 +70,7 @@ from services.papers import (
 from services.wiki import (
     build_single_chapter_wiki, build_wiki_from_chapter_summaries,
     check_wiki_orphans, ensure_obsidian_vault, list_obsidian_vaults,
-    open_wiki_vault, set_wiki_dir, wiki_generator_running,
+    open_in_obsidian, open_wiki_vault, set_wiki_dir, wiki_generator_running,
 )
 from services.docx_export import build_docx_from_chapter_summaries
 from services.i18n import get_lang, set_lang, t, tf
@@ -727,7 +727,8 @@ _NEXT_TAB = {"2_split": "split2", "3_translate": "tr3", "4_summary": "summ4", "5
 
 def _set_stage_completion(title: str, message: str, next_stage: str | None = None,
                           open_target: Path | None = None, kind: str = "success",
-                          question: str | None = None, next_items: list | None = None) -> None:
+                          question: str | None = None, next_items: list | None = None,
+                          open_label: str | None = None, open_action=None) -> None:
     st.session_state["_stage_completion"] = {
         "title": title,
         "message": message,
@@ -738,6 +739,10 @@ def _set_stage_completion(title: str, message: str, next_stage: str | None = Non
         "next_items": [_nfc(x) for x in (next_items or [])],
         "open_target": str(open_target) if open_target else "",
         "kind": kind,  # "success"|"warning" — 일부 실패 시 완료로 오인되지 않도록 (2026-07-23)
+        # 특정 파일 열기 등 결과 폴더 열기를 대신할 동작 — 있으면 open_target보다 우선
+        # (예: 방금 만든 DOCX 파일 바로 열기, Obsidian 노트 바로 열기, 2026-07-25)
+        "open_label": open_label,
+        "open_action": open_action,
     }
 
 
@@ -879,10 +884,15 @@ def _render_stage_completion_notice() -> None:
                 next_stage = payload["next_stage"]
                 _clear_stage_completion()
                 _goto_view(next_stage)
-        if payload.get("open_target"):
-            _target = Path(payload["open_target"])
-            if c2.button(t("결과 폴더 열기"), icon=":material/folder_open:", key="stage_done_open", use_container_width=True):
-                open_path(_target, reveal=_target.is_file())
+        _open_action = payload.get("open_action")
+        if _open_action or payload.get("open_target"):
+            _open_label = payload.get("open_label") or t("결과 폴더 열기")
+            if c2.button(_open_label, icon=":material/folder_open:", key="stage_done_open", use_container_width=True):
+                if _open_action:
+                    _open_action()
+                else:
+                    _target = Path(payload["open_target"])
+                    open_path(_target, reveal=_target.is_file())
         if c3.button(t("닫기"), icon=":material/close:", key="stage_done_close", use_container_width=True):
             _clear_stage_completion()
             st.rerun()
@@ -1173,7 +1183,9 @@ def _checklist_keys(items: list[dict], prefix: str) -> list[str]:
 
 
 def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool = False) -> list:
-    """체크박스 파일 목록. items=[{"key":str,"label":str,"meta":str,"obj":any}]
+    """체크박스 파일 목록. items=[{"key":str,"label":str,"meta":str,"obj":any,"group":str?}]
+    "group"이 있으면 같은 값이 연속될 때마다 책 이름 소제목을 붙여 묶어 보여준다
+    (선택 단위는 그대로 항목별 — 책 이름은 시각적 구분용, 2026-07-25).
     Returns: 선택된 obj 목록."""
     _keys = _checklist_keys(items, prefix)
     h1, h2, h3 = st.columns([1.3, 1, 4])
@@ -1188,7 +1200,12 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
     h3.caption(tf("총 %d개", len(items)))
     selected = []
     with st.container(height=height, border=True):
+        _prev_group = object()  # 실제 group 값과 절대 같을 수 없는 표식
         for idx, it in enumerate(items):
+            _grp = it.get("group")
+            if _grp is not None and _grp != _prev_group:
+                st.markdown(f"**📚 {_grp}**")
+                _prev_group = _grp
             k = _keys[idx]
             cols = st.columns([0.05, 0.82, 0.13]) if viewable else st.columns([0.05, 0.95])
             c1, c2 = cols[0], cols[1]
@@ -1930,10 +1947,12 @@ if _active_view == "3_translate":
                     _meta3 += t(" · ♻️ 중단됨 — 이어하기 가능")
                 _tr_pend3.append({
                     "key": _rel3,
-                    "label": f"{_cf3.parent.name} / {_cf3.name}",
+                    "label": _cf3.name,
                     "meta": _meta3,
                     "obj": _rel3,
+                    "group": _cf3.parent.name,
                 })
+        _tr_pend3.sort(key=lambda it: (it["group"], it["key"]))
 
         st.divider()
         st.markdown(tf("#### 번역 대기 (%d개) / 완료 %d개", len(_tr_pend3), _tr_done3))
@@ -2133,9 +2152,10 @@ if _active_view == "4_summary":
                 _tag4 = "🌐ko" if _ko4.exists() else "📄원문"
                 _sum_pend4.append({
                     "key": _rel4,
-                    "label": f"{_cf4.parent.name} / {_cf4.name}",
+                    "label": _cf4.name,
                     "meta": f"{_tag4} · {_cf4.stat().st_size//1024}KB",
                     "obj": (_cf4, _bstem4),
+                    "group": _bstem4,
                 })
         for _rel4f in _q4_failed_rels:
             _cf4f = cfg.BASE_DIR / _rel4f
@@ -2148,10 +2168,13 @@ if _active_view == "4_summary":
                 continue
             _sum_failed4.append({
                 "key": _rel4f,
-                "label": f"{_cf4f.parent.name} / {_cf4f.name}",
+                "label": _cf4f.name,
                 "meta": f"{_cf4f.stat().st_size//1024}KB · 실패",
                 "obj": _rel4f,
+                "group": _nfc(_cf4f.parent.name),
             })
+        _sum_pend4.sort(key=lambda it: (it["group"], it["key"]))
+        _sum_failed4.sort(key=lambda it: (it["group"], it["key"]))
         if _q4_remove_missing:
             queue_remove("tab4_ready", _q4_remove_missing)
             queue_remove("tab4_failed", _q4_remove_missing)
@@ -2258,23 +2281,45 @@ if _active_view == "5_wiki":
     def _proc_wiki5(stem):
         # 옵시디언·DOCX 토글 조합대로 출력을 생성한다 (둘 다 켜면 둘 다).
         _res = []
+        _produced = {"wiki": None, "docx": None}
         if _use_ob:
             _cdir = chapters_dir(DEFAULT_WS, stem)
             for _cjf in list_summary_files(_cdir):
                 build_single_chapter_wiki(DEFAULT_WS, stem, _cjf, wiki_dir=_cur_wiki5_path)
             _wok, _wmsg = build_wiki_from_chapter_summaries(DEFAULT_WS, stem, wiki_dir=_cur_wiki5_path)
             _res.append(("Wiki", _wok, Path(_wmsg).name if _wok else str(_wmsg)[:45]))
+            if _wok:
+                _produced["wiki"] = Path(_wmsg)
         if _use_dx:
             _dok, _dmsg = build_docx_from_chapter_summaries(DEFAULT_WS, stem, _docx_dir5)
             _res.append(("DOCX", _dok, Path(_dmsg).name if _dok else str(_dmsg)[:45]))
+            if _dok:
+                _produced["docx"] = Path(_dmsg)
         if not _res:
             return False, f"{stem}: {t('출력 방식(위키/DOCX)을 하나 이상 선택하세요')}"
         _allok = all(r[1] for r in _res)
         if _allok:
             queue_remove("tab5_ready", [stem])
+            _touched5 = dict(st.session_state.get("wiki5_touched", {}))
+            _touched5[stem] = _produced
+            st.session_state["wiki5_touched"] = _touched5
         return _allok, f"{stem}: " + " · ".join(f"{nm} {'✓' if ok else '✗ ' + m}" for nm, ok, m in _res)
 
     def _wiki5_on_done():
+        # 방금 처리에서 책이 정확히 한 권이면, 폴더 대신 그 결과물을 바로 연다
+        # (DOCX 단독 → 파일 바로 열기, 위키 단독/둘다 → Obsidian에서 그 노트 바로 열기).
+        _touched5 = dict(st.session_state.pop("wiki5_touched", {}))
+        _open_label5, _open_action5 = None, None
+        if len(_touched5) == 1:
+            _produced5 = next(iter(_touched5.values()))
+            if _use_dx and not _use_ob and _produced5.get("docx"):
+                _docx_path5 = _produced5["docx"]
+                _open_label5 = t("DOCX 파일 열기")
+                _open_action5 = lambda p=_docx_path5: open_path(p)
+            elif _use_ob and _produced5.get("wiki"):
+                _note_path5 = _produced5["wiki"]
+                _open_label5 = t("Obsidian에서 열기")
+                _open_action5 = lambda p=_note_path5: open_in_obsidian(p)
         _log5 = st.session_state.get("wiki5_log", [])
         _fails5 = [ln[2:].strip() for ln in _log5 if ln.startswith("❌")]
         _oks5 = [ln[2:].strip() for ln in _log5 if ln.startswith("✅")]
@@ -2295,6 +2340,8 @@ if _active_view == "5_wiki":
             tf("완료: %s", _out_flow()),
             next_stage=None,
             open_target=(_docx_dir5 if (_use_dx and not _use_ob) else _stage_folder("5_wiki")),
+            open_label=_open_label5,
+            open_action=_open_action5,
         )
 
     _, _, _json_n5f = _chapter_counts()
@@ -2306,17 +2353,21 @@ if _active_view == "5_wiki":
         _run_panel("wiki5", "출력 생성 중", _proc_wiki5, on_done=_wiki5_on_done)
         st.stop()
     if _use_ob and not _use_dx:
-        _card2_5 = ("② 처리후 · Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f))
+        _after_cards5 = [("② 처리후 · Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f))]
     elif _use_dx and not _use_ob:
-        _card2_5 = ("② 처리후 · Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5))
+        _after_cards5 = [("② 처리후 · Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5))]
     else:
-        _card2_5 = ("② 처리후 · DOCX+위키", _vault5f, tf("DOCX %d · 위키 %d", _n_docx5, _n_notes5f))
+        # 둘 다 켠 경우 폴더가 서로 다르므로 카드도 따로 둔다 — DOCX 폴더, 위키 폴더 순 (2026-07-25)
+        _after_cards5 = [
+            ("② 처리후 · Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5)),
+            ("③ 처리후 · Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f)),
+        ]
     _stage_flow_panel(
         f":material/{_stage_icon('5_wiki')}: {_out_short()}",
         _stage_desc("5_wiki", ""),
         [
             ("① 처리전 · 요약 (_wiki.md)", _ch_root5f, tf("%d개", _json_n5f)),
-            _card2_5,
+            *_after_cards5,
         ],
         "flow5",
     )
