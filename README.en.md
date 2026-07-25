@@ -1,6 +1,6 @@
 # My Bookshelf
 
-**A personal research tool that turns PDF/TXT documents into Word documents and Obsidian Wiki notes** — Text conversion → Chapter split → Summaries → **Word (.docx) · Obsidian Wiki (either or both)**, all in one flow.
+**A personal research tool that turns PDF/DOCX/HWP/HWPX/TXT documents into Word documents and Obsidian Wiki notes** — Text conversion → Chapter split → Summaries → **Word (.docx) · Obsidian Wiki (either or both)**, all in one flow.
 
 > 🇰🇷 한국어 설명서: [README.md](README.md)
 
@@ -10,13 +10,13 @@ This repository shares one core (`core/`) across macOS and Windows. Only the ins
 
 ## 1. What it does
 
-Feed a book or paper as PDF/TXT, and it produces **readable summary Wiki notes** saved into your Obsidian vault through these stages:
+Feed a book or paper as PDF/DOCX/HWP/HWPX/TXT, and it produces **readable summary Wiki notes** saved into your Obsidian vault through these stages:
 
 ```
-PDF/TXT  →  Text conversion  →  Chapter split  →  Translation (English docs only)  →  Summaries  →  Word (.docx) · Obsidian Wiki (either or both)
+PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translation (English docs only)  →  Summaries  →  Word (.docx) · Obsidian Wiki (either or both)
 ```
 
-- Works on **text-based PDFs** (with a text layer) or TXT — not raw scans.
+- **PDF** must be text-based (has a text layer), not a raw scan (scanned PDFs need OCR first). **DOCX, HWP, HWPX and TXT** are processed as-is.
 - Translation, summarization and Wiki generation use **AI**: enter an API key, or enable a Claude/ChatGPT subscription CLI.
 - Notes include the **author, a key summary, per-chapter overview, key quotes and key keywords** (with explanations); dense source texts are made readable by glossing terms in the original language and paraphrasing in plain language.
 
@@ -62,8 +62,8 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 > **When a stage finishes, a popup asks about the next step.** For example, after text conversion it asks *"Split into chapters next?"* — press **[Yes, proceed now]** and **only the book you just processed** advances and runs automatically (other queued books are left untouched). To process several at once or pick manually, use **[Choose on the screen]** to open the regular queue view. The popup closes while processing so the progress bar and Stop button stay visible.
 
 ### ① 📄 Text conversion
-- Uploaded PDF/TXT files stack up in the **processing queue**.
-- Select items and press **[Convert to text]** — extracts the text layer and saves TXT. The original PDF is kept.
+- Uploaded PDF/DOCX/HWP/HWPX/TXT files stack up in the **processing queue**.
+- Select items and press **[Convert to text]** — extracts the text and saves TXT. The original document is kept.
 - **[Delete]** removes mistakenly added files.
 - **Fetch from a paper source**: pull a paper by URL, DOI or arXiv number (for login/paywalled pages, download the PDF yourself and upload it).
 
