@@ -57,7 +57,7 @@ from services.translate import (
     translate_one_chapter,
 )
 from services.chapters import (
-    _is_small_document_for_whole_translation, _merge_chapter_folder,
+    _is_small_document_for_whole_translation,
     _write_single_chapter_from_text, chapters_dir, list_done_books,
     find_overview_file, list_summary_files, load_overview_file,
     load_summary_file, split_book_to_chapters, summarize_book_overview,
@@ -488,12 +488,12 @@ _translation_on = (get_lang() != "en")
 _use_ob = bool(llm.get_pref("use_obsidian", True))
 _use_dx = bool(llm.get_pref("use_docx", False))
 def _out_short() -> str:
-    if _use_ob and _use_dx: return "위키+DOCX"
+    if _use_ob and _use_dx: return "DOCX+위키"
     if _use_dx: return "DOCX 생성"
     if _use_ob: return "위키반영"
     return "출력 선택"
 def _out_flow() -> str:
-    if _use_ob and _use_dx: return "Obsidian Wiki + Word(.docx)"
+    if _use_ob and _use_dx: return "Word(.docx) + Obsidian Wiki"
     if _use_dx: return "Word(.docx)"
     if _use_ob: return "Obsidian Wiki"
     return "출력 미선택"
@@ -1559,7 +1559,6 @@ if _active_view == "2_split":
     # ── 분할 대기 (큐 기반 + 1_txt/ 전체 폴백) ──────────────
     _q2_stems = queue_list("tab2_ready")
     _split_pend2: list[dict] = []
-    _split_done2: list[dict] = []
     _split_short2: list[dict] = []
     _txt_root2 = cfg.TXT_DIR
 
@@ -1579,9 +1578,7 @@ if _active_view == "2_split":
         _ch_txts2 = [f for f in (_ch2.glob("??_*.txt") if _ch2.exists() else [])
                      if not f.stem.endswith(("_ko", "_wiki"))]
         _meta2 = f"{_txt2.stat().st_size//1024}KB" + ("" if _stem2 in _q2_stems_set else " ·미등록")
-        if _ch_txts2:
-            _split_done2.append({"stem": _stem2, "n": len(_ch_txts2), "ch_dir": _ch2})
-        else:
+        if not _ch_txts2:
             _src2 = _txt2.read_text(encoding="utf-8", errors="ignore")
             _item2 = {"key": _stem2, "label": _stem2, "meta": _meta2,
                       "obj": {"ws": DEFAULT_WS, "stem": _stem2}}
@@ -1787,35 +1784,7 @@ if _active_view == "2_split":
                      disabled=len(_msel2)==0):
             queue_add("tab2_ready", _msel2); st.rerun()
 
-    st.divider()
-    st.markdown(tf("#### 분할 완료 (%d권)", len(_split_done2)))
-    if _split_done2:
-        with st.container(height=200, border=True):
-            for _sd2 in _split_done2:
-                _sdc1, _sdc2, _sdc3, _sdc4 = st.columns([5, 1.2, 1.2, 1])
-                _sdc1.markdown(f"**{_sd2['stem']}** &nbsp;<small style='color:#9ca3af'>{_sd2['n']}챕터</small>",
-                               unsafe_allow_html=True)
-                if _sdc2.button(t("열기"), icon=":material/folder_open:", key=f"open_ch2_{_sd2['stem']}", use_container_width=True):
-                    open_path(_sd2["ch_dir"])
-                if _sdc3.button("", icon=":material/merge:", key=f"merge_ch2_{_sd2['stem']}", help="다시 합치기"):
-                    _okm2, _mp2, _mm2 = _merge_chapter_folder(DEFAULT_WS, _sd2["stem"], prefer_ko=False)
-                    (st.success if _okm2 else st.error)(
-                        f"{'✅' if _okm2 else '❌'} {_sd2['stem']}: {Path(_mp2).name if _okm2 else _mm2}")
-                    st.rerun()
-                if _sdc4.button(t("합친 번역본"), icon=":material/translate:", key=f"merge_ch2_ko_{_sd2['stem']}", use_container_width=True):
-                    _okm2, _mp2, _mm2 = _merge_chapter_folder(DEFAULT_WS, _sd2["stem"], prefer_ko=True)
-                    (st.success if _okm2 else st.error)(
-                        f"{'✅' if _okm2 else '❌'} {_sd2['stem']}: {Path(_mp2).name if _okm2 else _mm2}")
-                    st.rerun()
-                if st.button("", icon=":material/refresh:", key=f"resplit2_{_sd2['stem']}", help="재분할"):
-                    for _f2 in _sd2["ch_dir"].glob("*"):
-                        try: _f2.unlink()
-                        except Exception: pass
-                    st.rerun()
-    else:
-        st.caption(t("완료된 분할 없음"))
-
-    st.info(t("💡 다음 단계: **🌐 영문번역**으로 이동하세요") if _translation_on
+    st.info(t("💡 다음 단계: 영문 도서는 **:material/translate: 영문번역**으로, 한글 도서는 **📝 문서요약**으로 이동하세요") if _translation_on
             else t("💡 다음 단계: **📝 문서요약**으로 이동하세요"))
 
 
@@ -2268,7 +2237,7 @@ if _active_view == "5_wiki":
     elif _use_dx and not _use_ob:
         _card2_5 = ("② 처리후 · Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5))
     else:
-        _card2_5 = ("② 처리후 · 위키+DOCX", _vault5f, tf("위키 %d · DOCX %d", _n_notes5f, _n_docx5))
+        _card2_5 = ("② 처리후 · DOCX+위키", _vault5f, tf("DOCX %d · 위키 %d", _n_docx5, _n_notes5f))
     _stage_flow_panel(
         f":material/{_stage_icon('5_wiki')}: {_out_short()}",
         _stage_desc("5_wiki", ""),

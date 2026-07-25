@@ -2,6 +2,10 @@
 # 개발자 툴바·메뉴 숨김 → 'Clear caches'(C 단축키) 등 개발 기능 비활성 (2026-07-10)
 toolbarMode = "minimal"
 
+[server]
+# 스캔 PDF 등 큰 원본도 업로드 창으로 바로 넣을 수 있게 기본 200MB에서 상향 (2026-07-25)
+maxUploadSize = 1024
+
 [browser]
 gatherUsageStats = false
 
