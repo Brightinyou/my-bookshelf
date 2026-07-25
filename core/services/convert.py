@@ -1,4 +1,5 @@
-"""PDF → TXT 변환 (pypdfium2 좌표 추출 + pdftotext 폴백) + TXT 단독 처리."""
+"""PDF/DOCX/HWP/HWPX → TXT 변환 (pypdfium2 좌표 추출 + pdftotext 폴백,
+office 문서는 python-docx·rhwp) + TXT 단독 처리."""
 
 import re
 import shutil
@@ -21,6 +22,44 @@ FAILED_DIR = cfg.FAILED_DIR
 # 텍스트 레이어가 없는 이미지 전용(스캔) 문서를 만났을 때의 신호 문구.
 # _do_ocr_only가 이 값을 보고 needs_ocr 플래그를 세워 UI에서 OCR 안내 팝업을 띄운다.
 OCR_REQUIRED_MSG = "이미지 전용 문서입니다 — TXT 분리를 위해서는 OCR 사전 처리 작업이 필요합니다."
+
+# PDF 외에 텍스트 추출을 지원하는 오피스 문서 형식 (2026-07-25).
+#   .docx        python-docx (이미 DOCX 내보내기용으로 씀)
+#   .hwp/.hwpx   rhwp (Rust 기반 한글 문서 파서의 파이썬 바인딩)
+OFFICE_EXTS = {".docx", ".hwp", ".hwpx"}
+NO_TEXT_MSG = "문서에서 텍스트를 추출하지 못했습니다 (빈 문서이거나 내용이 이미지로만 되어 있을 수 있습니다)."
+
+
+def _docx_to_text(path: Path) -> str:
+    from docx import Document
+    doc = Document(str(path))
+    return "\n".join(p.text for p in doc.paragraphs)
+
+
+def _hwp_to_text(path: Path) -> str:
+    import rhwp
+    doc = rhwp.parse(str(path))
+    return doc.extract_text()
+
+
+def office_to_txt(path: Path) -> tuple[Path | None, str, str]:
+    """DOCX/HWP/HWPX → TXT 변환. 반환: (txt_path 또는 None, err, note)."""
+    suf = path.suffix.lower()
+    try:
+        if suf == ".docx":
+            text = _docx_to_text(path)
+        elif suf in (".hwp", ".hwpx"):
+            text = _hwp_to_text(path)
+        else:
+            return None, f"지원하지 않는 형식입니다: {suf}", ""
+    except Exception as e:
+        append_log(f"WARN: {suf} 추출 실패 ({type(e).__name__}) {str(e)[:120]}")
+        return None, f"{suf} 파일을 읽지 못했습니다 ({type(e).__name__}: {str(e)[:80]})", ""
+    if not text.strip():
+        return None, NO_TEXT_MSG, ""
+    txt_path = Path(tempfile.gettempdir()) / (path.stem + ".txt")
+    txt_path.write_text(text, encoding="utf-8")
+    return txt_path, "", ""
 
 
 def _no_window_kwargs() -> dict:
@@ -112,21 +151,26 @@ def pdf_to_txt(pdf_path: Path, fast: bool = True) -> tuple[Path | None, Path | N
 # ─── TXT 단독 처리 (번역·위키 생략) ─────────────────────────
 
 def _do_ocr_only(uf, ws_name: str, fast: bool = False) -> dict:
-    """PDF → TXT 변환만 수행. fast=True이면 pdftotext 직접 추출."""
+    """PDF/DOCX/HWP/HWPX → TXT 변환만 수행. fast=True이면 PDF는 pdftotext 직접 추출."""
     dest = UPLOAD_TMP / uf.name
     _src = getattr(uf, "_p", None)
     if not (_src and Path(_src).resolve() == dest.resolve()):
         uf.seek(0)
         with open(dest, "wb") as f:
             f.write(uf.read())
-    if dest.suffix.lower() != ".pdf":
+    _suf = dest.suffix.lower()
+    if _suf not in {".pdf", *OFFICE_EXTS}:
         txt_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)
         final = txt_dir(DONE_DIR, ws_name) / dest.name
         shutil.move(str(dest), str(final))
         append_log(f"TXT 직접 업로드: {final.name}")
         queue_add("tab2_ready", [_nfc(Path(final).stem)])   # → 장별분할 큐
         return {"ok": True, "name": uf.name, "txt_path": str(final), "md_path": "", "error": ""}
-    txt_path, md_src, err, note = pdf_to_txt(dest, fast=fast)
+    if _suf == ".pdf":
+        txt_path, md_src, err, note = pdf_to_txt(dest, fast=fast)
+    else:
+        txt_path, err, note = office_to_txt(dest)
+        md_src = None
     if not txt_path:
         _needs_ocr = (err == OCR_REQUIRED_MSG)
         try: shutil.move(str(dest), str(FAILED_DIR / uf.name))
@@ -134,10 +178,10 @@ def _do_ocr_only(uf, ws_name: str, fast: bool = False) -> dict:
         append_log(f"{'OCR 필요' if _needs_ocr else 'ERROR: TXT 변환 실패'} — {uf.name}: {err}")
         return {"ok": False, "name": uf.name, "txt_path": "", "md_path": "",
                 "error": err, "needs_ocr": _needs_ocr, "note": ""}
-    pdf_save_dir2 = cfg.PDF_DIR
-    pdf_save_dir2.mkdir(parents=True, exist_ok=True)
-    final_pdf = pdf_save_dir2 / uf.name
-    shutil.move(str(dest), str(final_pdf))
+    orig_save_dir2 = cfg.PDF_DIR   # 원본 보관 폴더 — PDF 외 오피스 문서 원본도 여기 보관
+    orig_save_dir2.mkdir(parents=True, exist_ok=True)
+    final_orig = orig_save_dir2 / uf.name
+    shutil.move(str(dest), str(final_orig))
     txt_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)
     final_txt = txt_dir(DONE_DIR, ws_name) / txt_path.name   # 항상 1_txt/에 저장
     shutil.move(str(txt_path), str(final_txt))
