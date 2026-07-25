@@ -1,6 +1,6 @@
 # My Bookshelf
 
-**A personal research tool that turns PDF/TXT documents into Obsidian Wiki notes and Word documents** — Text conversion → Chapter split → Summaries → **Obsidian Wiki · Word (.docx) (either or both)**, all in one flow.
+**A personal research tool that turns PDF/TXT documents into Word documents and Obsidian Wiki notes** — Text conversion → Chapter split → Summaries → **Word (.docx) · Obsidian Wiki (either or both)**, all in one flow.
 
 > 🇰🇷 한국어 설명서: [README.md](README.md)
 
@@ -13,7 +13,7 @@ This repository shares one core (`core/`) across macOS and Windows. Only the ins
 Feed a book or paper as PDF/TXT, and it produces **readable summary Wiki notes** saved into your Obsidian vault through these stages:
 
 ```
-PDF/TXT  →  Text conversion  →  Chapter split  →  Translation (English docs only)  →  Summaries  →  Obsidian Wiki · Word (.docx) (either or both)
+PDF/TXT  →  Text conversion  →  Chapter split  →  Translation (English docs only)  →  Summaries  →  Word (.docx) · Obsidian Wiki (either or both)
 ```
 
 - Works on **text-based PDFs** (with a text layer) or TXT — not raw scans.
@@ -23,39 +23,6 @@ PDF/TXT  →  Text conversion  →  Chapter split  →  Translation (English doc
 ---
 
 ## 2. Installation
-
-### macOS
-
-#### Step 1 — Download
-
-On the [**latest release**](https://github.com/Brightinyou/my-bookshelf-for-mac/releases/latest) page, under **Assets**, grab one of:
-
-- **`MyBookshelf-vX.Y.Z.dmg`** — recommended. Opens the familiar "drag to install" window.
-- `MyBookshelf-vX.Y.Z-mac.zip` — unzipping gives just the app file. (Having no separate installer is normal — the app installs itself.)
-
-#### Step 2 — Put it in Applications
-
-- **DMG**: double-click the `.dmg`, then **drag `MyBookshelf.app` onto the `Applications` folder** in the window.
-- **zip**: unzip and move the resulting `MyBookshelf.app` into your **Applications** folder.
-
-#### Step 3 — First time only: pass the security warning ⚠️
-
-This app is a **personal build without Apple signing/notarization**, so the first launch shows an *"unidentified developer"* warning. **It is not malware** — it just skips the (US$99/yr) signing cost. Allow it once as follows. (The DMG does **not** remove this step — it's a signing matter, independent of packaging.)
-
-- **Try first**: **right-click (or control-click)** the `MyBookshelf` icon in Applications → **Open** → **Open** in the dialog.
-- **If that doesn't open it** (recent macOS blocks the right-click bypass):
-  1. Double-click once so the warning appears (you can dismiss it).
-  2. Go to ** menu → System Settings → Privacy & Security**.
-  3. Scroll down to *"'MyBookshelf' was blocked"* and click **[Open Anyway]**, then **Open** in the dialog.
-
-> Once allowed, just **double-click** the icon from then on.
-
-#### Step 4 — First-run setup (automatic)
-
-The first launch **auto-installs** the Python environment and packages (**5–20 min** depending on your network; the window may show "preparing"). When done, the native app window appears. Later launches open in seconds.
-
-> Requires Python 3.10+. If missing, install from [python.org](https://www.python.org/downloads/).
-> If setup seems stuck, check the log: `~/Library/Application Support/MyBookshelf/app.log`
 
 ### Windows
 
@@ -68,6 +35,8 @@ The first launch **auto-installs** the Python environment and packages (**5–20
 4. Package download takes a few minutes; the app launches automatically, and afterwards opens from the **My Bookshelf** icon (desktop / Start menu).
 
 > Requires Python 3.10+. If missing, `Setup.exe` offers to install it. The PDF text extractor (Poppler) is bundled — no separate install needed.
+
+> 🍎 **On macOS?** → See the [my-bookshelf-for-mac](https://github.com/Brightinyou/my-bookshelf-for-mac) repository's manual.
 
 ---
 
@@ -98,7 +67,7 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 - **[Delete]** removes mistakenly added files.
 - **Fetch from a paper source**: pull a paper by URL, DOI or arXiv number (for login/paywalled pages, download the PDF yourself and upload it).
 
-### ② 📂 Chapter split
+### ② ✂️ Chapter split
 - Splits a book TXT into **per-chapter files** under a per-book folder.
 - **[Split]** — split into chapters. **[Move to next step]** — if no split is needed, send the whole document onward (EN → Translation, KO → Summaries).
 - Short documents are handled separately under "Short documents".
@@ -109,10 +78,10 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 - **Length control**: in the Settings tab or the collapsible **"Adjust summary length"** here, set the summary body to **5–40 % of the source** (15 % default). Higher values make longer notes and increase **output tokens / API cost** (input tokens for the source stay the same). Short chapters keep a minimum length.
 - Select queued items and press **[▶ Start]**.
 
-### ④ 📖 Output (Wiki · Create DOCX)
-- This stage has **two independent toggles at the top of the tab — "Use Obsidian wiki" and "Create DOCX document"**. **Enable both to produce both.** The top menu name changes accordingly between **"Wiki / Create DOCX / Wiki + DOCX"**.
-  - **Obsidian Wiki**: merges summaries into a **hub note + per-chapter notes** in the Obsidian vault.
+### ④ 📖 Output (Create DOCX · Wiki)
+- This stage has **two independent toggles at the top of the tab — "Create DOCX document" and "Use Obsidian wiki"**. **Enable both to produce both.** The top menu name changes accordingly between **"Create DOCX / Wiki / DOCX + Wiki"**.
   - **Word document (DOCX)**: merges summaries into an editable **Word (.docx)** document saved in the `5_위키문서(DOCX)` folder (handy to share with or cite for others).
+  - **Obsidian Wiki**: merges summaries into a **hub note + per-chapter notes** in the Obsidian vault.
   - Turning both off shows a warning — you must pick **at least one**.
 - The note/document frontmatter is auto-filled with **author, publication date, and publisher (`Place: Publisher`)**, extracted from the source's title/colophon page (left blank if not confidently found).
 - If a book is already reflected, the popup asks **"Replace?"** to update it in place.
@@ -149,10 +118,11 @@ Default data folders (folder names are Korean or English depending on the instal
 1_PDF_Originals/    original PDFs
 2_Converted_TXT/    converted TXT (done/ = archived sources after split)
 3_Chapters/<book>/  workspace holding chapters, translations (_ko), summaries (_wiki.md), overview
+5_위키문서(DOCX)/    exported DOCX documents (when "Create DOCX document" is on — this folder name stays in Korean regardless of the UI language)
 Failed/, Logs/      failed files, logs
 ```
 
-Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`). Settings live in `~/.config/mybookshelf/config.json` (macOS/Linux) or the same path under your user profile.
+Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`). Word (.docx) documents are saved to the `5_위키문서(DOCX)/` folder above. Settings live in `~/.config/mybookshelf/config.json` (macOS/Linux) or the same path under your user profile.
 
 ---
 
