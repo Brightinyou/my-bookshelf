@@ -537,7 +537,7 @@ _STAGE_ICONS = {
     "settings": "settings", "all_run": "rocket_launch",
 }
 TASKS = [
-    ("1_txt", "텍스트 변환", "PDF/TXT를 텍스트로 변환 · 업로드 대기 → 변환 TXT"),
+    ("1_txt", "텍스트 변환", "PDF·DOCX·HWP·HWPX·TXT를 텍스트로 변환 · 업로드 대기 → 변환 TXT"),
     ("2_split", "챕터 분할", "책 TXT를 챕터 단위로 분리 · 변환 TXT → chapters"),
     ("3_translate", "영문번역", "챕터를 한국어로 번역 · chapters → 번역본(_ko.txt)"),
     ("4_summary", "문서요약", "챕터별 요약 노트 생성 · chapters → 요약(_wiki.md)"),
@@ -602,7 +602,7 @@ if not _active_view:
 """, unsafe_allow_html=True)
     st.markdown(t("#### 작업 메뉴"))
     st.info(t(
-        "처음 사용 전 확인: 이 앱은 사용자가 제공한 PDF/TXT를 정리, 번역, 요약, 위키 노트로 재구성하는 개인 작업 도구입니다. "
+        "처음 사용 전 확인: 이 앱은 사용자가 제공한 PDF·DOCX·HWP·HWPX·TXT를 정리, 번역, 요약, 위키 노트로 재구성하는 개인 작업 도구입니다. "
         "원문 저작권과 이용허락은 사용자 책임으로 확인해야 하며, 외부 AI/CLI로 전송되는 텍스트에는 민감정보나 배포 권한이 불분명한 내용을 넣지 마세요."
     ))
     for _tid, _title, _desc in TASKS:
@@ -1354,14 +1354,14 @@ if _active_view in {"1_txt", "all_run"}:
     _pdf_dir1 = cfg.PDF_DIR
     _stage_flow_panel(
         ":material/description: 텍스트 변환",
-        "PDF의 텍스트 레이어를 추출해 TXT로 저장합니다 (OCR 변환된 문서만 가능).",
+        "PDF·DOCX·HWP·HWPX에서 텍스트를 추출해 TXT로 저장합니다 (스캔 PDF는 OCR 사전 처리 필요).",
         [
             ("① 처리전 · 업로드 대기", UPLOAD_TMP,
-             tf("%d개 대기", _count_files(UPLOAD_TMP, ['*.pdf', '*.txt', '*.md']))),
+             tf("%d개 대기", _count_files(UPLOAD_TMP, ['*.pdf', '*.docx', '*.hwp', '*.hwpx', '*.txt', '*.md']))),
             ("② 처리후 · 변환 TXT", cfg.TXT_DIR,
              tf("%d권 변환됨", _count_files(cfg.TXT_DIR, ['*.txt']))),
-            ("📄 원본 PDF 보관", _pdf_dir1,
-             tf("%d개 보관", _count_files(_pdf_dir1, ['*.pdf']))),
+            ("📄 원본 문서 보관", _pdf_dir1,
+             tf("%d개 보관", _count_files(_pdf_dir1, ['*.pdf', '*.docx', '*.hwp', '*.hwpx']))),
         ],
         "flow1",
     )
@@ -1371,8 +1371,8 @@ if _active_view in {"1_txt", "all_run"}:
 
     # 파일 업로드
     _uploads1 = st.file_uploader(
-        t("PDF 또는 TXT 업로드 (여러 파일 가능)"),
-        type=["pdf", "txt", "md"], accept_multiple_files=True, key="ocr_uploader",
+        t("PDF·DOCX·HWP·HWPX·TXT 업로드 (여러 파일 가능)"),
+        type=["pdf", "docx", "hwp", "hwpx", "txt", "md"], accept_multiple_files=True, key="ocr_uploader",
     )
     st.caption(t(_DND_HINT))
     if _uploads1:
@@ -1460,7 +1460,7 @@ if _active_view in {"1_txt", "all_run"}:
     _converted_stems1 = {_nfc(p.stem) for p in cfg.TXT_DIR.rglob("*.txt")} if cfg.TXT_DIR.exists() else set()
     _pending_all1 = sorted(
         [f for f in UPLOAD_TMP.glob("*")
-         if f.is_file() and f.suffix.lower() in {".pdf", ".txt", ".md"}
+         if f.is_file() and f.suffix.lower() in {".pdf", ".docx", ".hwp", ".hwpx", ".txt", ".md"}
          and _nfc(f.stem) not in _converted_stems1]
         if UPLOAD_TMP.exists() else [],
         key=lambda f: f.stat().st_mtime, reverse=True,
