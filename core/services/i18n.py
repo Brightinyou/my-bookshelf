@@ -128,6 +128,8 @@ _EN: dict[str, str] = {
     "총 %d개": "Total %d",
     "다음 단계": "Next step",
     "결과 폴더 열기": "Open result folder",
+    "DOCX 파일 열기": "Open DOCX file",
+    "Obsidian에서 열기": "Open in Obsidian",
     "닫기": "Close",
     "완료": "Done",
     "📂 폴더 열기": "📂 Open folder",

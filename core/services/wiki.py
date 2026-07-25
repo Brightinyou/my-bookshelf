@@ -233,18 +233,25 @@ def set_wiki_dir(path_str: str) -> None:
     f.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def open_wiki_vault():
-    """위키 폴더를 옵시디언 보관함(Vault)로 등록 후 옵시디언으로 열기. 실패 시 폴더라도 연다."""
-    ensure_obsidian_vault(WIKI_DIR)
+def open_in_obsidian(path: Path):
+    """주어진 경로(폴더 또는 특정 노트 파일)를 Obsidian으로 열기. 실패 시 탐색기/파인더로라도 연다.
+    (path= 파라미터는 절대경로만 있으면 되고, 보관함 루트가 아니어도 옵시디언이 알아서
+    해당 경로를 담은 보관함을 찾아 그 노트를 바로 연다, 2026-07-25)"""
     from urllib.parse import quote
-    uri = "obsidian://open?path=" + quote(str(WIKI_DIR.resolve()))
+    uri = "obsidian://open?path=" + quote(str(path.resolve()))
     try:
         if sys.platform == "darwin":   # os.startfile은 윈도우 전용 (2026-07-03)
             subprocess.run(["open", uri])
         else:
             os.startfile(uri)
     except Exception:
-        open_path(WIKI_DIR)
+        open_path(path, reveal=path.is_file())
+
+
+def open_wiki_vault():
+    """위키 폴더를 옵시디언 보관함(Vault)로 등록 후 옵시디언으로 열기. 실패 시 폴더라도 연다."""
+    ensure_obsidian_vault(WIKI_DIR)
+    open_in_obsidian(WIKI_DIR)
 
 
 # ─── 챕터 요약 → Obsidian 노트 ───────────────────────────────
