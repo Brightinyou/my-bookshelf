@@ -544,7 +544,13 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
                 cached_rows = {}
         for idx, p in enumerate(paras, 1):
             cached = cached_rows.get(idx)
-            if cached and cached.get("src") == p and isinstance(cached.get("tgt"), str):
+            # 캐시 재사용은 '확정된' 결과만 — translated/preserved/dropped.
+            # status=="failed"(이전 실행에서 번역 실패로 원문을 보존한 것)는 재사용하면
+            # 안 된다. 그러면 이어하기가 실패를 그대로 재생해 영원히 번역이 안 되고
+            # (translated_n==0 → 실패 반환) 넘어가 버린다. 실패 단락은 아래로 흘려보내
+            # 다시 번역을 시도한다 (2026-07-25).
+            if (cached and cached.get("src") == p and isinstance(cached.get("tgt"), str)
+                    and cached.get("status") != "failed"):
                 status = cached.get("status")
                 tgt = cached.get("tgt", "")
                 if status == "dropped":
@@ -553,8 +559,6 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
                     out.append(tgt)
                     if status == "preserved":
                         preserved_n += 1
-                    elif status == "failed":
-                        failed_n += 1
                     else:
                         translated_n += 1
                 resumed_n += 1
