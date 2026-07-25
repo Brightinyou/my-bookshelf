@@ -65,12 +65,12 @@ def _port_in_use(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _kill_stale_servers() -> None:
-    """이전 실행에서 남은 My Bookshelf 서버(streamlit pipeline_app.py)를 종료한다.
+def _kill_all_streamlit_procs() -> None:
+    """실행 중인 My Bookshelf 서버(streamlit pipeline_app.py)를 전부 종료한다.
 
-    앱을 강제 종료하거나 다시 열 때 옛 스트림릿이 포트를 잡은 채 붙어 있어
-    창이 옛 서버에 연결되거나 좀비 프로세스가 쌓이던 문제를 근본 차단한다.
-    실행 시 항상 이전 서버를 정리하고 최신 정본으로 새로 띄운다 (단일 실행, 2026-07-24).
+    streamlit이 내부적으로 watcher 등 자식 프로세스를 추가로 띄우는 경우가 있어,
+    Popen 핸들 하나만 terminate()해서는 프로세스가 완전히 안 죽고 포트에 남을 수 있다.
+    커맨드라인 패턴으로 전부 찾아 강제 종료해야 확실하다.
     """
     try:
         if sys.platform == "win32":
@@ -87,6 +87,16 @@ def _kill_stale_servers() -> None:
                            capture_output=True)
     except Exception:
         pass
+
+
+def _kill_stale_servers() -> None:
+    """이전 실행에서 남은 My Bookshelf 서버(streamlit pipeline_app.py)를 종료한다.
+
+    앱을 강제 종료하거나 다시 열 때 옛 스트림릿이 포트를 잡은 채 붙어 있어
+    창이 옛 서버에 연결되거나 좀비 프로세스가 쌓이던 문제를 근본 차단한다.
+    실행 시 항상 이전 서버를 정리하고 최신 정본으로 새로 띄운다 (단일 실행, 2026-07-24).
+    """
+    _kill_all_streamlit_procs()
     # 포트(8501)가 풀릴 때까지 최대 ~6초 대기 — 새 서버가 같은 포트를 잡도록
     for _ in range(20):
         if not _port_in_use(DEFAULT_PORT):
@@ -254,12 +264,16 @@ def main() -> int:
             traceback.format_exc(),
         )
     finally:
+        # 창 닫기(X) 시 서버를 확실히 종료한다. Popen 핸들 하나만 정리하면
+        # streamlit이 띄운 자식 프로세스가 남을 수 있어, 커맨드라인 기준으로도
+        # 한 번 더 정리한다 (기본 동작, 2026-07-25).
         if proc and proc.poll() is None:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
+        _kill_all_streamlit_procs()
 
 
 if __name__ == "__main__":
