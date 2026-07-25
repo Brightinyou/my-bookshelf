@@ -919,14 +919,14 @@ def _render_stage_completion_notice() -> None:
             _clear_stage_completion()
             st.rerun()
 
-    if hasattr(st, "dialog"):
-        @st.dialog(t("완료"))
-        def _stage_completion_dialog():
-            _render_body()
-        _stage_completion_dialog()
-    else:
-        with st.container(border=True):
-            _render_body()
+    # 모달(st.dialog)이 아니라 페이지 안 패널로 렌더링한다. "예, 바로 진행"을
+    # 누르면 닫힘→다음 화면 이동→자동실행까지 리런이 연속으로 이어지는데,
+    # 이 경우 st.dialog 모달이 화면에 그대로 눌어붙어 처리 화면을 가리는
+    # 현상이 있었다(2026-07-25, 실제 재현 스크린샷으로 확인). 일반 패널은
+    # 그런 클라이언트 쪽 열림 상태가 없어 리런될 때마다 있으면 보이고
+    # 없으면 그냥 안 보이므로 이 문제가 근본적으로 발생하지 않는다.
+    with st.container(border=True):
+        _render_body()
 
 
 def _stage_folder(stage_id: str) -> Path:
