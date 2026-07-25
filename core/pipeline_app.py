@@ -59,7 +59,7 @@ from services.translate import (
 from services.chapters import (
     _is_small_document_for_whole_translation,
     _write_single_chapter_from_text, chapters_dir, list_done_books,
-    find_overview_file, list_summary_files, load_overview_file,
+    find_overview_file, list_summary_files,
     load_summary_file, split_book_to_chapters, summarize_book_overview,
     summarize_one_chapter, summary_file_for, SPLIT_MODE_LABELS,
 )
@@ -815,6 +815,11 @@ def _render_update_notice() -> None:
     info = st.session_state.get("_update_info") or {}
     if not info.get("available") or st.session_state.get("_update_dismissed"):
         return
+    # 이 버전을 이미 '나중에'로 미뤘다면 다시 묻지 않는다 — 세션이 아니라
+    # 설정 파일에 저장해 앱을 재시작해도 유지되고, 더 새 버전이 나오면
+    # (latest 값이 달라지므로) 다시 안내한다 (2026-07-25).
+    if info.get("latest") and info["latest"] == llm.get_pref("update_dismissed_version", ""):
+        return
 
     def _render_body():
         st.write(tf("새 버전 **%s** 이(가) 나왔습니다. (현재 %s)", info["latest"], info["current"]))
@@ -827,9 +832,11 @@ def _render_update_notice() -> None:
             _do_update(info)
         if _c2.button(t("브라우저로 받기"), use_container_width=True, key="upd_browser"):
             updater.open_release_page(info.get("page_url", ""))
+            llm.set_pref("update_dismissed_version", info.get("latest", ""))
             st.session_state["_update_dismissed"] = True
             st.rerun()
         if _c3.button(t("나중에"), use_container_width=True, key="upd_later"):
+            llm.set_pref("update_dismissed_version", info.get("latest", ""))
             st.session_state["_update_dismissed"] = True
             st.rerun()
 
@@ -2193,36 +2200,6 @@ if _active_view == "4_summary":
             if _f4c2.button(t("실패 목록 비우기"), icon=":material/delete_sweep:", key="summ4_clear_failed", use_container_width=True):
                 queue_clear("tab4_failed")
                 st.rerun()
-
-        # 책 전체요약 관리 (2026-07-07)
-        _ch_root4o = cfg.CHAPTERS_DIR
-        _ov_books4 = [d for d in (_ch_root4o.iterdir() if _ch_root4o.exists() else [])
-                      if d.is_dir() and list_summary_files(d)]
-        if _ov_books4:
-            with st.expander(tf("📚 책 전체요약 (<책제목>_전체요약.md) — %d권", len(_ov_books4))):
-                st.caption(t("장별 요약을 합쳐 만든 책 전체 요약입니다. 위키반영 전에 열어서 고칠 수 있고, 수정본이 허브 노트에 그대로 반영됩니다."))
-                for _bd4 in sorted(_ov_books4, key=lambda d: d.name):
-                    _ovf4 = find_overview_file(DEFAULT_WS, _nfc(_bd4.name))
-                    _has4 = _ovf4 is not None
-                    _oc1, _oc2, _oc3, _oc4 = st.columns([4, 1.2, 1.4, 1])
-                    _oc1.markdown(f"**{_bd4.name}**")
-                    _oc2.caption(t("✅ 있음") if _has4 else t("— 없음"))
-                    if _oc3.button(t("재생성") if _has4 else t("생성"),
-                                   icon=":material/refresh:" if _has4 else ":material/play_arrow:",
-                                   key=f"ov4_gen_{_bd4.name}", use_container_width=True):
-                        with st.status(tf("📚 책 전체요약 생성: %s", _bd4.name), expanded=False):
-                            _ok_ov4b, _msg_ov4b = summarize_book_overview(DEFAULT_WS, _nfc(_bd4.name))
-                        (st.success if _ok_ov4b else st.error)(
-                            f"{'✅' if _ok_ov4b else '❌'} {_msg_ov4b[:100]}")
-                        if _ok_ov4b:
-                            st.rerun()
-                    if _oc4.button(t("보기"), icon=":material/visibility:", key=f"ov4_view_{_bd4.name}",
-                                   use_container_width=True, disabled=not _has4):
-                        open_path(_ovf4, reveal=True)
-                    if _has4:
-                        _ovd4 = load_overview_file(_ovf4)
-                        if _ovd4 and _ovd4.get("summary"):
-                            st.caption(f"› {_ovd4['summary'][:110]}")
 
         # 수동 추가 expander
         with st.expander(t("➕ 수동으로 추가 (기존 챕터에서 선택)")):
