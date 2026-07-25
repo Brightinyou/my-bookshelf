@@ -788,22 +788,26 @@ def _render_ocr_notice() -> None:
 
 
 def _do_update(info: dict) -> None:
-    """다운로드(진행바) → 검증 → 헬퍼 실행/앱 종료. 실패 시 A(안내형) 폴백 안내."""
+    """다운로드(진행바) → 검증 → 헬퍼 실행/앱 종료.
+    팝업(다이얼로그) 밖의 본문에서 호출된다 — 성공하면 앱이 종료·재시작되고,
+    실패하면 팝업을 다시 띄운다 (2026-07-25)."""
+    st.markdown(f"### {t('업데이트 설치 중')}")
     st.info(t("설치 파일을 내려받는 중입니다…"))
     _bar = st.progress(0.0)
     _path, _err = updater.download_installer(
         info.get("asset_url", ""), progress_cb=lambda f: _bar.progress(f))
     if not _path:
-        st.error(t("자동 업데이트 실패") + f": {_err}")
-        st.warning(t("아래 '브라우저로 받기'로 직접 내려받아 설치해 주세요."))
-        return
+        st.session_state["_updating"] = False
+        st.session_state["_update_error"] = f"{t('자동 업데이트 실패')}: {_err}"
+        st.rerun()
     _bar.progress(1.0)
     st.success(t("다운로드 완료 — 앱을 닫고 업데이트를 설치합니다. 잠시 후 자동으로 다시 열립니다."))
     if updater.launch_helper_and_exit(_path):
         st.stop()
     else:
-        st.error(t("업데이트 실행에 실패했습니다."))
-        st.warning(t("아래 '브라우저로 받기'로 직접 내려받아 설치해 주세요."))
+        st.session_state["_updating"] = False
+        st.session_state["_update_error"] = t("업데이트 실행에 실패했습니다.")
+        st.rerun()
 
 
 def _render_update_notice() -> None:
@@ -821,7 +825,17 @@ def _render_update_notice() -> None:
     if info.get("latest") and info["latest"] == llm.get_pref("update_dismissed_version", ""):
         return
 
+    # '지금 업데이트' 클릭 시 팝업을 닫고 본문에 진행 상황을 그대로 보여준다.
+    # 실패하면 _do_update가 이 플래그를 다시 꺼서 팝업이 재등장한다 (2026-07-25).
+    if st.session_state.get("_updating"):
+        _do_update(info)
+        return
+
     def _render_body():
+        _err = st.session_state.pop("_update_error", None)
+        if _err:
+            st.error(_err)
+            st.warning(t("아래 '브라우저로 받기'로 직접 내려받아 설치해 주세요."))
         st.write(tf("새 버전 **%s** 이(가) 나왔습니다. (현재 %s)", info["latest"], info["current"]))
         if info.get("notes"):
             with st.expander(t("변경 내용 보기")):
@@ -829,7 +843,8 @@ def _render_update_notice() -> None:
         st.caption(t("업데이트하면 앱이 닫혔다가 자동으로 다시 열립니다."))
         _c1, _c2, _c3 = st.columns(3)
         if _c1.button(t("지금 업데이트"), type="primary", use_container_width=True, key="upd_now"):
-            _do_update(info)
+            st.session_state["_updating"] = True
+            st.rerun()
         if _c2.button(t("브라우저로 받기"), use_container_width=True, key="upd_browser"):
             updater.open_release_page(info.get("page_url", ""))
             llm.set_pref("update_dismissed_version", info.get("latest", ""))
@@ -2326,6 +2341,8 @@ if _active_view == "5_wiki":
     #    설정이 이어지도록 한다 (2026-07-25).
     _dx_new5 = st.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
                           help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
+    if _use_dx:
+        st.caption(tf("Word 문서는 여기에 저장됩니다: `%s`", str(_docx_dir5)))
     _ob_new5 = st.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
                           help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
     if bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx:
@@ -2334,8 +2351,6 @@ if _active_view == "5_wiki":
         st.rerun()
     if not (_use_ob or _use_dx):
         st.warning(t("출력 방식을 하나 이상 선택하세요 (위키 또는 DOCX)."))
-    if _use_dx:
-        st.caption(tf("Word 문서는 여기에 저장됩니다: `%s`", str(_docx_dir5)))
 
     # ── 위키 저장 보관함(Vault) 선택 (옵시디언 사용 시 의미) ──────────────
     _vaults5 = list_obsidian_vaults()

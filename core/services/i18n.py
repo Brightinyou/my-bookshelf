@@ -237,6 +237,7 @@ _EN: dict[str, str] = {
     "지금 업데이트": "Update now",
     "브라우저로 받기": "Download in browser",
     "나중에": "Later",
+    "업데이트 설치 중": "Installing update",
     "설치 파일을 내려받는 중입니다…": "Downloading the installer…",
     "자동 업데이트 실패": "Automatic update failed",
     "아래 '브라우저로 받기'로 직접 내려받아 설치해 주세요.":
