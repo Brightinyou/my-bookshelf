@@ -223,6 +223,7 @@ _EN: dict[str, str] = {
     "업데이트 확인": "Check for updates",
     "최신 버전을 사용 중입니다.": "You are on the latest version.",
     "앱 내 업데이트는 Windows에서만 지원됩니다.": "In-app updates are supported on Windows only.",
+    "앱 내 업데이트는 Windows·macOS에서만 지원됩니다.": "In-app updates are supported on Windows and macOS only.",
     "짧은 문서는 챕터로 나누기 애매합니다. 각 문서를 '보기'로 확인한 뒤, 아래에서 분할 처리·다음 단계 이동·삭제를 선택하세요.":
         "Short documents are hard to split into chapters. Preview each with 'View', then choose Split / Move to next / Delete below.",
     "삭제 (%d권)": "Delete (%d)",
