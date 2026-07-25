@@ -1193,6 +1193,7 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
         _g = it.get("group")
         if _g is not None:
             _group_indices.setdefault(_g, []).append(idx)
+    _has_groups = bool(_group_indices)  # 항목을 책 제목 아래 하위 트리처럼 들여쓸지 (2026-07-25)
 
     def _toggle_group(grp: str, grp_key: str) -> None:
         _val = st.session_state.get(grp_key, False)
@@ -1226,18 +1227,27 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
                 _ghc2.markdown(f"**📚 {_grp}**")
                 _prev_group = _grp
             k = _keys[idx]
-            cols = st.columns([0.05, 0.82, 0.13]) if viewable else st.columns([0.05, 0.95])
-            c1, c2 = cols[0], cols[1]
+            # 그룹(책)이 있는 목록이면 항목 행을 들여써서 책 제목 아래 하위
+            # 트리처럼 보이게 한다 — 그룹 헤더와 나란한 평평한 목록으로 안 보이도록.
+            if _has_groups:
+                cols = st.columns([0.04, 0.05, 0.78, 0.13]) if viewable else st.columns([0.04, 0.05, 0.91])
+                c1, c2 = cols[1], cols[2]
+                _view_col = cols[3] if viewable else None
+            else:
+                cols = st.columns([0.05, 0.82, 0.13]) if viewable else st.columns([0.05, 0.95])
+                c1, c2 = cols[0], cols[1]
+                _view_col = cols[2] if viewable else None
             chk = c1.checkbox(" ", key=k, label_visibility="collapsed")
+            _label_prefix = "↳ " if _has_groups else ""
             c2.markdown(
-                f"**{it['label']}** &nbsp;<small style='color:#9ca3af'>{it['meta']}</small>",
+                f"{_label_prefix}**{it['label']}** &nbsp;<small style='color:#9ca3af'>{it['meta']}</small>",
                 unsafe_allow_html=True,
             )
             if viewable:
                 target = _view_target_from_item(it)
                 safe_key = _re.sub(r"[^a-zA-Z0-9가-힣_-]+", "_", str(it["key"]))[:80]
-                if cols[2].button(t("보기"), icon=":material/visibility:", key=f"{prefix}_view_{idx}_{safe_key}", use_container_width=True,
-                                  disabled=target is None):
+                if _view_col.button(t("보기"), icon=":material/visibility:", key=f"{prefix}_view_{idx}_{safe_key}", use_container_width=True,
+                                     disabled=target is None):
                     open_path(target, reveal=target.is_file())
             if chk:
                 selected.append(it["obj"])
