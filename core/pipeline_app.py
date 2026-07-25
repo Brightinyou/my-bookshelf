@@ -72,7 +72,7 @@ from services.wiki import (
     check_wiki_orphans, ensure_obsidian_vault, list_obsidian_vaults,
     open_in_obsidian, open_wiki_vault, set_wiki_dir, wiki_generator_running,
 )
-from services.docx_export import build_docx_from_chapter_summaries
+from services.docx_export import build_docx_from_chapter_summaries, set_docx_dir
 from services.i18n import get_lang, set_lang, t, tf
 
 # ── 설정 ─────────────────────────────────────────────────
@@ -1170,6 +1170,21 @@ def _current_wiki_dir() -> Path:
     except Exception:
         pass
     return WIKI_DIR
+
+
+def _current_docx_dir() -> Path:
+    """DOCX 저장 폴더 — 설정 탭에서 옵시디언 보관함처럼 바꿀 수 있다 (2026-07-25)."""
+    target = (st.session_state.get("docx5_active_dir") or "").strip()
+    if target:
+        return Path(target)
+    try:
+        data = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8")) if cfg.CONFIG_FILE.exists() else {}
+        target = str(data.get("dirs", {}).get("docx", "")).strip()
+        if target:
+            return Path(target).expanduser()
+    except Exception:
+        pass
+    return cfg.DOCX_DIR
 
 
 _render_stage_completion_notice()
@@ -2283,7 +2298,7 @@ if _active_view == "4_summary":
 # ── 5: Wiki반영 ─────────────────────────────────────────
 if _active_view == "5_wiki":
     _cur_wiki5_path = _current_wiki_dir()
-    _docx_dir5 = cfg.BASE_DIR / "5_위키문서(DOCX)"
+    _docx_dir5 = _current_docx_dir()
 
     def _proc_wiki5(stem):
         # 옵시디언·DOCX 토글 조합대로 출력을 생성한다 (둘 다 켜면 둘 다).
@@ -2379,12 +2394,13 @@ if _active_view == "5_wiki":
         "flow5",
     )
 
-    # ── 출력 방식 선택: 옵시디언 위키 · DOCX (독립, 둘 다 가능) ──────────────
-    _oc1_5, _oc2_5 = st.columns(2)
-    _ob_new5 = _oc1_5.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
-                             help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
-    _dx_new5 = _oc2_5.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
-                             help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
+    # ── 출력 방식 선택: DOCX · 옵시디언 위키 (독립, 둘 다 가능) — DOCX를
+    #    위, 옵시디언을 아래에 세로로 두어 옵시디언 토글 바로 밑에 보관함
+    #    설정이 이어지도록 한다 (2026-07-25).
+    _dx_new5 = st.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
+                          help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
+    _ob_new5 = st.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
+                          help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
     if bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx:
         llm.set_pref("use_obsidian", bool(_ob_new5))
         llm.set_pref("use_docx", bool(_dx_new5))
@@ -2692,25 +2708,6 @@ if _active_view == "settings":
         "API 키는 이 화면에서 직접 저장한 값만 사용합니다. "
         "저장 키는 `~/.config/mybookshelf/keys.json`에만 보관되며 저장소에 올라가지 않습니다."
     ))
-    with st.expander(t("저작권 및 사용 주의"), expanded=False):
-        st.markdown(t(
-            "**My Bookshelf** · © 2026 저작자 — 개인·비상업 연구 보조 용도. "
-            "이 프로그램의 저작권은 저작자에게 있으며, 개인적·학술적 용도로 사용할 수 있으나 "
-            "서면 동의 없는 재판매·상업적 배포는 허용되지 않습니다. 프로그램은 '있는 그대로' 제공되며 "
-            "정확성·무결성을 보증하지 않습니다."
-        ))
-        st.write(t(
-            "원문 문서의 저작권·번역권·요약·재배포 가능 여부는 이용자 본인이 확인해야 합니다. "
-            "이 앱은 법률·출판·학술 제출 요건을 자동 판정하지 않습니다."
-        ))
-        st.write(t(
-            "AI API 또는 CLI 구독 도구를 활성화하면 문서 일부 또는 전체가 외부 AI 서비스로 전송됩니다. "
-            "개인정보, 비공개 원고, 배포 권한이 불명확한 자료는 넣지 마세요."
-        ))
-        st.write(t(
-            "생성된 번역·요약·위키 노트의 정확성·완전성은 보장되지 않습니다. "
-            "출판·제출·인용·대외 배포 전에는 반드시 원문과 결과물을 직접 대조해 검토하세요."
-        ))
 
     # 위키 생성 모델 (공급자/모델) — 모노톤 AI 아이콘
     _wp, _wm = llm.wiki_provider_model()
@@ -2728,6 +2725,7 @@ if _active_view == "settings":
     else:
         st.info(t("사용 가능한 API 키나 활성화된 CLI가 없습니다. 아래에서 API 키를 입력하거나 CLI 사용을 켜세요."))
     st.caption(t("번역과 별개로, 위키 노트 생성에 쓸 모델입니다. 구조화 출력은 공급자별로 자동 처리됩니다."))
+    st.divider()
 
     # 요약 분량 — 원문 대비 % 슬라이더 (기본 설정 홈. 문서요약 탭과 pref 공유, 2026-07-23)
     st.markdown(f":material/tune: **{t('요약 분량')}**")
@@ -2796,6 +2794,25 @@ if _active_view == "settings":
             st.caption(f"모델: {', '.join(_info['models'])}")
 
     st.divider()
+    st.markdown(t("### :material/description: DOCX 보관함 설정"))
+    st.caption(
+        f"현재: `{_current_docx_dir()}` — 'DOCX 문서 생성'으로 만든 Word 문서가 여기 저장됩니다."
+    )
+    _dd_custom = st.text_input("폴더 경로 직접 입력", value="", key="docx_dir_custom",
+                               placeholder=str(_current_docx_dir()))
+    if st.button(t("DOCX 보관함 저장 (즉시 적용)"), icon=":material/save:", use_container_width=True, key="docx_dir_save"):
+        _dd_target = _dd_custom.strip()
+        if not _dd_target:
+            st.warning(t("경로를 입력하세요."))
+        elif _dd_target == str(_current_docx_dir()):
+            st.info("이미 이 폴더를 쓰고 있습니다.")
+        else:
+            set_docx_dir(_dd_target)
+            st.session_state["docx5_active_dir"] = _dd_target
+            st.success(f"✅ 저장됨: `{_dd_target}` — Tab 5에 즉시 반영됩니다")
+    st.caption("ℹ️ 기존에 만든 문서는 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
+
+    st.divider()
     st.markdown(t("### :material/book_2: 옵시디언(Obsidian) 보관함 설정"))
     st.caption(
         f"현재: `{_current_wiki_dir()}` — 생성된 위키 노트가 여기 저장되고, "
@@ -2823,6 +2840,27 @@ if _active_view == "settings":
             st.session_state["wiki5_active_dir"] = _wd_target
             st.success(f"✅ 저장됨: `{_wd_target}` — Tab 5에 즉시 반영됩니다")
     st.caption("ℹ️ 기존에 만든 노트는 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
+
+    st.divider()
+    with st.expander(t("저작권 및 사용 주의"), expanded=False):
+        st.markdown(t(
+            "**My Bookshelf** · © 2026 저작자 — 개인·비상업 연구 보조 용도. "
+            "이 프로그램의 저작권은 저작자에게 있으며, 개인적·학술적 용도로 사용할 수 있으나 "
+            "서면 동의 없는 재판매·상업적 배포는 허용되지 않습니다. 프로그램은 '있는 그대로' 제공되며 "
+            "정확성·무결성을 보증하지 않습니다."
+        ))
+        st.write(t(
+            "원문 문서의 저작권·번역권·요약·재배포 가능 여부는 이용자 본인이 확인해야 합니다. "
+            "이 앱은 법률·출판·학술 제출 요건을 자동 판정하지 않습니다."
+        ))
+        st.write(t(
+            "AI API 또는 CLI 구독 도구를 활성화하면 문서 일부 또는 전체가 외부 AI 서비스로 전송됩니다. "
+            "개인정보, 비공개 원고, 배포 권한이 불명확한 자료는 넣지 마세요."
+        ))
+        st.write(t(
+            "생성된 번역·요약·위키 노트의 정확성·완전성은 보장되지 않습니다. "
+            "출판·제출·인용·대외 배포 전에는 반드시 원문과 결과물을 직접 대조해 검토하세요."
+        ))
 
 # 로딩 오버레이 제거 + 이후 재렌더링에서는 오버레이 건너뜀
 _loading_ph.empty()

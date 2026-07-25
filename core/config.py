@@ -103,6 +103,8 @@ BASE_DIR = _p(_cfg.get("base_dir") or "~/Documents/My Bookshelf")
 # MYBOOKSHELF_WIKI_DIR 환경변수가 있으면 그 보관함으로 출력(업로드별 선택, 2026-06-11).
 _env_wiki = os.environ.get("MYBOOKSHELF_WIKI_DIR", "").strip()
 WIKI_DIR      = _p(_env_wiki) if _env_wiki else _dir("wiki", BASE_DIR / "wiki")
+# DOCX 문서 생성 시 저장할 폴더 — 설정 탭에서 옵시디언 보관함처럼 바꿀 수 있다 (2026-07-25).
+DOCX_DIR      = _dir("docx", BASE_DIR / "5_위키문서(DOCX)")
 
 
 def _folder_lang() -> str:

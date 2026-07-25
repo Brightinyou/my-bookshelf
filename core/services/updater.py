@@ -132,42 +132,33 @@ try {
   $pr = Start-Process -FilePath $Setup -ArgumentList '/SILENT','/NORESTART' -PassThru -Wait
   Log "install exit code: $($pr.ExitCode)"
 } catch { Log "install error: $_" }
-Start-Sleep -Seconds 2
-Remove-Item Env:_MEIPASS2 -ErrorAction SilentlyContinue
-Remove-Item Env:_MEIPASS -ErrorAction SilentlyContinue
-try {
-  $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
-  $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
-  $env:PATH = @($machinePath, $userPath) -join ';'
-} catch { Log "PATH reset failed: $_" }
-# 4) 재실행 — MyBookshelf.exe(런처)는 정상이면 desktop.py만 띄우고 자기 자신은
-#    곧바로 종료한다(수 초 내). desktop.py→스트림릿까지 완전히 뜨는 건 재설치
-#    직후 백신 실시간 검사 등으로 훨씬 오래 걸릴 수 있어(정상 지연), 그걸
-#    기다렸다가 재실행하면 "느릴 뿐인데 실패로 오판"해서 두 인스턴스가 동시에
-#    뜨며 충돌하는 문제가 있었다(2026-07-25 수정 전 버전).
-#    대신 런처 프로세스 자신이 몇 초 안에 스스로 끝나는지만 본다 — 안 끝나면
-#    보통 오류 대화상자에 멈춰 있는 것이므로, 그 인스턴스를 정리하고 한 번만
-#    다시 실행한다.
-function StartRelaunch {
-  if (-not (Test-Path $Relaunch)) { Log "relaunch target missing: $Relaunch"; return $null }
-  Log "relaunch: $Relaunch"
-  return Start-Process -FilePath $Relaunch -WorkingDirectory $Root -PassThru
+Log "install done"
+# 4) MyBookshelf.iss의 [Run]에 이미 postinstall 항목(start-app.vbs)이 있고,
+#    이건 skipifsilent가 붙어 있어도 우리가 쓰는 /SILENT(=/VERYSILENT 아님)
+#    에서는 실제로 실행된다는 걸 로그로 확인했다(Setup.exe /LOG=... 로 뜬
+#    두 번째 "-- Run entry --"가 wscript.exe start-app.vbs). 즉 보통은
+#    Setup.exe 자신이 이미 앱을 띄운다 — 예전처럼 이 헬퍼가 항상 추가로
+#    MyBookshelf.exe를 또 실행하면 두 인스턴스가 동시에 부트스트랩하며
+#    충돌해 "Failed to load Python DLL" 오류 창이 두 개씩 뜨는 문제가 있었다.
+#    다만 중첩된 프로세스 체인(hidden PowerShell → Setup.exe → wscript.exe)
+#    안에서는 그 자동 실행이 창 세션 접근 등의 이유로 가끔 늦거나 아예 안
+#    뜨는 것도 확인됨 — 그래서 넉넉히 기다려 보고, 정말 안 떴을 때만
+#    보조로 딱 한 번 수동 실행한다 (2026-07-25).
+$deadline2 = (Get-Date).AddSeconds(20)
+$cameUp = $false
+while ((Get-Date) -lt $deadline2) {
+  if (AppProcs) { $cameUp = $true; break }
+  Start-Sleep -Milliseconds 500
 }
-$launcherProc = StartRelaunch
-if ($launcherProc) {
-  $launcherDeadline = (Get-Date).AddSeconds(6)
-  $exitedCleanly = $false
-  while ((Get-Date) -lt $launcherDeadline) {
-    if ($launcherProc.HasExited) { $exitedCleanly = $true; break }
-    Start-Sleep -Milliseconds 300
-  }
-  if ($exitedCleanly) {
-    Log "launcher exited cleanly (code $($launcherProc.ExitCode))"
+if ($cameUp) {
+  Log "app came up on its own (via Setup.exe's own postinstall launch)"
+} else {
+  Log "app did not come up on its own within 20s - launching it as a fallback"
+  if (Test-Path $Relaunch) {
+    Start-Process -FilePath $Relaunch -WorkingDirectory $Root
+    Log "fallback relaunch: $Relaunch"
   } else {
-    Log "launcher still running after 6s (likely stuck on an error dialog) - closing it and retrying once"
-    try { Stop-Process -Id $launcherProc.Id -Force -ErrorAction SilentlyContinue } catch {}
-    Start-Sleep -Seconds 1
-    StartRelaunch | Out-Null
+    Log "fallback relaunch target missing: $Relaunch"
   }
 }
 Log "helper done"

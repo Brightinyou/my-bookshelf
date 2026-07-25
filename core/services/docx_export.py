@@ -4,10 +4,26 @@
 Word 문서로 저장한다. python-docx만 사용(순수 파이썬·시스템 의존성 없음)."""
 from __future__ import annotations
 
+import json
 import re
 import tempfile
 import shutil
 from pathlib import Path
+
+import config as cfg
+
+
+def set_docx_dir(path_str: str) -> None:
+    """~/.config/mybookshelf/config.json의 dirs.docx 갱신 — 앱 재시작 후 적용.
+    (옵시디언 보관함 설정의 set_wiki_dir와 동일한 방식, 2026-07-25)"""
+    f = cfg.CONFIG_FILE
+    try:
+        d = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    except Exception:
+        d = {}
+    d.setdefault("dirs", {})["docx"] = path_str
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _safe_name(stem: str) -> str:

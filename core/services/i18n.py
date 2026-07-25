@@ -502,6 +502,9 @@ _EN.update({
     "이 보관함(Vault)로 변경 (즉시 적용)": "Switch to this vault (apply now)",
     "직접 입력 경로로 변경 (즉시 적용)": "Switch to entered path (apply now)",
     "위키 보관함(Vault) 저장 (즉시 적용)": "Save Wiki vault (apply now)",
+    "DOCX 보관함 설정": "DOCX folder settings",
+    "DOCX 보관함 저장 (즉시 적용)": "Save DOCX folder (apply now)",
+    "경로를 입력하세요.": "Enter a path.",
     "Obsidian 보관함(Vault) 열기": "Open Obsidian vault",
     # 아이콘 전용 버튼 help
     "다시 합치기": "Merge again",
