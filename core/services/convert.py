@@ -28,9 +28,17 @@ OCR_REQUIRED_MSG = "이미지 전용 문서입니다 — TXT 분리를 위해서
 #   .hwp/.hwpx   rhwp (Rust 기반 한글 문서 파서의 파이썬 바인딩)
 OFFICE_EXTS = {".docx", ".hwp", ".hwpx"}
 NO_TEXT_MSG = "문서에서 텍스트를 추출하지 못했습니다 (빈 문서이거나 내용이 이미지로만 되어 있을 수 있습니다)."
+# 옛 OLE2 복합문서(.doc, HWP 5.0 등)를 확장자만 .docx로 잘못 저장한 경우 감지용
+# (2026-07-25) — DOCX는 ZIP(PK\x03\x04)이므로 OLE2 서명(D0 CF 11 E0)이면 진짜 docx가 아니다.
+_OLE2_SIG = b"\xd0\xcf\x11\xe0"
+MISLABELED_MSG = "실제로는 .docx(ZIP) 형식이 아닙니다 — 옛 .doc나 한글(HWP) 파일을 확장자만 .docx로 저장했을 수 있습니다. 원본 프로그램에서 실제 형식을 확인해 주세요."
 
 
 def _docx_to_text(path: Path) -> str:
+    with open(path, "rb") as f:
+        head = f.read(4)
+    if head == _OLE2_SIG:
+        raise ValueError(MISLABELED_MSG)
     from docx import Document
     doc = Document(str(path))
     return "\n".join(p.text for p in doc.paragraphs)
@@ -53,8 +61,8 @@ def office_to_txt(path: Path) -> tuple[Path | None, str, str]:
         else:
             return None, f"지원하지 않는 형식입니다: {suf}", ""
     except Exception as e:
-        append_log(f"WARN: {suf} 추출 실패 ({type(e).__name__}) {str(e)[:120]}")
-        return None, f"{suf} 파일을 읽지 못했습니다 ({type(e).__name__}: {str(e)[:80]})", ""
+        append_log(f"WARN: {suf} 추출 실패 ({type(e).__name__}) {str(e)[:160]}")
+        return None, f"{suf} 파일을 읽지 못했습니다 ({type(e).__name__}: {str(e)[:160]})", ""
     if not text.strip():
         return None, NO_TEXT_MSG, ""
     txt_path = Path(tempfile.gettempdir()) / (path.stem + ".txt")
