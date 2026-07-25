@@ -133,11 +133,27 @@ try {
   Log "install exit code: $($pr.ExitCode)"
 } catch { Log "install error: $_" }
 Start-Sleep -Seconds 2
-# 4) 재실행 — 재설치 직후 곧바로 실행하면 백신 실시간 검사 등과 겹쳐 드물게
-#    (PyInstaller onefile) DLL 로드가 실패하는 레이스 컨디션이 관찰됨.
-#    몇 초 안에 실제 앱(python) 프로세스가 뜨는지 확인하고, 안 떴으면 한 번 더 실행한다 (2026-07-25).
+# 4) 재실행 — 이 헬퍼는 원래 실행 중이던 MyBookshelf.exe(PyInstaller onefile)의
+#    자식(desktop.py)→손자(스트림릿)→증손(이 헬퍼) 프로세스로 이어져 실행되는데,
+#    그 원본 인스턴스가 부트스트랩 중 자신의 임시 압축해제 폴더(_MEI####)를
+#    PATH/환경변수에 남겨두면 이 체인을 그대로 상속한다. 원본은 이미 종료돼
+#    그 폴더가 지워졌으므로, 방금 새로 설치된 MyBookshelf.exe를 그 죽은 경로로
+#    잘못 재사용하려다 "Failed to load Python DLL" 오류가 나는 것으로 보인다.
+#    재실행 전에 PATH를 레지스트리 원본값으로 되돌리고 관련 환경변수를 지워
+#    새 인스턴스가 스스로 깨끗하게 압축을 풀도록 한다 (2026-07-25).
+Remove-Item Env:_MEIPASS2 -ErrorAction SilentlyContinue
+Remove-Item Env:_MEIPASS -ErrorAction SilentlyContinue
+try {
+  $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+  $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+  $env:PATH = @($machinePath, $userPath) -join ';'
+  Log "PATH reset for relaunch"
+} catch { Log "PATH reset failed: $_" }
+# 재설치 직후 곧바로 실행하면 백신 실시간 검사 등과 겹쳐 드물게 DLL 로드가
+# 실패하는 경우도 있어, 몇 초 안에 실제 앱(python) 프로세스가 뜨는지 확인하고
+# 안 떴으면 한 번 더 실행한다.
 function StartRelaunch {
-  if (Test-Path $Relaunch) { Log "relaunch: $Relaunch"; Start-Process -FilePath $Relaunch }
+  if (Test-Path $Relaunch) { Log "relaunch: $Relaunch"; Start-Process -FilePath $Relaunch -WorkingDirectory $Root }
   else { Log "relaunch target missing: $Relaunch" }
 }
 StartRelaunch
