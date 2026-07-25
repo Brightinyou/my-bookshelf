@@ -132,10 +132,26 @@ try {
   $pr = Start-Process -FilePath $Setup -ArgumentList '/SILENT','/NORESTART' -PassThru -Wait
   Log "install exit code: $($pr.ExitCode)"
 } catch { Log "install error: $_" }
-Start-Sleep -Seconds 1
-# 4) 재실행
-if (Test-Path $Relaunch) { Log "relaunch: $Relaunch"; Start-Process -FilePath $Relaunch }
-else { Log "relaunch target missing: $Relaunch" }
+Start-Sleep -Seconds 2
+# 4) 재실행 — 재설치 직후 곧바로 실행하면 백신 실시간 검사 등과 겹쳐 드물게
+#    (PyInstaller onefile) DLL 로드가 실패하는 레이스 컨디션이 관찰됨.
+#    몇 초 안에 실제 앱(python) 프로세스가 뜨는지 확인하고, 안 떴으면 한 번 더 실행한다 (2026-07-25).
+function StartRelaunch {
+  if (Test-Path $Relaunch) { Log "relaunch: $Relaunch"; Start-Process -FilePath $Relaunch }
+  else { Log "relaunch target missing: $Relaunch" }
+}
+StartRelaunch
+$relaunchDeadline = (Get-Date).AddSeconds(8)
+$launchedOk = $false
+while ((Get-Date) -lt $relaunchDeadline) {
+  if (AppProcs) { $launchedOk = $true; break }
+  Start-Sleep -Milliseconds 500
+}
+if (-not $launchedOk) {
+  Log "relaunch did not come up in time, retrying once"
+  Start-Sleep -Seconds 2
+  StartRelaunch
+}
 Log "helper done"
 """
 
