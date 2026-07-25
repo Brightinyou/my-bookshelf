@@ -811,8 +811,8 @@ def _do_update(info: dict) -> None:
 
 
 def _render_update_notice() -> None:
-    """새 버전 감지 시 반자동 업데이트 팝업 (Windows). 실패는 모두 안내형으로 폴백."""
-    if sys.platform != "win32":
+    """새 버전 감지 시 반자동 업데이트 팝업 (Windows·macOS). 실패는 모두 안내형으로 폴백."""
+    if sys.platform not in ("win32", "darwin"):
         return
     if "_update_info" not in st.session_state:
         st.session_state["_update_info"] = updater.check_for_update() or {}
@@ -2644,8 +2644,8 @@ if _active_view == "settings":
             # 항상 팝업을 보여준다 (2026-07-25).
             llm.set_pref("update_dismissed_version", "")
             st.rerun()
-        elif sys.platform != "win32":
-            st.info(t("앱 내 업데이트는 Windows에서만 지원됩니다."))
+        elif sys.platform not in ("win32", "darwin"):
+            st.info(t("앱 내 업데이트는 Windows·macOS에서만 지원됩니다."))
         else:
             st.success(t("최신 버전을 사용 중입니다."))
     st.divider()
