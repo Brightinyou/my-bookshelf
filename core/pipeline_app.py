@@ -1184,10 +1184,22 @@ def _checklist_keys(items: list[dict], prefix: str) -> list[str]:
 
 def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool = False) -> list:
     """체크박스 파일 목록. items=[{"key":str,"label":str,"meta":str,"obj":any,"group":str?}]
-    "group"이 있으면 같은 값이 연속될 때마다 책 이름 소제목을 붙여 묶어 보여준다
-    (선택 단위는 그대로 항목별 — 책 이름은 시각적 구분용, 2026-07-25).
+    "group"이 있으면 같은 값이 연속될 때마다 책 이름 소제목을 붙이고, 그 옆에
+    책 전체를 한 번에 선택/해제하는 체크박스를 함께 둔다(선택 단위 자체는 항목별
+    그대로 — 위키탭처럼 책 단위로 고를 수 있게, 2026-07-25).
     Returns: 선택된 obj 목록."""
     _keys = _checklist_keys(items, prefix)
+    _group_indices: dict[str, list[int]] = {}
+    for idx, it in enumerate(items):
+        _g = it.get("group")
+        if _g is not None:
+            _group_indices.setdefault(_g, []).append(idx)
+
+    def _toggle_group(grp: str, grp_key: str) -> None:
+        _val = st.session_state.get(grp_key, False)
+        for j in _group_indices.get(grp, []):
+            st.session_state[_keys[j]] = _val
+
     h1, h2, h3 = st.columns([1.3, 1, 4])
     if h1.button(t("전체 선택"), icon=":material/select_all:", key=f"{prefix}_sa", use_container_width=True):
         for _k in _keys:
@@ -1204,7 +1216,15 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
         for idx, it in enumerate(items):
             _grp = it.get("group")
             if _grp is not None and _grp != _prev_group:
-                st.markdown(f"**📚 {_grp}**")
+                _grp_key = f"{prefix}_grpchk_{_re.sub(r'[^a-zA-Z0-9가-힣_-]+', '_', str(_grp))[:60]}"
+                _agg = all(st.session_state.get(_keys[j], False) for j in _group_indices[_grp])
+                if st.session_state.get(_grp_key) != _agg:
+                    st.session_state[_grp_key] = _agg
+                _ghc1, _ghc2 = st.columns([0.05, 0.95])
+                _ghc1.checkbox(" ", key=_grp_key, label_visibility="collapsed",
+                               on_change=_toggle_group, args=(_grp, _grp_key),
+                               help=t("이 책 전체 선택/해제"))
+                _ghc2.markdown(f"**📚 {_grp}**")
                 _prev_group = _grp
             k = _keys[idx]
             cols = st.columns([0.05, 0.82, 0.13]) if viewable else st.columns([0.05, 0.95])
