@@ -73,6 +73,7 @@ from services.wiki import (
     open_in_obsidian, open_wiki_vault, set_wiki_dir, wiki_generator_running,
 )
 from services.docx_export import build_docx_from_chapter_summaries, set_docx_dir
+from services.hwpx_export import build_hwpx_from_chapter_summaries, set_hwpx_dir
 from services.i18n import get_lang, set_lang, t, tf
 
 # ── 설정 ─────────────────────────────────────────────────
@@ -484,19 +485,20 @@ with _font_col:
 # 영어 UI에서는 영→한 번역 단계가 무의미하므로 번역을 파이프라인에서 숨긴다 (2026-07-10)
 _translation_on = (get_lang() != "en")
 
-# 5단계(출력) 선택: 옵시디언 위키 / Word DOCX / 둘 다 (독립 토글, 2026-07-24)
+# 5단계(출력) 선택: 옵시디언 위키 / Word DOCX / 한글 HWPX (독립 토글, 2026-07-24, HWPX 2026-08-09)
 _use_ob = bool(llm.get_pref("use_obsidian", True))
 _use_dx = bool(llm.get_pref("use_docx", False))
+_use_hx = bool(llm.get_pref("use_hwpx", False))
 def _out_short() -> str:
-    if _use_ob and _use_dx: return "DOCX+위키"
-    if _use_dx: return "DOCX 생성"
-    if _use_ob: return "위키반영"
-    return "출력 선택"
+    parts = [nm for on, nm in [(_use_dx, "DOCX"), (_use_hx, "HWPX"), (_use_ob, "위키")] if on]
+    if not parts:
+        return "출력 선택"
+    if parts == ["위키"]:
+        return "위키반영"
+    return "+".join(parts) + ("" if "위키" in parts else " 생성")
 def _out_flow() -> str:
-    if _use_ob and _use_dx: return "Word(.docx) + Obsidian Wiki"
-    if _use_dx: return "Word(.docx)"
-    if _use_ob: return "Obsidian Wiki"
-    return "출력 미선택"
+    parts = [nm for on, nm in [(_use_dx, "Word(.docx)"), (_use_hx, "한글(.hwpx)"), (_use_ob, "Obsidian Wiki")] if on]
+    return " + ".join(parts) if parts else "출력 미선택"
 if _translation_on:
     st.caption(tf("PDF → TXT변환 → 장별 분할 → 영문번역 → 요약생성 → %s", _out_flow()))
 else:
@@ -554,10 +556,13 @@ def _stage_icon(tid: str) -> str:
 def _stage_desc(tid: str, desc: str) -> str:
     if tid != "5_wiki":
         return desc
-    if _use_ob and _use_dx: return "요약을 Obsidian 위키와 Word(.docx) 문서 둘 다로 저장"
-    if _use_dx: return "요약을 편집 가능한 Word(.docx) 문서로 저장"
-    if _use_ob: return "요약을 Obsidian 노트로 저장 · 요약(_wiki.md) → 보관함(Vault)"
-    return "출력 방식(위키/DOCX)을 하나 이상 선택하세요"
+    _parts = [nm for on, nm in [(_use_ob, "Obsidian 위키"), (_use_dx, "Word(.docx) 문서"), (_use_hx, "한글(.hwpx) 문서")] if on]
+    if not _parts:
+        return "출력 방식(위키/DOCX/HWPX)을 하나 이상 선택하세요"
+    if len(_parts) == 1:
+        return f"요약을 {_parts[0]}로 저장" if _parts[0] != "Obsidian 위키" \
+            else "요약을 Obsidian 노트로 저장 · 요약(_wiki.md) → 보관함(Vault)"
+    return f"요약을 {' · '.join(_parts)} 여러 곳에 저장"
 
 _active_view = st.session_state.get("active_view")
 # 영어 UI에서 번역 탭에 머물러 있으면 메뉴로 되돌린다 (번역 단계 숨김)
@@ -1202,6 +1207,21 @@ def _current_docx_dir() -> Path:
     return cfg.DOCX_DIR
 
 
+def _current_hwpx_dir() -> Path:
+    """HWPX 저장 폴더 — DOCX와 동일한 방식 (2026-08-09)."""
+    target = (st.session_state.get("hwpx5_active_dir") or "").strip()
+    if target:
+        return Path(target)
+    try:
+        data = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8")) if cfg.CONFIG_FILE.exists() else {}
+        target = str(data.get("dirs", {}).get("hwpx", "")).strip()
+        if target:
+            return Path(target).expanduser()
+    except Exception:
+        pass
+    return cfg.HWPX_DIR
+
+
 _render_stage_completion_notice()
 _render_ocr_notice()
 _render_update_notice()
@@ -1387,6 +1407,10 @@ if _active_view in {"1_txt", "all_run"}:
                 _dest1.write_bytes(_uf_new.read())
                 _added1.append(_uf_new.name)
                 _already_queued1.add(_uf_new.name)
+                # 같은 이름으로 새로 올라온 파일이므로 예전 중복확인 응답은 무효화
+                # (내용이 바뀌었을 수 있음 — 다시 물어야 함).
+                st.session_state.get("_ocr_dup_confirmed", set()).discard(_uf_new.name)
+                st.session_state.get("_ocr_dup_dismissed", set()).discard(_uf_new.name)
             except Exception as _e1:
                 st.error(f"❌ 저장 실패: {_uf_new.name} — {_e1}")
         st.session_state["_ocr_queued"] = _already_queued1
@@ -1456,14 +1480,42 @@ if _active_view in {"1_txt", "all_run"}:
 
     st.divider()
 
-    # 처리 대기 목록 (UPLOAD_TMP) — 이미 변환된(TXT 존재) 원본은 제외해 잔재가 대기에
-    # 계속 뜨는 문제 방지(변환 실패로 TXT 없는 것은 그대로 남아 재시도 가능). (2026-07-24)
+    # 처리 대기 목록 (UPLOAD_TMP) — 이미 변환된(TXT 존재) 원본은 기본 제외해 잔재가
+    # 대기에 계속 뜨는 문제 방지(변환 실패로 TXT 없는 것은 그대로 남아 재시도 가능).
+    # 다만 같은 파일명이라도 내용이 바뀌었을 수 있으므로, 제외하기 전에 사용자에게
+    # 다시 처리할지 먼저 물어본다(2026-08-09).
     _converted_stems1 = {_nfc(p.stem) for p in cfg.TXT_DIR.rglob("*.txt")} if cfg.TXT_DIR.exists() else set()
-    _pending_all1 = sorted(
+    _dup_confirmed1 = st.session_state.setdefault("_ocr_dup_confirmed", set())
+    _dup_dismissed1 = st.session_state.setdefault("_ocr_dup_dismissed", set())
+    _all_uploaded1 = (
         [f for f in UPLOAD_TMP.glob("*")
-         if f.is_file() and f.suffix.lower() in {".pdf", ".docx", ".hwp", ".hwpx", ".txt", ".md"}
-         and _nfc(f.stem) not in _converted_stems1]
-        if UPLOAD_TMP.exists() else [],
+         if f.is_file() and f.suffix.lower() in {".pdf", ".docx", ".hwp", ".hwpx", ".txt", ".md"}]
+        if UPLOAD_TMP.exists() else []
+    )
+    _dup_unconfirmed1 = sorted(
+        [f for f in _all_uploaded1
+         if _nfc(f.stem) in _converted_stems1
+         and f.name not in _dup_confirmed1 and f.name not in _dup_dismissed1],
+        key=lambda f: f.stat().st_mtime, reverse=True,
+    )
+    if _dup_unconfirmed1:
+        st.warning(t("⚠️ 이미 처리된 적 있는 파일명이 있습니다 — 원고 내용이 바뀌었을 수 있습니다. 다시 처리할까요?"))
+        for _dupf1 in _dup_unconfirmed1:
+            _dc1, _dc2, _dc3 = st.columns([4, 1.3, 1.3])
+            _dc1.markdown(f"`{_dupf1.name}`")
+            if _dc2.button(t("다시 처리"), icon=":material/refresh:", key=f"dup_redo_{_dupf1.name}",
+                            use_container_width=True, type="primary"):
+                _dup_confirmed1.add(_dupf1.name)
+                st.rerun()
+            if _dc3.button(t("건너뛰기"), icon=":material/close:", key=f"dup_skip_{_dupf1.name}",
+                            use_container_width=True):
+                _dup_dismissed1.add(_dupf1.name)
+                _dupf1.unlink(missing_ok=True)
+                st.rerun()
+        st.divider()
+    _pending_all1 = sorted(
+        [f for f in _all_uploaded1
+         if _nfc(f.stem) not in _converted_stems1 or f.name in _dup_confirmed1],
         key=lambda f: f.stat().st_mtime, reverse=True,
     )
     st.markdown(tf("#### 처리 대기 (%d개)", len(_pending_all1)))
@@ -2314,11 +2366,12 @@ if _active_view == "4_summary":
 if _active_view == "5_wiki":
     _cur_wiki5_path = _current_wiki_dir()
     _docx_dir5 = _current_docx_dir()
+    _hwpx_dir5 = _current_hwpx_dir()
 
     def _proc_wiki5(stem):
-        # 옵시디언·DOCX 토글 조합대로 출력을 생성한다 (둘 다 켜면 둘 다).
+        # 옵시디언·DOCX·HWPX 토글 조합대로 출력을 생성한다 (여러 개 켜면 전부).
         _res = []
-        _produced = {"wiki": None, "docx": None}
+        _produced = {"wiki": None, "docx": None, "hwpx": None}
         if _use_ob:
             _cdir = chapters_dir(DEFAULT_WS, stem)
             for _cjf in list_summary_files(_cdir):
@@ -2332,8 +2385,13 @@ if _active_view == "5_wiki":
             _res.append(("DOCX", _dok, Path(_dmsg).name if _dok else str(_dmsg)[:45]))
             if _dok:
                 _produced["docx"] = Path(_dmsg)
+        if _use_hx:
+            _hok, _hmsg = build_hwpx_from_chapter_summaries(DEFAULT_WS, stem, _hwpx_dir5)
+            _res.append(("HWPX", _hok, Path(_hmsg).name if _hok else str(_hmsg)[:45]))
+            if _hok:
+                _produced["hwpx"] = Path(_hmsg)
         if not _res:
-            return False, f"{stem}: {t('출력 방식(위키/DOCX)을 하나 이상 선택하세요')}"
+            return False, f"{stem}: {t('출력 방식(위키/DOCX/HWPX)을 하나 이상 선택하세요')}"
         _allok = all(r[1] for r in _res)
         if _allok:
             queue_remove("tab5_ready", [stem])
@@ -2344,19 +2402,23 @@ if _active_view == "5_wiki":
 
     def _wiki5_on_done():
         # 방금 처리에서 책이 정확히 한 권이면, 폴더 대신 그 결과물을 바로 연다
-        # (DOCX 단독 → 파일 바로 열기, 위키 단독/둘다 → Obsidian에서 그 노트 바로 열기).
+        # (DOCX·HWPX만 켠 단독 출력 → 파일 바로 열기, 위키 켜짐 → Obsidian에서 그 노트 바로 열기).
         _touched5 = dict(st.session_state.pop("wiki5_touched", {}))
         _open_label5, _open_action5 = None, None
         if len(_touched5) == 1:
             _produced5 = next(iter(_touched5.values()))
-            if _use_dx and not _use_ob and _produced5.get("docx"):
-                _docx_path5 = _produced5["docx"]
-                _open_label5 = t("DOCX 파일 열기")
-                _open_action5 = lambda p=_docx_path5: open_path(p)
-            elif _use_ob and _produced5.get("wiki"):
+            if _use_ob and _produced5.get("wiki"):
                 _note_path5 = _produced5["wiki"]
                 _open_label5 = t("Obsidian에서 열기")
                 _open_action5 = lambda p=_note_path5: open_in_obsidian(p)
+            elif _use_dx and not _use_hx and _produced5.get("docx"):
+                _docx_path5 = _produced5["docx"]
+                _open_label5 = t("DOCX 파일 열기")
+                _open_action5 = lambda p=_docx_path5: open_path(p)
+            elif _use_hx and not _use_dx and _produced5.get("hwpx"):
+                _hwpx_path5 = _produced5["hwpx"]
+                _open_label5 = t("HWPX 파일 열기")
+                _open_action5 = lambda p=_hwpx_path5: open_path(p)
         _log5 = st.session_state.get("wiki5_log", [])
         _fails5 = [ln[2:].strip() for ln in _log5 if ln.startswith("❌")]
         _oks5 = [ln[2:].strip() for ln in _log5 if ln.startswith("✅")]
@@ -2376,7 +2438,8 @@ if _active_view == "5_wiki":
             t("5-출력 완료"),
             tf("완료: %s", _out_flow()),
             next_stage=None,
-            open_target=(_docx_dir5 if (_use_dx and not _use_ob) else _stage_folder("5_wiki")),
+            open_target=(_stage_folder("5_wiki") if _use_ob
+                         else (_docx_dir5 if _use_dx else _hwpx_dir5)),
             open_label=_open_label5,
             open_action=_open_action5,
         )
@@ -2386,19 +2449,20 @@ if _active_view == "5_wiki":
     _vault5f = _current_wiki_dir()
     _n_notes5f = sum(1 for _ in _vault5f.rglob("*.md")) if _vault5f.exists() else 0
     _n_docx5 = len(list(_docx_dir5.glob("*.docx"))) if _docx_dir5.exists() else 0
+    _n_hwpx5 = len(list(_hwpx_dir5.glob("*.hwpx"))) if _hwpx_dir5.exists() else 0
     if _run_active("wiki5"):
         _run_panel("wiki5", "출력 생성 중", _proc_wiki5, on_done=_wiki5_on_done)
         st.stop()
-    if _use_ob and not _use_dx:
-        _after_cards5 = [("② 처리후 · Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f))]
-    elif _use_dx and not _use_ob:
-        _after_cards5 = [("② 처리후 · Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5))]
-    else:
-        # 둘 다 켠 경우 폴더가 서로 다르므로 카드도 따로 둔다 — DOCX 폴더, 위키 폴더 순 (2026-07-25)
-        _after_cards5 = [
-            ("② 처리후 · Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5)),
-            ("③ 처리후 · Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f)),
-        ]
+    # 켠 출력만 카드로 — 여러 개 켜면 폴더가 서로 달라 카드도 그만큼 늘어난다 (2026-07-25, HWPX 2026-08-09)
+    _out_cards5 = []
+    if _use_dx:
+        _out_cards5.append(("Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5)))
+    if _use_hx:
+        _out_cards5.append(("한글 문서(HWPX)", _hwpx_dir5, tf("%d개", _n_hwpx5)))
+    if _use_ob:
+        _out_cards5.append(("Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f)))
+    _circled5 = ["②", "③", "④"]
+    _after_cards5 = [(f"{_circled5[_i5]} 처리후 · {_nm5}", _p5, _c5) for _i5, (_nm5, _p5, _c5) in enumerate(_out_cards5)]
     _stage_flow_panel(
         f":material/{_stage_icon('5_wiki')}: {_out_short()}",
         _stage_desc("5_wiki", ""),
@@ -2409,21 +2473,25 @@ if _active_view == "5_wiki":
         "flow5",
     )
 
-    # ── 출력 방식 선택: DOCX · 옵시디언 위키 (독립, 둘 다 가능) — DOCX를
-    #    위, 옵시디언을 아래에 세로로 두어 옵시디언 토글 바로 밑에 보관함
-    #    설정이 이어지도록 한다 (2026-07-25).
+    # ── 출력 방식 선택: DOCX · HWPX · 옵시디언 위키 (독립, 여러 개 가능) — 옵시디언을
+    #    맨 아래에 두어 그 토글 바로 밑에 보관함 설정이 이어지도록 한다 (2026-07-25, HWPX 2026-08-09).
     _dx_new5 = st.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
                           help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
     if _use_dx:
         st.caption(tf("Word 문서는 여기에 저장됩니다: `%s`", str(_docx_dir5)))
+    _hx_new5 = st.toggle(t("HWPX 문서 생성"), value=_use_hx, key="wiki5_use_hwpx",
+                          help=t("편집 가능한 한글(.hwpx) 문서로 저장합니다."))
+    if _use_hx:
+        st.caption(tf("한글 문서는 여기에 저장됩니다: `%s`", str(_hwpx_dir5)))
     _ob_new5 = st.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
                           help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
-    if bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx:
+    if bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx or bool(_hx_new5) != _use_hx:
         llm.set_pref("use_obsidian", bool(_ob_new5))
         llm.set_pref("use_docx", bool(_dx_new5))
+        llm.set_pref("use_hwpx", bool(_hx_new5))
         st.rerun()
-    if not (_use_ob or _use_dx):
-        st.warning(t("출력 방식을 하나 이상 선택하세요 (위키 또는 DOCX)."))
+    if not (_use_ob or _use_dx or _use_hx):
+        st.warning(t("출력 방식을 하나 이상 선택하세요 (위키·DOCX·HWPX 중)."))
 
     # ── 위키 저장 보관함(Vault) 선택 (옵시디언 사용 시 의미) ──────────────
     _vaults5 = list_obsidian_vaults()
@@ -2828,6 +2896,25 @@ if _active_view == "settings":
             set_docx_dir(_dd_target)
             st.session_state["docx5_active_dir"] = _dd_target
             st.success(f"✅ 저장됨: `{_dd_target}` — Tab 5에 즉시 반영됩니다")
+    st.caption("ℹ️ 기존에 만든 문서는 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
+
+    st.divider()
+    st.markdown(t("### :material/description: HWPX 보관함 설정"))
+    st.caption(
+        f"현재: `{_current_hwpx_dir()}` — 'HWPX 문서 생성'으로 만든 한글 문서가 여기 저장됩니다."
+    )
+    _hd_custom = st.text_input("폴더 경로 직접 입력", value="", key="hwpx_dir_custom",
+                               placeholder=str(_current_hwpx_dir()))
+    if st.button(t("HWPX 보관함 저장 (즉시 적용)"), icon=":material/save:", use_container_width=True, key="hwpx_dir_save"):
+        _hd_target = _hd_custom.strip()
+        if not _hd_target:
+            st.warning(t("경로를 입력하세요."))
+        elif _hd_target == str(_current_hwpx_dir()):
+            st.info("이미 이 폴더를 쓰고 있습니다.")
+        else:
+            set_hwpx_dir(_hd_target)
+            st.session_state["hwpx5_active_dir"] = _hd_target
+            st.success(f"✅ 저장됨: `{_hd_target}` — Tab 5에 즉시 반영됩니다")
     st.caption("ℹ️ 기존에 만든 문서는 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
 
     st.divider()

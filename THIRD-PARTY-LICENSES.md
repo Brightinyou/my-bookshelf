@@ -22,6 +22,7 @@ binary tool.
 |---|---|
 | rhwp-python | MIT |
 | python-docx | MIT |
+| python-hwpx | Apache-2.0 |
 | pythonnet | MIT |
 | anthropic | MIT |
 | pypdfium2 | BSD-3-Clause, Apache-2.0 (bundles Google's PDFium; see the package's own `LICENSE` for PDFium's third-party dependency licenses) |

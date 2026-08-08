@@ -105,6 +105,8 @@ _env_wiki = os.environ.get("MYBOOKSHELF_WIKI_DIR", "").strip()
 WIKI_DIR      = _p(_env_wiki) if _env_wiki else _dir("wiki", BASE_DIR / "wiki")
 # DOCX 문서 생성 시 저장할 폴더 — 설정 탭에서 옵시디언 보관함처럼 바꿀 수 있다 (2026-07-25).
 DOCX_DIR      = _dir("docx", BASE_DIR / "5_위키문서(DOCX)")
+# HWPX(한글) 문서 생성 시 저장할 폴더 — DOCX_DIR과 동일한 방식 (2026-08-09).
+HWPX_DIR      = _dir("hwpx", BASE_DIR / "5_위키문서(HWPX)")
 
 
 def _folder_lang() -> str:

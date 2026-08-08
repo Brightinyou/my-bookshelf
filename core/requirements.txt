@@ -17,3 +17,6 @@ python-docx>=1.1
 
 # 텍스트 변환 단계에서 DOCX·HWP·HWPX 원본을 읽기 위함 (2026-07-25)
 rhwp-python>=0.8
+
+# 위키 노트 → 한글(.hwpx) 내보내기 (Apache-2.0, 2026-08-09)
+python-hwpx>=6.0
