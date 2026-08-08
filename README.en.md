@@ -137,10 +137,12 @@ Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`).
 
 ## 9. Copyright and disclaimer
 
-**My Bookshelf** — © 2026 the author. Provided for personal, non-commercial research use.
+**My Bookshelf** — © 2026 Byungsub Jeon.
 
 **About the program**
-- Copyright in this program belongs to the author. You may use and copy it for personal and academic purposes, but you may not resell or commercially distribute it without the author's written consent.
+- The source code is released under the [MIT License](LICENSE) — free to use, modify, and redistribute for personal, academic, or commercial purposes.
+- This license covers the code only. It does not grant rights to reuse the "My Bookshelf" name, icon, or branding in a distribution unrelated to this project — especially one that could be mistaken for the original (e.g. a commercial re-release). Forks/redistributions should use a different name/icon.
+- Licenses for bundled open-source components (e.g. Poppler) are listed in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 - The program is provided "as-is", with no warranty of fitness for a particular purpose or integrity. The author is not liable for any data loss or damage from its use.
 
 **About your documents and generated output**
