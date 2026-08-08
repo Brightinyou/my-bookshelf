@@ -1416,7 +1416,7 @@ if _active_view in {"1_txt", "all_run"}:
                     st.error(tf("(%s) 때문에 가져올 수 없습니다.", _reason1))
                 else:
                     st.write(tf("✅ 다운로드 가능: `%s`", _src_file1.name))
-                    _ok_prep1, _final_txt1, _final_pdf1, _msg_prep1 = prepare_downloaded_paper_source(_src_file1)
+                    _ok_prep1, _final_txt1, _final_pdf1, _msg_prep1 = prepare_downloaded_paper_source(_src_file1, _paper_src1)
                     if _ok_prep1:
                         st.success(tf("✅ TXT 저장 완료: %s", _msg_prep1))
                         if _final_pdf1:

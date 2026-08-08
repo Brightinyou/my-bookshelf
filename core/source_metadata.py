@@ -93,5 +93,27 @@ def pdf_dates_for_txt(txt_path: Path) -> dict[str, str]:
     return pdf_dates_for_pdf(pdf) if pdf else {}
 
 
+def paper_meta_for_stem(stem: str) -> dict[str, str]:
+    """DOI/arXiv로 받은 논문의 {stem}.papermeta.json(CrossRef/arXiv API 조회 결과)을
+    찾아 반환. 없으면 빈 dict — services.papers._write_paper_meta_sidecar가 기록한다."""
+    import json
+
+    fname = f"{stem}.papermeta.json"
+    direct = cfg.PDF_DIR / fname
+    candidates = [direct] if direct.exists() else []
+    if not candidates:
+        try:
+            candidates = [p for p in cfg.PDF_DIR.rglob("*.papermeta.json") if p.name == fname]
+        except Exception:
+            candidates = []
+    if not candidates:
+        return {}
+    try:
+        data = json.loads(candidates[0].read_text(encoding="utf-8"))
+        return {k: v for k, v in data.items() if isinstance(v, str) and v.strip()}
+    except Exception:
+        return {}
+
+
 def frontmatter_lines(meta: dict[str, object]) -> str:
     return "".join(yaml_line(k, v) for k, v in meta.items())

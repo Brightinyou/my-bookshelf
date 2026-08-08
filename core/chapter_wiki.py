@@ -670,10 +670,14 @@ def generate_overview(book, sections, head_text=""):
     intro_sent = _length_params(0)["intro_sent"]   # 책 개요 문장수도 pct에 연동
     secs = "\n".join(f"{s['idx']}. {s['title']}: {s['summary']}" for s in sections)
     try:
-        return _gen_json(OVERVIEW_PROMPT.format(
+        ov = _gen_json(OVERVIEW_PROMPT.format(
             book=book, secs=secs, intro_sent=intro_sent, head=(head_text or "(제공되지 않음)")), 8192)
     except Exception:
-        return {"category": "기타", "summary": "", "intro": ""}
+        ov = {"category": "기타", "summary": "", "intro": ""}
+    # DOI/arXiv로 받은 논문이면 CrossRef/arXiv API 조회 결과(서지정보)가 LLM 추측보다
+    # 정확하므로 우선한다 (services.papers._write_paper_meta_sidecar가 기록해 둔 값).
+    ov.update({k: v for k, v in smeta.paper_meta_for_stem(book).items() if v})
+    return ov
 
 
 # ── 노트 빌더 ──
