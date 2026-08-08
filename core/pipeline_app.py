@@ -1626,6 +1626,16 @@ if _active_view == "2_split":
 
     def _proc_split2(obj):
         _ws, _stem = obj["ws"], obj["stem"]
+        # 재분할 확인을 받은 책이면, 옛 챕터·번역·요약이 새 챕터와 뒤섞이지 않도록
+        # 먼저 폴더를 비운다(2026-08-09) — split_book_to_chapters는 같은 이름의
+        # 챕터 파일만 덮어쓰고, 새 분할의 챕터 수가 줄면 옛 파일이 그대로 남는다.
+        if _stem in st.session_state.get("_split_dup_confirmed", set()):
+            _old_ch_dir = chapters_dir(_ws, _stem)
+            if _old_ch_dir.exists():
+                shutil.rmtree(_old_ch_dir, ignore_errors=True)
+            # 재확인 없이 계속 통과되지 않도록, 처리 성공 여부와 무관하게 1회용으로 소진한다.
+            st.session_state.get("_split_dup_confirmed", set()).discard(_stem)
+            st.session_state.get("_split_dup_dismissed", set()).discard(_stem)
         _sn, _serr, _smode = split_book_to_chapters(_ws, _stem)
         if _serr:
             if _smode == "single":  # 장 구조 감지 실패 — 아래 '장 구조 미감지'에서 선택하게 함
@@ -1708,7 +1718,11 @@ if _active_view == "2_split":
             cfg.TXT_DIR.mkdir(parents=True, exist_ok=True)
             _dst2 = cfg.TXT_DIR / _u2.name
             _dst2.write_bytes(_u2.read())
-            _added_split_stems2.append(_nfc(Path(_u2.name).stem))
+            _stem_u2 = _nfc(Path(_u2.name).stem)
+            _added_split_stems2.append(_stem_u2)
+            # 같은 이름으로 새로 올라온 TXT이므로 예전 재분할 확인 응답은 무효화
+            st.session_state.get("_split_dup_confirmed", set()).discard(_stem_u2)
+            st.session_state.get("_split_dup_dismissed", set()).discard(_stem_u2)
         if _added_split_stems2:
             queue_add("tab2_ready", _added_split_stems2)
         st.success(tf("%d개 TXT 저장 완료", len(_up2))); st.rerun()
@@ -1725,6 +1739,12 @@ if _active_view == "2_split":
     _extra2 = sorted(_all_txt2_stems - _q2_stems_set)  # 큐에 없는 TXT
     _all2_stems = list(_q2_stems) + _extra2
 
+    # 이미 챕터가 있는 책은 기본 제외(과분할·중복 방지)하되, TXT가 다시 들어왔다면
+    # 원고 내용이 바뀌었을 수 있으므로 조용히 건너뛰지 않고 먼저 물어본다(2026-08-09,
+    # 텍스트변환 탭의 같은 문제 수정과 동일한 이유).
+    _split_dup_confirmed2 = st.session_state.setdefault("_split_dup_confirmed", set())
+    _split_dup_dismissed2 = st.session_state.setdefault("_split_dup_dismissed", set())
+    _split_dup_unconfirmed2: list[dict] = []
     for _stem2 in _all2_stems:
         _txt2 = _txt_root2 / (_stem2 + ".txt")
         if not _txt2.exists():
@@ -1735,15 +1755,38 @@ if _active_view == "2_split":
         _ch_txts2 = [f for f in (_ch2.glob("??_*.txt") if _ch2.exists() else [])
                      if not f.stem.endswith(("_ko", "_wiki"))]
         _meta2 = f"{_txt2.stat().st_size//1024}KB" + ("" if _stem2 in _q2_stems_set else " ·미등록")
-        if not _ch_txts2:
-            _src2 = _txt2.read_text(encoding="utf-8", errors="ignore")
-            _item2 = {"key": _stem2, "label": _stem2, "meta": _meta2,
-                      "obj": {"ws": DEFAULT_WS, "stem": _stem2}}
-            if _is_small_document_for_whole_translation(_src2):
-                _item2["text"] = _src2
-                _split_short2.append(_item2)
-            else:
-                _split_pend2.append(_item2)
+        _already2 = bool(_ch_txts2) and _stem2 not in _split_dup_confirmed2
+        if _already2 and _stem2 not in _split_dup_dismissed2:
+            _split_dup_unconfirmed2.append({"stem": _stem2, "meta": _meta2})
+            continue
+        if _already2:  # 건너뛰기로 이미 응답함 — 조용히 제외
+            continue
+        _src2 = _txt2.read_text(encoding="utf-8", errors="ignore")
+        _item2 = {"key": _stem2, "label": _stem2, "meta": _meta2,
+                  "obj": {"ws": DEFAULT_WS, "stem": _stem2}}
+        if _is_small_document_for_whole_translation(_src2):
+            _item2["text"] = _src2
+            _split_short2.append(_item2)
+        else:
+            _split_pend2.append(_item2)
+
+    if _split_dup_unconfirmed2:
+        st.warning(t(
+            "⚠️ 이미 챕터 분할된 책과 같은 이름의 TXT가 있습니다 — 원고 내용이 바뀌었을 수 있습니다. "
+            "다시 분할할까요? (다시 분할하면 이 책의 기존 챕터·번역·요약이 모두 삭제되고 새로 만들어집니다)"
+        ))
+        for _dupb2 in _split_dup_unconfirmed2:
+            _bc1, _bc2, _bc3 = st.columns([4, 1.3, 1.3])
+            _bc1.markdown(f"`{_dupb2['stem']}` ({_dupb2['meta']})")
+            if _bc2.button(t("다시 분할"), icon=":material/refresh:", key=f"splitdup_redo_{_dupb2['stem']}",
+                            use_container_width=True, type="primary"):
+                _split_dup_confirmed2.add(_dupb2["stem"])
+                st.rerun()
+            if _bc3.button(t("건너뛰기"), icon=":material/close:", key=f"splitdup_skip_{_dupb2['stem']}",
+                            use_container_width=True):
+                _split_dup_dismissed2.add(_dupb2["stem"])
+                st.rerun()
+        st.divider()
 
     st.markdown(tf("#### 분할 대기 (%d권)", len(_split_pend2)))
     if _split_pend2:
