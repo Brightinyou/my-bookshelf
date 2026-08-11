@@ -386,6 +386,11 @@ _EN: dict[str, str] = {
         "Nothing to publish — books register automatically after 📝 Summarizer, or add manually below",
     "➕ 수동으로 추가 (요약 완료된 책에서 선택)": "➕ Add manually (from summarized books)",
     "%d챕터 요약": "%d chapter summaries",
+    "➕ EPUB 대상 수동으로 추가 (챕터가 있는 책 — 번역·요약 여부 무관)":
+        "➕ Add manually for EPUB (any book with chapters — translation/summary not required)",
+    "%d챕터": "%d chapters",
+    " · 요약 %d개": " · %d summarized",
+    " · 요약 전": " · not summarized yet",
     "#### 단일 TXT → Wiki (%d권 · 챕터 분할 없음)": "#### Single TXT → Wiki (%d · no chapter split)",
     "전체 TXT를 Gemini에 넣어 백그라운드로 단일 위키 노트 생성":
         "Feeds the whole TXT to Gemini and builds a single wiki note in the background",

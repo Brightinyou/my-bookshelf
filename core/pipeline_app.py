@@ -2602,6 +2602,39 @@ if _active_view == "5_wiki":
     if _use_ep:
         st.caption(tf("전자책은 여기에 저장됩니다: `%s`", str(_epub_dir5)))
         st.caption(t("⚠️ 저작권이 있는 책 전체 내용이 그대로 담깁니다 — 개인적인 사용 목적으로만 사용하세요."))
+        # EPUB 전용 수동 추가 — 요약(_wiki.md) 없이 챕터만 있어도 대상이 된다.
+        # 아래 '요약 완료된 책' 추가와 달리, 요약·번역을 안 거친 책도 여기서 바로
+        # 큐(tab5_ready)에 넣을 수 있다 (2026-08-11).
+        with st.expander(t("➕ EPUB 대상 수동으로 추가 (챕터가 있는 책 — 번역·요약 여부 무관)")):
+            _epch_root5 = cfg.CHAPTERS_DIR
+            _epall5 = list(_epch_root5.iterdir()) if _epch_root5.exists() else []
+            _epsearch5 = st.text_input(t("책 이름 검색"), key="epub5_search", placeholder=t("검색어 입력…"))
+            _epbooks5 = []
+            for _epd in _epall5:
+                if not _epd.is_dir():
+                    continue
+                _epchs5 = [f for f in _epd.glob("??_*.txt")
+                           if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+                if not _epchs5:
+                    continue
+                _epbooks5.append((_epd, len(_epchs5), len(list_summary_files(_epd))))
+            _epbooks5.sort(key=lambda b: b[0].stat().st_mtime, reverse=True)
+            _epfilt5 = ([b for b in _epbooks5 if _epsearch5.lower() in b[0].name.lower()]
+                        if _epsearch5 else _epbooks5)
+            _epitems5 = [
+                {"key": d.name, "label": d.name,
+                 "meta": tf("%d챕터", n) + (tf(" · 요약 %d개", s) if s else t(" · 요약 전")),
+                 "obj": d.name}
+                for d, n, s in _epfilt5
+            ]
+            _epsel5 = _checklist(_epitems5, "epub5m", height=200)
+            _epc5a, _epc5b = st.columns(2)
+            if _epc5a.button(tf("선택 항목 큐에 추가 (%d권)", len(_epsel5)), icon=":material/add:", key="epub5m_add",
+                             use_container_width=True, disabled=len(_epsel5) == 0):
+                queue_add("tab5_ready", _epsel5); st.rerun()
+            if _epc5b.button(tf("삭제 (%d권)", len(_epsel5)), icon=":material/delete:", key="epub5m_del",
+                             use_container_width=True, disabled=len(_epsel5) == 0):
+                queue_remove("tab5_ready", _epsel5); st.rerun()
     st.divider()
 
     st.caption(t("요약 기반 (_wiki.md에서 생성)"))
