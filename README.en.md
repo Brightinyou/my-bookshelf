@@ -78,11 +78,12 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 - **Length control**: in the Settings tab or the collapsible **"Adjust summary length"** here, set the summary body to **5–40 % of the source** (15 % default). Higher values make longer notes and increase **output tokens / API cost** (input tokens for the source stay the same). Short chapters keep a minimum length.
 - Select queued items and press **[▶ Start]**.
 
-### ④ 📖 Output (Create DOCX · Create HWPX · Wiki)
-- This stage has **three independent toggles at the top of the tab — "Create DOCX document", "Create HWPX document", and "Use Obsidian wiki"**. **Enable several to produce all of them.** The top menu name changes accordingly.
-  - **Word document (DOCX)**: merges summaries into an editable **Word (.docx)** document saved in the `5_위키문서(DOCX)` folder (handy to share with or cite for others).
-  - **Hangul document (HWPX)**: merges summaries into an editable **Hangul (.hwpx)** document saved in the `5_위키문서(HWPX)` folder (handy where a Korean HWP-format submission is required).
-  - **Obsidian Wiki**: merges summaries into a **hub note + per-chapter notes** in the Obsidian vault.
+### ④ 📖 Output (Create EPUB · Create DOCX · Create HWPX · Wiki)
+- This stage has **four independent toggles at the top of the tab**. **Enable several to produce all of them.** The top menu name changes accordingly. The screen separates the three summary-based outputs (DOCX, HWPX, Obsidian) from EPUB, which is full text.
+  - **EPUB e-book** *(full text — not a summary)*: bundles the **complete** source/translated chapters into a single book-length `.epub` file saved in the `5_전자책(EPUB)` folder. Untranslated Korean source chapters automatically get OCR spacing fixed by AI — this only removes stray whitespace, never translation or proofreading, and any paragraph where even one character would change falls back to the untouched original. **⚠️ Because this contains the entire copyrighted book as-is, use it for personal use only — distributing or sharing it may violate copyright law.**
+  - **Word document (DOCX)** *(summary-based)*: merges summaries into an editable **Word (.docx)** document saved in the `5_위키문서(DOCX)` folder (handy to share with or cite for others).
+  - **Hangul document (HWPX)** *(summary-based)*: merges summaries into an editable **Hangul (.hwpx)** document saved in the `5_위키문서(HWPX)` folder (handy where a Korean HWP-format submission is required).
+  - **Obsidian Wiki** *(summary-based)*: merges summaries into a **hub note + per-chapter notes** in the Obsidian vault.
   - Turning all off shows a warning — you must pick **at least one**.
 - The note/document frontmatter is auto-filled with **author, publication date, and publisher (`Place: Publisher`)**, extracted from the source's title/colophon page (left blank if not confidently found).
 - If a book is already reflected, the popup asks **"Replace?"** to update it in place.
@@ -119,12 +120,13 @@ Default data folders (folder names are Korean or English depending on the instal
 1_PDF_Originals/    original PDFs
 2_Converted_TXT/    converted TXT (done/ = archived sources after split)
 3_Chapters/<book>/  workspace holding chapters, translations (_ko), summaries (_wiki.md), overview
+5_전자책(EPUB)/      exported EPUB e-books (when "Create EPUB" is on — full text, not a summary; this folder name stays in Korean regardless of the UI language)
 5_위키문서(DOCX)/    exported DOCX documents (when "Create DOCX document" is on — this folder name stays in Korean regardless of the UI language)
 5_위키문서(HWPX)/    exported HWPX documents (when "Create HWPX document" is on — this folder name stays in Korean regardless of the UI language)
 Failed/, Logs/      failed files, logs
 ```
 
-Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`). Word (.docx) and Hangul (.hwpx) documents are saved to the `5_위키문서(DOCX)/` and `5_위키문서(HWPX)/` folders above, respectively. Settings live in `~/.config/mybookshelf/config.json` (macOS/Linux) or the same path under your user profile.
+Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`). EPUB, Word (.docx), and Hangul (.hwpx) files are saved to the `5_전자책(EPUB)/`, `5_위키문서(DOCX)/`, and `5_위키문서(HWPX)/` folders above, respectively. Settings live in `~/.config/mybookshelf/config.json` (macOS/Linux) or the same path under your user profile.
 
 ---
 
@@ -142,7 +144,7 @@ Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`).
 **My Bookshelf** — © 2026 Byungsub Jeon.
 
 **About the program**
-- The source code is released under the [MIT License](LICENSE) — free to use, modify, and redistribute for personal, academic, or commercial purposes.
+- The source code is released under the [PolyForm Noncommercial License 1.0.0](LICENSE) — free to use, modify, and redistribute for personal, academic, or nonprofit purposes, but **commercial use is prohibited**.
 - This license covers the code only. It does not grant rights to reuse the "My Bookshelf" name, icon, or branding in a distribution unrelated to this project — especially one that could be mistaken for the original (e.g. a commercial re-release). Forks/redistributions should use a different name/icon.
 - Licenses for bundled open-source components (e.g. Poppler) are listed in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 - The program is provided "as-is", with no warranty of fitness for a particular purpose or integrity. The author is not liable for any data loss or damage from its use.

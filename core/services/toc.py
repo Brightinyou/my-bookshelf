@@ -85,22 +85,38 @@ def _page_char_counts(txt: str) -> list[int]:
     return [len(re.sub(r"\s+", "", p)) for p in txt.split("\f")]
 
 
+def _evenly_sample(seq: list[int], budget: int) -> list[int]:
+    """seq(오름차순)에서 budget개를 전체 구간에 고르게 뽑는다(앞쪽 순서대로 자르면
+    긴 책 뒷부분 장이 통째로 후보에서 빠짐 — 2026-08-09, 800쪽 책에서 3장 이후
+    누락 실측)."""
+    if len(seq) <= budget:
+        return seq
+    step = len(seq) / budget
+    return [seq[int(i * step)] for i in range(budget)]
+
+
 def _scan_page_indices(txt: str, total_pages: int) -> list[int]:
     """시각 판독에 보낼 페이지(0-기반) 선정 — 앞부분(차례 후보) + 희박 페이지(장 구분 후보).
     장 구분 페이지는 글자가 거의 없어 텍스트 층에서 로컬로 식별 가능하다."""
     counts = _page_char_counts(txt)
     n = min(total_pages, len(counts))
-    picked = set(range(min(18, n)))                     # 차례는 보통 앞 18쪽 내
+    front = set(range(min(18, n)))                      # 차례는 보통 앞 18쪽 내 — 항상 포함
     body = [c for c in counts[:n] if c > 0]
     med = sorted(body)[len(body) // 2] if body else 0
     thresh = max(60, int(med * 0.18))
     sparse = [i for i in range(2, n) if counts[i] <= thresh]
-    for i in sparse[:30]:                               # 구분 페이지 + 다음 쪽(장 제목 확인용)
-        picked.add(i)
+    rest: set[int] = set()
+    for i in _evenly_sample(sparse, 30):                # 구분 페이지 + 다음 쪽(장 제목 확인용)
+        rest.add(i)
         if i + 1 < n:
-            picked.add(i + 1)
-    out = sorted(picked)
-    return out[:55]                                     # 공급자 페이지 한도·비용 상한
+            rest.add(i + 1)
+    picked = front | rest
+    if len(picked) <= 55:                               # 공급자 페이지 한도·비용 상한
+        return sorted(picked)
+    # 앞쪽 차례 후보(front)는 그대로 두고, 나머지에서만 고르게 줄인다 —
+    # 그냥 뒤를 자르면 앞쪽 rest만 남고 후반부 장 구분 후보가 다시 사라진다.
+    extra = _evenly_sample(sorted(rest - front), max(0, 55 - len(front)))
+    return sorted(front | set(extra))
 
 
 def _build_scan_pdf(pdf_path: Path, page_indices: list[int]) -> Path | None:
@@ -407,12 +423,22 @@ def _split_at(txt: str, marks: list[tuple[int, str]]) -> list[tuple[str, str]] |
     positions = [p for p, _t in marks]
     bounds = positions + [len(txt)]
     chapters: list[tuple[str, str]] = []
+    # 첫 장 표시 이전(표지·서문·머리말 등)은 그냥 버려지면 안 된다 — 실측: 영문서
+    # 한 권에서 표지·추천사·서문이 통째로 유실됨(2026-08-11). 충분히 길면 별도
+    # "머리말" 장으로, 짧으면 1장 본문 앞에 그대로 붙인다.
+    lead = txt[:bounds[0]].strip()
+    if len(lead) >= 300:
+        chapters.append(("머리말", lead))
+    elif lead:
+        bounds[0] = 0
+    n = 0
     for i, (_p, title) in enumerate(marks):
         body = txt[bounds[i]:bounds[i + 1]].strip()
         if len(body) < 300 and chapters:
             chapters[-1] = (chapters[-1][0], chapters[-1][1] + "\n\n" + body)
             continue
-        chapters.append((f"{len(chapters) + 1}. {title}", body))
+        n += 1
+        chapters.append((f"{n}. {title}", body))
     return chapters if len(chapters) >= 3 else None
 
 

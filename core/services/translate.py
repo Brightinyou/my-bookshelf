@@ -8,6 +8,7 @@ from pathlib import Path
 import llm_providers as llm
 
 from services.common import _save_json_atomic, append_log
+from services.files import _save_bilingual_atomic
 
 _KO_SCRIPT = _re.compile(r"[가-힣]")
 
@@ -504,8 +505,111 @@ def _needs_translation(stem: str) -> bool:
     return not bool(_HANGUL_RE.search(stem))
 
 
-def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple[bool, str]:
-    """단일 챕터 TXT 번역 → _ko.txt 저장. (ok, msg).
+def build_clean_system() -> str:
+    """OCR 자간 정리 시스템 프롬프트 — 번역·교정이 아니라 공백 제거만 허용."""
+    return (
+        "You are a meticulous copy-editing assistant. The input is Korean text extracted "
+        "from a scanned book by OCR, and words are often broken apart by stray spaces "
+        "inserted INSIDE them (e.g. '스 콜 라 철 학' should become '스콜라철학'). "
+        "Your ONLY job: remove those stray in-word spaces so each word reads normally. "
+        "Do NOT translate. Do NOT rephrase, correct grammar, fix typos, or change any "
+        "character, word, or punctuation — you may ONLY delete whitespace characters. "
+        "Do NOT add or remove any word. If you are not sure whether a gap is a stray OCR "
+        "space or a real word boundary, leave it unchanged. "
+        "Output ONLY the corrected text, nothing else."
+    )
+
+
+def _clean_paragraph_ko(paragraph: str, engine: str) -> str | None:
+    """자간 정리 시도 — 실패하면 None(원문 유지 신호)."""
+    if not engine or ":" not in engine:
+        return None
+    provider, model = engine.split(":", 1)
+    try:
+        out = llm.complete(provider, model, build_clean_system(), paragraph, max_tokens=4096)
+        return (out or "").strip() or None
+    except Exception as e:
+        append_log(f"WARN: 한글 자간정리 실패 [{engine}] ({type(e).__name__}): {str(e)[:200]}")
+        return None
+
+
+def _clean_is_valid(src: str, out: str | None) -> bool:
+    """정리 결과 검증 — 공백을 뺀 나머지 글자가 원문과 완전히 같아야 신뢰한다(공백만 지웠다는 뜻).
+    한 글자라도 달라졌으면 AI가 내용을 추론해 바꿨다는 신호이므로 거부하고 원문을 그대로 쓴다."""
+    if out is None:
+        return False
+    src_chars = _re.sub(r"\s+", "", src or "")
+    out_chars = _re.sub(r"\s+", "", out or "")
+    return bool(out_chars) and out_chars == src_chars
+
+
+def _is_mostly_korean(text: str, threshold: float = 0.3) -> bool:
+    sample = text[:1000]
+    return len(_KO_SCRIPT.findall(sample)) / max(len(sample), 1) >= threshold
+
+
+def clean_chapter_ko(ch_path: Path, engine: str, progress_cb=None) -> tuple[bool, str]:
+    """챕터 TXT의 한글 문단만 AI로 자간 정리해 <stem>_clean.txt로 저장. (ok, msg).
+    문단 단위로 검증하며, 검증 실패한 문단은 원문 그대로 보존한다(내용 변경 없음이 보장됨).
+    번역과 동일하게 문단마다 진행분을 캐시해 중단돼도 이어할 수 있다."""
+    try:
+        text = ch_path.read_text(encoding="utf-8", errors="ignore")
+        clean_path = ch_path.with_name(ch_path.stem + "_clean.txt")
+        progress_path = ch_path.with_name(ch_path.stem + "_clean.progress.json")
+        paras = _split_paragraphs_robust(text)
+        out: list[str] = []
+        cleaned_n = kept_n = skipped_n = 0
+        total = len(paras) or 1
+
+        cached_rows: dict[int, str] = {}
+        if progress_path.exists():
+            try:
+                loaded = json.loads(progress_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, list):
+                    cached_rows = {
+                        int(row.get("idx")): row.get("out", "")
+                        for row in loaded
+                        if isinstance(row, dict) and isinstance(row.get("idx"), int)
+                               and row.get("src") == paras[int(row.get("idx")) - 1]
+                    }
+            except Exception:
+                cached_rows = {}
+
+        rows_to_save: list[dict] = []
+        for idx, p in enumerate(paras, 1):
+            if idx in cached_rows:
+                out.append(cached_rows[idx])
+                rows_to_save.append({"idx": idx, "src": p, "out": cached_rows[idx]})
+                if progress_cb:
+                    progress_cb(idx, total, cleaned_n, kept_n, skipped_n)
+                continue
+            if not _is_mostly_korean(p):
+                out.append(p)
+                skipped_n += 1
+            else:
+                result = _clean_paragraph_ko(p, engine)
+                if _clean_is_valid(p, result):
+                    out.append(result)
+                    cleaned_n += 1
+                else:
+                    out.append(p)
+                    kept_n += 1
+            rows_to_save.append({"idx": idx, "src": p, "out": out[-1]})
+            _save_json_atomic(progress_path, rows_to_save)
+            if progress_cb:
+                progress_cb(idx, total, cleaned_n, kept_n, skipped_n)
+
+        clean_path.write_text("\n\n".join(out), encoding="utf-8")
+        progress_path.unlink(missing_ok=True)
+        return True, f"{total}단락 · 정리 {cleaned_n} · 원문유지 {kept_n} · 비한글제외 {skipped_n}"
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
+                           want_plain: bool = True, want_bilingual: bool = False) -> tuple[bool, str]:
+    """단일 챕터 TXT 번역. want_plain이면 _ko.txt, want_bilingual이면 원문·번역을
+    문단별로 나란히 묶은 _bilingual.txt도 저장(둘 다 켜면 둘 다 저장). (ok, msg).
 
     중단 대비 (2026-07-03): Streamlit rerun 등으로 도중에 죽어도 진행분이
     읽을 수 있는 _ko.partial.md로 남는다. 완주하면 _ko.txt로 확정하고
@@ -514,15 +618,18 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
     try:
         text = ch_path.read_text(encoding="utf-8", errors="ignore")
         ko_path = ch_path.with_name(ch_path.stem + "_ko.txt")
+        bilingual_path = ch_path.with_name(ch_path.stem + "_bilingual.txt")
         partial_path = ch_path.with_name(ch_path.stem + "_ko.partial.md")
         progress_path = ch_path.with_name(ch_path.stem + "_ko.progress.json")
         if not needs_translation(ch_path):
-            ko_path.write_text(text, encoding="utf-8")
+            if want_plain:
+                ko_path.write_text(text, encoding="utf-8")
             partial_path.unlink(missing_ok=True)
             progress_path.unlink(missing_ok=True)
             return True, "이미 한국어 — 그대로 복사"
         paras = _split_paragraphs_robust(text)
         out: list[str] = []
+        bilingual_pairs: list[tuple[str, str]] = []  # (원문, 번역) — dropped 단락은 제외(out과 동일 기준)
         translated_n = preserved_n = dropped_n = failed_n = resumed_n = api_calls = 0
         total = len(paras) or 1
 
@@ -557,6 +664,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
                     dropped_n += 1
                 else:
                     out.append(tgt)
+                    bilingual_pairs.append((p, tgt))
                     if status == "preserved":
                         preserved_n += 1
                     else:
@@ -575,6 +683,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
                 continue
             if should_skip_translation(p):
                 out.append(p)
+                bilingual_pairs.append((p, p))
                 preserved_n += 1
                 cached_rows[idx] = {"idx": idx, "src": p, "tgt": p, "status": "preserved"}
             else:
@@ -582,10 +691,12 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
                 api_calls += 1
                 if _translation_is_valid(p, ko):
                     out.append(ko)
+                    bilingual_pairs.append((p, ko))
                     translated_n += 1
                     cached_rows[idx] = {"idx": idx, "src": p, "tgt": ko, "status": "translated"}
                 else:
                     out.append(p)
+                    bilingual_pairs.append((p, p))
                     failed_n += 1
                     cached_rows[idx] = {"idx": idx, "src": p, "tgt": p, "status": "failed"}
             _save_json_atomic(progress_path, [cached_rows[i] for i in sorted(cached_rows)])
@@ -599,9 +710,13 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
             detail += f" · 실패보존 {failed_n}"
         if translated_n == 0:
             ko_path.unlink(missing_ok=True)
+            bilingual_path.unlink(missing_ok=True)
             partial_path.unlink(missing_ok=True)
             return False, detail + " — 유효한 한국어 번역 결과가 없습니다"
-        ko_path.write_text("\n\n".join(out), encoding="utf-8")
+        if want_plain:
+            ko_path.write_text("\n\n".join(out), encoding="utf-8")
+        if want_bilingual:
+            _save_bilingual_atomic(bilingual_path, [f"{src}\n\n{tgt}" for src, tgt in bilingual_pairs])
         # 완주 — 중간 산출물 정리 (partial은 _ko.txt로 확정됨, progress 캐시 소진)
         partial_path.unlink(missing_ok=True)
         progress_path.unlink(missing_ok=True)

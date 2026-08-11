@@ -299,6 +299,12 @@ _EN: dict[str, str] = {
     "💡 다음 단계: **🌐 영문번역 앱**으로 이동하세요": "💡 Next: go to **🌐 Translator**",
 
     # ── 3: 번역 ─────────────────────────────────────────
+    "번역 (_ko.txt)": "Translation (_ko.txt)",
+    "원문 없이 한국어 번역문만 저장합니다.": "Saves only the Korean translation, without the source text.",
+    "영한대역 (_bilingual.txt)": "Bilingual EN-KO (_bilingual.txt)",
+    "원문과 번역을 문단별로 나란히 저장합니다.": "Saves the source and translation side by side, paragraph by paragraph.",
+    "번역 · 영한대역 중 하나 이상 선택하세요.": "Select at least one of Translation or Bilingual EN-KO.",
+    "출력 방식(번역/영한대역)을 하나 이상 선택하세요": "Select at least one output (Translation/Bilingual EN-KO)",
     "TXT 직접 업로드 (즉시 번역)": "Upload TXT directly (translate now)",
     "⏸️ 번역 중 다른 버튼을 누르거나 화면을 이동하면 중단됩니다 — 진행분은 `_ko.partial.md`로 저장되고, 같은 챕터를 다시 실행하면 이어서 번역합니다.":
         "⏸️ Clicking anything or navigating during translation interrupts it — progress is kept in `_ko.partial.md`, and re-running the chapter resumes where it stopped.",
@@ -680,6 +686,29 @@ _EN.update({
     "② 처리후 · DOCX+위키": "② After · DOCX + Wiki",
     "DOCX %d · 위키 %d": "DOCX %d · Wiki %d",
     "DOCX 문서 생성": "Create DOCX document",
+    "EPUB 전자책 생성": "Create EPUB e-book",
+    "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로).":
+        "Bundles the full source/translated chapters into a single .epub e-book (full text, not a summary).",
+    "출력 방식을 하나 이상 선택하세요 (위키·DOCX·HWPX·EPUB 중).":
+        "Select at least one output (Wiki, DOCX, HWPX, or EPUB).",
+    "출력 방식(위키/DOCX/HWPX/EPUB)을 하나 이상 선택하세요":
+        "Select at least one output (Wiki/DOCX/HWPX/EPUB)",
+    "EPUB 파일 열기": "Open EPUB file",
+    "EPUB 보관함 저장 (즉시 적용)": "Save EPUB folder (applies immediately)",
+    "요약 기반 (_wiki.md에서 생성)": "Summary-based (generated from _wiki.md)",
+    "전문 그대로 (요약 아님 — 챕터 원문·번역본 전체)": "Full text (not a summary — the complete chapters/translation)",
+    "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
+    "번역본이 없는 한글 원문 챕터는 OCR 자간 깨짐만 AI가 자동으로 붙입니다 — "
+    "번역·교정이 아니라 공백 제거만 하며, 한 글자라도 달라지면 원문을 그대로 씁니다. "
+    "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다.":
+        "Bundles the full source/translated chapters into a single .epub e-book (full text, not a "
+        "summary). Untranslated Korean source chapters automatically get OCR spacing fixed by AI — "
+        "this only removes stray whitespace, never translation or proofreading, and falls back to "
+        "the untouched original the moment a single character would change. "
+        "⚠️ This contains the entire copyrighted book, so use it for personal use only — "
+        "distributing or sharing it may violate copyright law.",
+    "⚠️ 저작권이 있는 책 전체 내용이 그대로 담깁니다 — 개인적인 사용 목적으로만 사용하세요.":
+        "⚠️ This contains the entire copyrighted book as-is — for personal use only.",
     "Obsidian 보관함에 위키 노트로 저장합니다.": "Saves as wiki notes in the Obsidian vault.",
     "편집 가능한 Word(.docx) 문서로 저장합니다.": "Saves as an editable Word (.docx) document.",
     "출력 방식을 하나 이상 선택하세요 (위키 또는 DOCX).": "Select at least one output (Wiki or DOCX).",

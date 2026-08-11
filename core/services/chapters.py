@@ -221,7 +221,7 @@ def _merge_chapter_folder(ws_name: str, stem: str, prefer_ko: bool = False) -> t
     if not ch_dir.exists():
         return False, None, "챕터 폴더 없음"
     chapters = sorted(
-        [f for f in ch_dir.glob("??_*.txt") if not f.stem.endswith(("_ko", "_wiki"))],
+        [f for f in ch_dir.glob("??_*.txt") if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))],
         key=lambda p: p.name,
     )
     if not chapters:
@@ -314,7 +314,7 @@ def summarize_book_overview(ws_name: str, stem: str) -> tuple[bool, str]:
             _full = _orig.read_text(encoding="utf-8", errors="ignore")
             head_text = (_full[:3500] + "\n…\n" + _full[-1500:]).strip()
         else:
-            _txts = [f for f in sorted(ch_dir.glob("??_*.txt")) if not f.stem.endswith(("_ko", "_wiki"))]
+            _txts = [f for f in sorted(ch_dir.glob("??_*.txt")) if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
             if _txts:
                 _h = _txts[0].read_text(encoding="utf-8", errors="ignore")[:3500]
                 _t = _txts[-1].read_text(encoding="utf-8", errors="ignore")[-2000:]

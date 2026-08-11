@@ -1,6 +1,8 @@
 # Third-party licenses
 
-My Bookshelf's own source code is MIT-licensed (see `LICENSE`). It depends on
+My Bookshelf's own source code is licensed under PolyForm Noncommercial 1.0.0
+(see `LICENSE`) — free for personal/noncommercial use, commercial use
+prohibited. It depends on
 the open-source packages below, either as Python libraries or as a bundled
 binary tool.
 

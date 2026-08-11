@@ -74,6 +74,7 @@ from services.wiki import (
 )
 from services.docx_export import build_docx_from_chapter_summaries, set_docx_dir
 from services.hwpx_export import build_hwpx_from_chapter_summaries, set_hwpx_dir
+from services.epub_export import build_epub_from_chapters, set_epub_dir
 from services.i18n import get_lang, set_lang, t, tf
 
 # ── 설정 ─────────────────────────────────────────────────
@@ -485,19 +486,23 @@ with _font_col:
 # 영어 UI에서는 영→한 번역 단계가 무의미하므로 번역을 파이프라인에서 숨긴다 (2026-07-10)
 _translation_on = (get_lang() != "en")
 
-# 5단계(출력) 선택: 옵시디언 위키 / Word DOCX / 한글 HWPX (독립 토글, 2026-07-24, HWPX 2026-08-09)
+# 5단계(출력) 선택: 옵시디언 위키 / Word DOCX / 한글 HWPX / EPUB (독립 토글,
+# 2026-07-24, HWPX 2026-08-09, EPUB 2026-08-11 — EPUB만 요약이 아니라 챕터 원문·번역본
+# 전체를 담는다는 점에서 나머지 셋과 소스가 다름).
 _use_ob = bool(llm.get_pref("use_obsidian", True))
 _use_dx = bool(llm.get_pref("use_docx", False))
 _use_hx = bool(llm.get_pref("use_hwpx", False))
+_use_ep = bool(llm.get_pref("use_epub", False))
 def _out_short() -> str:
-    parts = [nm for on, nm in [(_use_dx, "DOCX"), (_use_hx, "HWPX"), (_use_ob, "위키")] if on]
+    parts = [nm for on, nm in [(_use_dx, "DOCX"), (_use_hx, "HWPX"), (_use_ep, "EPUB"), (_use_ob, "위키")] if on]
     if not parts:
         return "출력 선택"
     if parts == ["위키"]:
         return "위키반영"
     return "+".join(parts) + ("" if "위키" in parts else " 생성")
 def _out_flow() -> str:
-    parts = [nm for on, nm in [(_use_dx, "Word(.docx)"), (_use_hx, "한글(.hwpx)"), (_use_ob, "Obsidian Wiki")] if on]
+    parts = [nm for on, nm in [(_use_dx, "Word(.docx)"), (_use_hx, "한글(.hwpx)"),
+                                (_use_ep, "EPUB"), (_use_ob, "Obsidian Wiki")] if on]
     return " + ".join(parts) if parts else "출력 미선택"
 if _translation_on:
     st.caption(tf("PDF → TXT변환 → 장별 분할 → 영문번역 → 요약생성 → %s", _out_flow()))
@@ -506,8 +511,23 @@ else:
 
 
 def _route_translate(stem: str) -> bool:
-    """이 책을 번역 대기로 보낼지 — 영어 UI에서는 항상 False(요약으로 직행)."""
-    return _translation_on and _needs_translation(stem)
+    """이 책을 번역 대기로 보낼지 — 영어 UI에서는 항상 False(요약으로 직행).
+
+    실제 첫 챕터 본문의 한글 비율로 판단한다. 파일명(저자명)만 보고 판단하면
+    "The Artifice of Intelligence_노린 헤르츠펠트"처럼 원서 제목에 저자명만
+    한글 음역인 경우 번역이 필요 없다고 오판해 번역을 건너뛴다(2026-08-11 실측).
+    챕터 파일을 아직 못 찾을 때만 옛 파일명 휴리스틱으로 폴백한다."""
+    if not _translation_on:
+        return False
+    _cdir_rt = chapters_dir(DEFAULT_WS, stem)
+    _first_ch_rt = next(
+        iter(sorted(f for f in _cdir_rt.glob("??_*.txt")
+                    if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean")))),
+        None,
+    ) if _cdir_rt.exists() else None
+    if _first_ch_rt is not None:
+        return needs_translation(_first_ch_rt)
+    return _needs_translation(stem)
 
 _loading_step("파일 목록 확인 중…", "처리된 파일과 API 설정을 읽고 있습니다")
 
@@ -951,7 +971,7 @@ def _chapter_rel_paths(ws_name: str, stem: str) -> list[str]:
     return [
         str(f.relative_to(cfg.BASE_DIR))
         for f in sorted(ch_dir.glob("??_*.txt"))
-        if not f.stem.endswith(("_ko", "_wiki"))
+        if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))
     ]
 
 
@@ -1220,6 +1240,21 @@ def _current_hwpx_dir() -> Path:
     except Exception:
         pass
     return cfg.HWPX_DIR
+
+
+def _current_epub_dir() -> Path:
+    """EPUB 저장 폴더 — DOCX/HWPX와 동일한 방식 (2026-08-11)."""
+    target = (st.session_state.get("epub5_active_dir") or "").strip()
+    if target:
+        return Path(target)
+    try:
+        data = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8")) if cfg.CONFIG_FILE.exists() else {}
+        target = str(data.get("dirs", {}).get("epub", "")).strip()
+        if target:
+            return Path(target).expanduser()
+    except Exception:
+        pass
+    return cfg.EPUB_DIR
 
 
 _render_stage_completion_notice()
@@ -1645,7 +1680,7 @@ if _active_view == "2_split":
             return False, f"{_stem}: {_serr}"
         _cdir = chapters_dir(_ws, _stem)
         _new = [str(f.relative_to(cfg.BASE_DIR)) for f in sorted(_cdir.glob("??_*.txt"))
-                if not f.stem.endswith(("_ko", "_wiki"))]
+                if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
         if not _new:
             return False, f"{_stem}: 챕터 생성 안 됨"
         queue_remove("tab2_ready", [_stem])
@@ -1753,7 +1788,7 @@ if _active_view == "2_split":
             continue
         _ch2 = chapters_dir(DEFAULT_WS, _stem2)
         _ch_txts2 = [f for f in (_ch2.glob("??_*.txt") if _ch2.exists() else [])
-                     if not f.stem.endswith(("_ko", "_wiki"))]
+                     if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
         _meta2 = f"{_txt2.stat().st_size//1024}KB" + ("" if _stem2 in _q2_stems_set else " ·미등록")
         _already2 = bool(_ch_txts2) and _stem2 not in _split_dup_confirmed2
         if _already2 and _stem2 not in _split_dup_dismissed2:
@@ -1878,7 +1913,7 @@ if _active_view == "2_split":
                 _ch_dir2 = chapters_dir(_o2["ws"], _o2["stem"])
                 _new_chs2 = [str(f.relative_to(cfg.BASE_DIR))
                              for f in sorted(_ch_dir2.glob("??_*.txt"))
-                             if not f.stem.endswith(("_ko", "_wiki"))]
+                             if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
                 if _new_chs2:
                     queue_add("tab3_ready" if _route_translate(_o2["stem"]) else "tab4_ready", _new_chs2)
                     _archive_split_source(_o2["stem"])
@@ -1901,7 +1936,7 @@ if _active_view == "2_split":
                 queue_remove("tab2_ready", [_o2["stem"]])
                 _new_chs2 = [str(f.relative_to(cfg.BASE_DIR))
                              for f in sorted(_one_path2.parent.glob("??_*.txt"))
-                             if not f.stem.endswith(("_ko", "_wiki"))]
+                             if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
                 _stage2 = "3_translate" if _route_translate(_o2["stem"]) else "4_summary"
                 if _new_chs2:
                     queue_add("tab3_ready" if _stage2 == "3_translate" else "tab4_ready", _new_chs2)
@@ -1951,7 +1986,7 @@ if _active_view == "2_split":
                     _ch_dir2b = chapters_dir(DEFAULT_WS, _ns2)
                     _new_chs2b = [str(f.relative_to(cfg.BASE_DIR))
                                   for f in sorted(_ch_dir2b.glob("??_*.txt"))
-                                  if not f.stem.endswith(("_ko", "_wiki"))]
+                                  if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
                     if _new_chs2b:
                         if _route_translate(_ns2):
                             queue_add("tab3_ready", _new_chs2b)
@@ -1998,12 +2033,18 @@ if _active_view == "2_split":
 # ── 3: 번역 ─────────────────────────────────────────────
 if _active_view == "3_translate":
     _tr_eng3 = _settings_engine_id()
+    # 번역 출력 방식(독립 토글, 여러 개 가능) — 그냥 번역이 기본, 영한대역은 선택 (2026-08-11)
+    _want_plain3 = bool(llm.get_pref("translate_want_plain", True))
+    _want_bil3 = bool(llm.get_pref("translate_want_bilingual", False))
 
     def _proc_translate3(rel, progress_cb=None):
         _cf = cfg.BASE_DIR / rel
         if not _cf.exists():
             return False, f"{Path(rel).name}: 파일 없음"
-        _ok, _msg = translate_one_chapter(_cf, _tr_eng3, progress_cb=progress_cb)
+        if not (_want_plain3 or _want_bil3):
+            return False, f"{Path(rel).name}: {t('출력 방식(번역/영한대역)을 하나 이상 선택하세요')}"
+        _ok, _msg = translate_one_chapter(_cf, _tr_eng3, progress_cb=progress_cb,
+                                           want_plain=_want_plain3, want_bilingual=_want_bil3)
         if _ok:
             queue_remove("tab3_ready", [rel])
             queue_add("tab4_ready", [rel])
@@ -2062,6 +2103,18 @@ if _active_view == "3_translate":
                    icon=":material/warning:")
     else:
         _settings_ai_note()
+
+        # 번역 출력 방식 — 독립 토글(둘 다 켜도 됨), 최소 하나는 있어야 함 (2026-08-11)
+        _wp_new3 = st.toggle(t("번역 (_ko.txt)"), value=_want_plain3, key="tr3_want_plain",
+                              help=t("원문 없이 한국어 번역문만 저장합니다."))
+        _wb_new3 = st.toggle(t("영한대역 (_bilingual.txt)"), value=_want_bil3, key="tr3_want_bilingual",
+                              help=t("원문과 번역을 문단별로 나란히 저장합니다."))
+        if bool(_wp_new3) != _want_plain3 or bool(_wb_new3) != _want_bil3:
+            llm.set_pref("translate_want_plain", bool(_wp_new3))
+            llm.set_pref("translate_want_bilingual", bool(_wb_new3))
+            st.rerun()
+        if not (_wp_new3 or _wb_new3):
+            st.warning(t("번역 · 영한대역 중 하나 이상 선택하세요."))
 
         # TXT 직접 업로드 — 즉시 번역하지 않고 번역 대기 큐에 등록 (2026-07-09)
         _up3 = st.file_uploader(t("TXT 직접 업로드"),
@@ -2391,7 +2444,7 @@ if _active_view == "4_summary":
             _sort4 = _mc4b.radio(t("정렬"), [t("최근 추가순"), t("이름순")], horizontal=True, key="summ4_sort")
             _ch_root4m = cfg.CHAPTERS_DIR
             _all_cfs4 = list(_ch_root4m.rglob("??_*.txt")) if _ch_root4m.exists() else []
-            _all_cfs4 = [f for f in _all_cfs4 if not f.stem.endswith(("_ko","_wiki"))]
+            _all_cfs4 = [f for f in _all_cfs4 if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
             _all_cfs4 = sorted(_all_cfs4, key=lambda f: f.stat().st_mtime, reverse=True) \
                         if _sort4 == t("최근 추가순") else sorted(_all_cfs4, key=lambda f: str(f))
             _filt4 = [f for f in _all_cfs4 if _search4.lower() in str(f).lower()] if _search4 else _all_cfs4
@@ -2410,11 +2463,13 @@ if _active_view == "5_wiki":
     _cur_wiki5_path = _current_wiki_dir()
     _docx_dir5 = _current_docx_dir()
     _hwpx_dir5 = _current_hwpx_dir()
+    _epub_dir5 = _current_epub_dir()
+    _epub_engine5 = _settings_engine_id()
 
     def _proc_wiki5(stem):
-        # 옵시디언·DOCX·HWPX 토글 조합대로 출력을 생성한다 (여러 개 켜면 전부).
+        # 옵시디언·DOCX·HWPX·EPUB 토글 조합대로 출력을 생성한다 (여러 개 켜면 전부).
         _res = []
-        _produced = {"wiki": None, "docx": None, "hwpx": None}
+        _produced = {"wiki": None, "docx": None, "hwpx": None, "epub": None}
         if _use_ob:
             _cdir = chapters_dir(DEFAULT_WS, stem)
             for _cjf in list_summary_files(_cdir):
@@ -2433,8 +2488,14 @@ if _active_view == "5_wiki":
             _res.append(("HWPX", _hok, Path(_hmsg).name if _hok else str(_hmsg)[:45]))
             if _hok:
                 _produced["hwpx"] = Path(_hmsg)
+        if _use_ep:
+            _eok, _emsg = build_epub_from_chapters(DEFAULT_WS, stem, _epub_dir5,
+                                                    engine=_epub_engine5, clean=True)
+            _res.append(("EPUB", _eok, Path(_emsg).name if _eok else str(_emsg)[:45]))
+            if _eok:
+                _produced["epub"] = Path(_emsg)
         if not _res:
-            return False, f"{stem}: {t('출력 방식(위키/DOCX/HWPX)을 하나 이상 선택하세요')}"
+            return False, f"{stem}: {t('출력 방식(위키/DOCX/HWPX/EPUB)을 하나 이상 선택하세요')}"
         _allok = all(r[1] for r in _res)
         if _allok:
             queue_remove("tab5_ready", [stem])
@@ -2454,14 +2515,18 @@ if _active_view == "5_wiki":
                 _note_path5 = _produced5["wiki"]
                 _open_label5 = t("Obsidian에서 열기")
                 _open_action5 = lambda p=_note_path5: open_in_obsidian(p)
-            elif _use_dx and not _use_hx and _produced5.get("docx"):
+            elif _use_dx and not _use_hx and not _use_ep and _produced5.get("docx"):
                 _docx_path5 = _produced5["docx"]
                 _open_label5 = t("DOCX 파일 열기")
                 _open_action5 = lambda p=_docx_path5: open_path(p)
-            elif _use_hx and not _use_dx and _produced5.get("hwpx"):
+            elif _use_hx and not _use_dx and not _use_ep and _produced5.get("hwpx"):
                 _hwpx_path5 = _produced5["hwpx"]
                 _open_label5 = t("HWPX 파일 열기")
                 _open_action5 = lambda p=_hwpx_path5: open_path(p)
+            elif _use_ep and not _use_dx and not _use_hx and _produced5.get("epub"):
+                _epub_path5 = _produced5["epub"]
+                _open_label5 = t("EPUB 파일 열기")
+                _open_action5 = lambda p=_epub_path5: open_path(p)
         _log5 = st.session_state.get("wiki5_log", [])
         _fails5 = [ln[2:].strip() for ln in _log5 if ln.startswith("❌")]
         _oks5 = [ln[2:].strip() for ln in _log5 if ln.startswith("✅")]
@@ -2482,7 +2547,7 @@ if _active_view == "5_wiki":
             tf("완료: %s", _out_flow()),
             next_stage=None,
             open_target=(_stage_folder("5_wiki") if _use_ob
-                         else (_docx_dir5 if _use_dx else _hwpx_dir5)),
+                         else (_docx_dir5 if _use_dx else (_hwpx_dir5 if _use_hx else _epub_dir5))),
             open_label=_open_label5,
             open_action=_open_action5,
         )
@@ -2493,18 +2558,22 @@ if _active_view == "5_wiki":
     _n_notes5f = sum(1 for _ in _vault5f.rglob("*.md")) if _vault5f.exists() else 0
     _n_docx5 = len(list(_docx_dir5.glob("*.docx"))) if _docx_dir5.exists() else 0
     _n_hwpx5 = len(list(_hwpx_dir5.glob("*.hwpx"))) if _hwpx_dir5.exists() else 0
+    _n_epub5 = len(list(_epub_dir5.glob("*.epub"))) if _epub_dir5.exists() else 0
     if _run_active("wiki5"):
         _run_panel("wiki5", "출력 생성 중", _proc_wiki5, on_done=_wiki5_on_done)
         st.stop()
-    # 켠 출력만 카드로 — 여러 개 켜면 폴더가 서로 달라 카드도 그만큼 늘어난다 (2026-07-25, HWPX 2026-08-09)
+    # 켠 출력만 카드로 — 여러 개 켜면 폴더가 서로 달라 카드도 그만큼 늘어난다
+    # (2026-07-25, HWPX 2026-08-09, EPUB 2026-08-11)
     _out_cards5 = []
     if _use_dx:
         _out_cards5.append(("Word 문서(DOCX)", _docx_dir5, tf("%d개", _n_docx5)))
     if _use_hx:
         _out_cards5.append(("한글 문서(HWPX)", _hwpx_dir5, tf("%d개", _n_hwpx5)))
+    if _use_ep:
+        _out_cards5.append(("전자책(EPUB)", _epub_dir5, tf("%d개", _n_epub5)))
     if _use_ob:
         _out_cards5.append(("Obsidian 보관함", _vault5f, tf("%d노트", _n_notes5f)))
-    _circled5 = ["②", "③", "④"]
+    _circled5 = ["②", "③", "④", "⑤"]
     _after_cards5 = [(f"{_circled5[_i5]} 처리후 · {_nm5}", _p5, _c5) for _i5, (_nm5, _p5, _c5) in enumerate(_out_cards5)]
     _stage_flow_panel(
         f":material/{_stage_icon('5_wiki')}: {_out_short()}",
@@ -2516,8 +2585,26 @@ if _active_view == "5_wiki":
         "flow5",
     )
 
-    # ── 출력 방식 선택: DOCX · HWPX · 옵시디언 위키 (독립, 여러 개 가능) — 옵시디언을
-    #    맨 아래에 두어 그 토글 바로 밑에 보관함 설정이 이어지도록 한다 (2026-07-25, HWPX 2026-08-09).
+    # ── 출력 방식 선택 — 전문 그대로(EPUB)를 요약 기반(DOCX·HWPX·옵시디언) 위에
+    #    구분해서 보여준다. 옵시디언은 맨 아래에 두어 그 토글 바로 밑에 보관함
+    #    설정이 이어지도록 한다 (2026-07-25, HWPX 2026-08-09, EPUB 2026-08-11,
+    #    EPUB을 요약 그룹 위로·상시 자간정리 2026-08-11).
+    st.caption(t("전문 그대로 (요약 아님 — 챕터 원문·번역본 전체)"))
+    _ep_new5 = st.toggle(
+        t("EPUB 전자책 생성"), value=_use_ep, key="wiki5_use_epub",
+        help=t(
+            "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
+            "번역본이 없는 한글 원문 챕터는 OCR 자간 깨짐만 AI가 자동으로 붙입니다 — "
+            "번역·교정이 아니라 공백 제거만 하며, 한 글자라도 달라지면 원문을 그대로 씁니다. "
+            "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다."
+        ),
+    )
+    if _use_ep:
+        st.caption(tf("전자책은 여기에 저장됩니다: `%s`", str(_epub_dir5)))
+        st.caption(t("⚠️ 저작권이 있는 책 전체 내용이 그대로 담깁니다 — 개인적인 사용 목적으로만 사용하세요."))
+    st.divider()
+
+    st.caption(t("요약 기반 (_wiki.md에서 생성)"))
     _dx_new5 = st.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
                           help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
     if _use_dx:
@@ -2528,13 +2615,15 @@ if _active_view == "5_wiki":
         st.caption(tf("한글 문서는 여기에 저장됩니다: `%s`", str(_hwpx_dir5)))
     _ob_new5 = st.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
                           help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
-    if bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx or bool(_hx_new5) != _use_hx:
+    if (bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx
+            or bool(_hx_new5) != _use_hx or bool(_ep_new5) != _use_ep):
         llm.set_pref("use_obsidian", bool(_ob_new5))
         llm.set_pref("use_docx", bool(_dx_new5))
         llm.set_pref("use_hwpx", bool(_hx_new5))
+        llm.set_pref("use_epub", bool(_ep_new5))
         st.rerun()
-    if not (_use_ob or _use_dx or _use_hx):
-        st.warning(t("출력 방식을 하나 이상 선택하세요 (위키·DOCX·HWPX 중)."))
+    if not (_use_ob or _use_dx or _use_hx or _use_ep):
+        st.warning(t("출력 방식을 하나 이상 선택하세요 (위키·DOCX·HWPX·EPUB 중)."))
 
     # ── 위키 저장 보관함(Vault) 선택 (옵시디언 사용 시 의미) ──────────────
     _vaults5 = list_obsidian_vaults()
@@ -2585,11 +2674,11 @@ if _active_view == "5_wiki":
             continue
         _jsons5 = list_summary_files(_ch5)
         _total5 = len([f for f in _ch5.glob("??_*.txt")
-                       if not f.stem.endswith(("_ko", "_wiki"))]) if _ch5.exists() else 0
+                       if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]) if _ch5.exists() else 0
         _ratio5 = tf("%d/%d챕터 요약됨", len(_jsons5), _total5)
         # 챕터 이름 목록 (NN_제목.txt → 제목)
         _ch_names5 = [_re.sub(r'^\d+_', '', f.stem) for f in sorted(_ch5.glob("??_*.txt"))
-                      if not f.stem.endswith(("_ko","_wiki"))] if _ch5.exists() else []
+                      if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))] if _ch5.exists() else []
         _has_ov5 = find_overview_file(DEFAULT_WS, _stem5) is not None
         _wiki_item5 = {
             "key": _stem5,
@@ -2743,7 +2832,7 @@ if _active_view == "5_wiki":
             _stem5s = _nfc(_txt5s.stem)
             _ch5s = chapters_dir(DEFAULT_WS, _stem5s)
             if _ch5s.exists() and any(f for f in _ch5s.glob("??_*.txt")
-                                       if not f.stem.endswith(("_ko","_wiki"))):
+                                       if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))):
                 continue
             if _stem5s in _wiki_stems5:
                 continue
@@ -2959,6 +3048,25 @@ if _active_view == "settings":
             st.session_state["hwpx5_active_dir"] = _hd_target
             st.success(f"✅ 저장됨: `{_hd_target}` — Tab 5에 즉시 반영됩니다")
     st.caption("ℹ️ 기존에 만든 문서는 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
+
+    st.divider()
+    st.markdown(t("### :material/menu_book: EPUB 전자책 설정"))
+    st.caption(
+        f"현재: `{_current_epub_dir()}` — 'EPUB 전자책 생성'으로 만든 전자책이 여기 저장됩니다."
+    )
+    _ed_custom = st.text_input("폴더 경로 직접 입력", value="", key="epub_dir_custom",
+                               placeholder=str(_current_epub_dir()))
+    if st.button(t("EPUB 보관함 저장 (즉시 적용)"), icon=":material/save:", use_container_width=True, key="epub_dir_save"):
+        _ed_target = _ed_custom.strip()
+        if not _ed_target:
+            st.warning(t("경로를 입력하세요."))
+        elif _ed_target == str(_current_epub_dir()):
+            st.info("이미 이 폴더를 쓰고 있습니다.")
+        else:
+            set_epub_dir(_ed_target)
+            st.session_state["epub5_active_dir"] = _ed_target
+            st.success(f"✅ 저장됨: `{_ed_target}` — Tab 5에 즉시 반영됩니다")
+    st.caption("ℹ️ 기존에 만든 전자책은 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
 
     st.divider()
     st.markdown(t("### :material/book_2: 옵시디언(Obsidian) 보관함 설정"))

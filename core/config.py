@@ -107,6 +107,9 @@ WIKI_DIR      = _p(_env_wiki) if _env_wiki else _dir("wiki", BASE_DIR / "wiki")
 DOCX_DIR      = _dir("docx", BASE_DIR / "5_위키문서(DOCX)")
 # HWPX(한글) 문서 생성 시 저장할 폴더 — DOCX_DIR과 동일한 방식 (2026-08-09).
 HWPX_DIR      = _dir("hwpx", BASE_DIR / "5_위키문서(HWPX)")
+# EPUB 생성 시 저장할 폴더 — 요약이 아니라 챕터 원문·번역본 전체를 담으므로
+# "위키문서"가 아니라 별도 이름을 쓴다 (2026-08-11).
+EPUB_DIR      = _dir("epub", BASE_DIR / "5_전자책(EPUB)")
 
 
 def _folder_lang() -> str:
