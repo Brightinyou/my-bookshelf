@@ -1,6 +1,6 @@
 # My Bookshelf
 
-**A personal research tool that turns PDF/DOCX/HWP/HWPX/TXT documents into Word documents and Obsidian Wiki notes** — Text conversion → Chapter split → Summaries → **Word (.docx) · Obsidian Wiki (either or both)**, all in one flow.
+**A personal research tool that turns PDF/DOCX/HWP/HWPX/TXT documents into EPUB e-books, Word documents, Hangul (HWPX) documents, and Obsidian Wiki notes** — Text conversion → Chapter split → Translation → Summaries → **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki**, in one flow.
 
 > 🇰🇷 한국어 설명서: [README.md](README.md)
 
@@ -13,7 +13,7 @@ This repository shares one core (`core/`) across macOS and Windows. Only the ins
 Feed a book or paper as PDF/DOCX/HWP/HWPX/TXT, and it produces **readable summary Wiki notes** saved into your Obsidian vault through these stages:
 
 ```
-PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translation (English docs only)  →  Summaries  →  Word (.docx) · Obsidian Wiki (either or both)
+PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translation (when source differs from target)  →  Summaries  →  EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki
 ```
 
 - **PDF** must be text-based (has a text layer), not a raw scan (scanned PDFs need OCR first). **DOCX, HWP, HWPX and TXT** are processed as-is.
@@ -90,20 +90,30 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 
 ### ② ✂️ Chapter split
 - Splits a book TXT into **per-chapter files** under a per-book folder.
-- **[Split]** — split into chapters. **[Move to next step]** — if no split is needed, send the whole document onward (EN → Translation, KO → Summaries).
+- **[Split]** — split into chapters. **[Move to next step]** — if no split is needed, send the whole document onward (when source differs from the target language → Translation; otherwise → Summaries).
 - Short documents are handled separately under "Short documents".
 
-### ③ 📝 Summaries
+### ③ 🌐 Translation (multiple languages → chosen target)
+- Detects the source language automatically, including English, German, Dutch, French, Spanish, Italian, Portuguese, Latin, Japanese, Chinese, Russian, Greek, Hebrew, and Arabic.
+- Choose the output language in `⚙️ Settings → 🎯 Target language`: Korean, English, Japanese, Chinese, German, French, Spanish, Italian, Portuguese, Dutch, or Russian. Korean is the default.
+- The target language applies consistently to translations, chapter summaries, and Wiki notes. It is separate from the interface language.
+- Translation text remains named `_ko.txt` for compatibility. Enable the **Bilingual** toggle to also create `_bilingual.txt`, which pairs source and translation by paragraph.
+- Existing translations and summaries remain in their previous language. Delete them and run the stage again after changing the target.
+
+### ④ 📝 Summaries
 - Creates per-chapter summary notes (`_wiki.md`) — author, key summary, overview, key quotes, key keywords (with explanations).
 - Summaries are written as **direct statements of the content**, not "the author says …".
 - **Length control**: in the Settings tab or the collapsible **"Adjust summary length"** here, set the summary body to **5–40 % of the source** (15 % default). Higher values make longer notes and increase **output tokens / API cost** (input tokens for the source stay the same). Short chapters keep a minimum length.
 - Select queued items and press **[▶ Start]**.
 
-### ④ 📖 Output (Create DOCX · Wiki)
-- This stage has **two independent toggles at the top of the tab — "Create DOCX document" and "Use Obsidian wiki"**. **Enable both to produce both.** The top menu name changes accordingly between **"Create DOCX / Wiki / DOCX + Wiki"**.
-  - **Word document (DOCX)**: merges summaries into an editable **Word (.docx)** document saved in the `5_위키문서(DOCX)` folder (handy to share with or cite for others).
-  - **Obsidian Wiki**: merges summaries into a **hub note + per-chapter notes** in the Obsidian vault.
-  - Turning both off shows a warning — you must pick **at least one**.
+### ⑤ 📖 Output (Create EPUB · Create DOCX · Create HWPX · Wiki)
+- This stage has **four independent toggles**. Enable any combination to generate every selected format.
+  - **EPUB e-book** *(full text, not a summary)*: packages the complete source/translated chapters into an `.epub` in `5_전자책(EPUB)`. It is instant once optional Korean line-break repair has finished. Use copyrighted full-text exports only for personal use.
+  - **Line-break repair** *(optional, Korean source books)*: restores printed line breaks into readable paragraphs before EPUB export. AI decides whitespace only; it does not alter the body text.
+  - **Word document (DOCX)** *(summary-based)*: saves editable summaries in `5_위키문서(DOCX)`.
+  - **Hangul document (HWPX)** *(summary-based)*: saves editable summaries in `5_위키문서(HWPX)`.
+  - **Obsidian Wiki** *(summary-based)*: saves a hub note and per-chapter notes in the selected vault.
+  - Select at least one output.
 - The note/document frontmatter is auto-filled with **author, publication date, and publisher (`Place: Publisher`)**, extracted from the source's title/colophon page (left blank if not confidently found).
 - If a book is already reflected, the popup asks **"Replace?"** to update it in place.
 - Use **[Select all]/[Clear]** in the queue, then **[▶ Start]**.
@@ -123,10 +133,11 @@ For the AI stages (Chapter split, Translation, Summaries, Wiki), pressing **[▶
 
 ## 6. Language and the translation stage
 
-Switch Korean/English in `⚙️ Settings → Language`.
+`⚙️ Settings → Language` changes the interface language only.
 
-- **Switching to English hides the Translation stage** from the menu, navigation and pipeline. There is no point translating an English document back into English, so after chapter split, documents go straight to Summaries.
-- Switching back to Korean brings the Translation stage back.
+- Choose the language of translations, summaries, and Wiki notes separately in `⚙️ Settings → 🎯 Target language`.
+- The Translation stage is currently hidden while the interface is set to English. Set the interface to Korean to run translation work.
+- Changing the target language does not rewrite existing translations or summaries; delete the relevant output and run the stage again.
 
 ---
 
@@ -138,12 +149,14 @@ Default data folders (folder names are Korean or English depending on the instal
 0_Inbox/            uploads/downloads waiting (pre-processing)
 1_PDF_Originals/    original PDFs
 2_Converted_TXT/    converted TXT (done/ = archived sources after split)
-3_Chapters/<book>/  workspace holding chapters, translations (_ko), summaries (_wiki.md), overview
+3_Chapters/<book>/  workspace holding chapters, translations (_ko), bilingual output (_bilingual), summaries (_wiki.md), overview
+5_전자책(EPUB)/      exported full-text EPUB e-books
 5_위키문서(DOCX)/    exported DOCX documents (when "Create DOCX document" is on — this folder name stays in Korean regardless of the UI language)
+5_위키문서(HWPX)/    exported HWPX documents (when "Create HWPX document" is on — this folder name stays in Korean regardless of the UI language)
 Failed/, Logs/      failed files, logs
 ```
 
-Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`). Word (.docx) documents are saved to the `5_위키문서(DOCX)/` folder above. Settings live in `~/.config/mybookshelf/config.json` (macOS/Linux) or the same path under your user profile.
+Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`). EPUB, Word (.docx), and Hangul (.hwpx) files are saved to the folders above. Settings live in `~/.config/mybookshelf/config.json` on macOS/Linux.
 
 ---
 
