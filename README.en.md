@@ -183,5 +183,5 @@ core/                app core
 dev/                 build scripts (build_mac_app.sh, bump_version.py …)
 ```
 
-- macOS build: `dev/build_mac_app.sh` → `dist/mac/MyBookshelf.app`
+- macOS build: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (excluded from Spotlight)
 - Run from source: each platform's `start` script, or `streamlit run core/pipeline_app.py`

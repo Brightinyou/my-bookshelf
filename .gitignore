@@ -6,7 +6,9 @@ __pycache__/
 
 dist/
 build/
-dev/
+/dev/*
+!/dev/build_mac_app.sh
+!/dev/bump_version.py
 .github/
 AGENTS.md
 DEVLOG.md

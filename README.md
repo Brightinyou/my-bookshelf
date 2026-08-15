@@ -188,5 +188,5 @@ core/                앱 핵심 코드
 dev/                 빌드 스크립트 (build_mac_app.sh, bump_version.py …)
 ```
 
-- macOS 빌드: `dev/build_mac_app.sh` → `dist/mac/MyBookshelf.app`
+- macOS 빌드: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (Spotlight 검색 제외)
 - 개발 실행(레포 코드): 각 플랫폼의 `start` 스크립트 또는 `streamlit run core/pipeline_app.py`
