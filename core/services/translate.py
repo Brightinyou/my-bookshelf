@@ -1,30 +1,93 @@
-"""번역: 영어→한국어 고정 — 언어 감지, 단락 분할, 번역 호출, skip/drop 필터."""
+"""번역: 어떤 언어든 → 고른 도착언어 — 언어 감지, 단락 분할, 번역 호출, skip/drop 필터.
 
+출발언어를 영어로 한정하지 않는다(2026-08-15). 독일어·네덜란드어·프랑스어·라틴어
+같은 라틴 문자권은 물론 일본어·중국어·러시아어처럼 문자 자체가 다른 원서도
+services.langdetect가 무슨 언어인지 알아내고, 그 이름을 번역 프롬프트와 화면에
+함께 쓴다.
+
+도착언어도 설정에서 고른다(target_language, 기본 한국어). 도착언어가 한국어면
+'번역이 필요한가' 판단이 예전과 똑같이 한글 비율 하나로 떨어지므로 기존 동작이
+그대로 보존된다. 검증 방식은 도착언어의 문자 체계에 따라 갈린다 — 고유 문자를
+쓰는 언어(한글·가나·키릴 …)는 문자 비율로 확실히 가리지만, 라틴 문자권끼리는
+문자가 같아 그 방법이 통하지 않으므로 기능어 감지와 '원문과 거의 같은가' 검사에
+맡긴다.
+
+번역본 파일 이름은 도착언어와 무관하게 계속 `_ko.txt`다 — 여러 모듈이 이 이름을
+알고 있어서 바꾸면 이미 만들어둔 번역본이 전부 안 보이게 된다. 이름의 'ko'는
+이제 '한국어'가 아니라 '번역본'이라는 표시로 읽으면 된다."""
+
+import hashlib
 import json
 import re as _re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from pathlib import Path
 
 import llm_providers as llm
 
+from services import kospace, langdetect
 from services.common import _save_json_atomic, append_log
+from services.files import _save_bilingual_atomic
 
 _KO_SCRIPT = _re.compile(r"[가-힣]")
 
 
-def target_lang() -> str:
-    return "en"
+DEFAULT_TARGET = "ko"
+
+# 도착언어 후보 — 감지 가능한 언어를 그대로 도착언어로도 고를 수 있게 한다.
+TARGET_CHOICES = ("ko", "en", "ja", "zh", "de", "fr", "es", "it", "pt", "nl", "ru")
 
 
-def needs_translation(txt_path: Path, threshold: float = 0.3) -> bool:
-    """한글 비율이 낮으면 번역 필요로 판단."""
+def target_language() -> str:
+    """번역·요약 결과를 쓸 언어 코드. 설정에서 바꾸며 기본은 한국어(2026-08-15)."""
+    code = str(llm.get_pref("target_lang", DEFAULT_TARGET) or DEFAULT_TARGET)
+    return code if code in langdetect.LANGUAGES else DEFAULT_TARGET
+
+
+def set_target_language(code: str) -> None:
+    if code in langdetect.LANGUAGES:
+        llm.set_pref("target_lang", code)
+
+
+def target_language_name() -> str:
+    return language_name(target_language())
+
+
+def target_language_options() -> list[tuple[str, str]]:
+    """[(코드, 화면에 쓸 이름)] — 설정 화면 선택지."""
+    return [(c, language_name(c)) for c in TARGET_CHOICES]
+
+
+def needs_translation(txt_path: Path, threshold: float = 0.3, target: str = "") -> bool:
+    """번역이 필요한가 = 원문이 이미 도착언어가 아닌가.
+
+    도착언어가 한국어면 예전과 똑같이 한글 비율 하나로 판단한다(분기 동작 보존).
+    다른 언어를 고르면 감지 결과와 비교한다."""
+    target = target or target_language()
     sample = txt_path.read_text(encoding="utf-8", errors="ignore")[:3000]
-    ko_ratio = len(_KO_SCRIPT.findall(sample)) / max(len(sample), 1)
-    return ko_ratio < threshold
+    if target == "ko":
+        ko_ratio = len(_KO_SCRIPT.findall(sample)) / max(len(sample), 1)
+        return ko_ratio < threshold
+    return langdetect.detect(sample)[0] != target
 
 
-def is_english(txt_path: Path, threshold: float = 0.3) -> bool:
-    return needs_translation(txt_path, threshold)
+def source_language(txt_path: Path) -> tuple[str, float]:
+    """챕터 파일 하나의 원문 언어 (코드, 확신도). 책 단위 판단은 book_language를 쓸 것."""
+    return langdetect.detect_file(txt_path)
+
+
+def book_language(ch_paths) -> tuple[str, float]:
+    """책 한 권의 원문 언어 — 여러 챕터를 섞어 판단한다(첫 장만 보면 참고문헌에 속는다)."""
+    return langdetect.detect_book(ch_paths)
+
+
+def language_name(code: str) -> str:
+    """언어 코드 → 화면에 쓸 이름. UI 언어 설정을 따른다('독일어' / 'German')."""
+    try:
+        from services.i18n import get_lang
+        return langdetect.name(code, get_lang())
+    except Exception:
+        return langdetect.name(code)
 
 
 def _ko_ratio(text: str) -> float:
@@ -55,17 +118,21 @@ def _looks_like_translation_refusal(text: str) -> bool:
     return bool(_TRANSLATION_REFUSAL_RE.search(lowered))
 
 
-def _translation_is_valid(src: str, out: str | None) -> bool:
-    """번역 결과가 실제 한국어 번역인지 확인한다."""
+def _translation_is_valid(src: str, out: str | None, target: str = "") -> bool:
+    """번역 결과가 실제로 도착언어 번역인지 확인한다."""
     if not out:
         return False
+    target = target or target_language()
     cleaned_src = _re.sub(r"\s+", " ", src or "").strip()
     cleaned_out = _re.sub(r"\s+", " ", out or "").strip()
     if not cleaned_out:
         return False
     if _looks_like_translation_refusal(cleaned_out):
         return False
-    if _ko_ratio(cleaned_out) < 0.08:
+    # 도착언어가 고유 문자를 쓰면(한글·가나·키릴 …) 결과에 그 문자가 거의 없다는 건
+    # 번역이 안 됐다는 뜻이다. 라틴 문자권이 도착언어면 원문과 문자가 같아 이 검사가
+    # 무의미하므로 건너뛰고, 아래 '원문과 거의 같은가' 검사에 맡긴다(2026-08-15).
+    if langdetect.has_own_script(target) and langdetect.script_ratio(cleaned_out, target) < 0.08:
         return False
     if cleaned_src and SequenceMatcher(None, cleaned_src[:2000], cleaned_out[:2000]).ratio() > 0.82:
         return False
@@ -75,55 +142,95 @@ def _translation_is_valid(src: str, out: str | None) -> bool:
 _HEADING_LIKE_RE = _re.compile(r"^\s*(?:\d+(?:\.\d+)*|[IVXLC]+)\s+.+", _re.I)
 
 
-def _translate_retry_prompt(paragraph: str) -> str:
+def _translate_retry_prompt(paragraph: str, target: str = "") -> str:
+    tgt = langdetect.name(target or target_language(), "en") or "Korean"
     return (
-        "Translate the following academic paragraph into Korean. "
+        f"Translate the following academic paragraph into {tgt}, whatever language it is in. "
         "Preserve numbering such as section numbers or chapter numbers. "
-        "Do not leave any sentence or title in English. "
+        "Do not leave any sentence or title untranslated in the source language. "
         "If this is a section heading, translate only the heading text while keeping the numbering. "
-        "Output ONLY the Korean text.\n\n"
+        f"Output ONLY the {tgt} text.\n\n"
         f"{paragraph}"
     )
 
 
-def _translate_paragraph(paragraph: str, engine: str, glossary: dict | None = None) -> str | None:
-    ko = translate(paragraph, engine, glossary=glossary)
-    if _translation_is_valid(paragraph, ko):
+def _translate_paragraph(paragraph: str, engine: str, glossary: dict | None = None,
+                          src_lang: str = "", target: str = "") -> str | None:
+    target = target or target_language()
+    tgt_name = langdetect.name(target, "en") or "Korean"
+    ko = translate(paragraph, engine, glossary=glossary, src_lang=src_lang, target=target)
+    if _translation_is_valid(paragraph, ko, target):
         return ko
     if not paragraph.strip():
         return ko
-    retry = translate(_translate_retry_prompt(paragraph), engine, glossary=glossary)
-    if _translation_is_valid(paragraph, retry):
+    retry = translate(_translate_retry_prompt(paragraph, target), engine, glossary=glossary,
+                      src_lang=src_lang, target=target)
+    if _translation_is_valid(paragraph, retry, target):
         return retry
     if _HEADING_LIKE_RE.match(paragraph.strip()):
         heading_retry = translate(
-            "This is a section heading from an academic chapter. Translate it into Korean and keep the numbering.\n\n"
+            "This is a section heading from an academic chapter. Translate it into "
+            f"{tgt_name} and keep the numbering.\n\n"
             f"{paragraph}",
             engine,
             glossary=glossary,
+            src_lang=src_lang,
+            target=target,
         )
-        if _translation_is_valid(paragraph, heading_retry):
+        if _translation_is_valid(paragraph, heading_retry, target):
             return heading_retry
     return None
 
 
-def build_translate_system() -> str:
-    """한국어 번역 시스템 프롬프트."""
+def translate_title(title: str, engine: str, src_lang: str = "",
+                     target: str = "") -> str | None:
+    """장 제목만 짧게 번역 — 실패·불확실하면 None(원제 그대로 유지 신호)."""
+    if not title.strip() or not engine or ":" not in engine:
+        return None
+    target = target or target_language()
+    ko = translate(title, engine, src_lang=src_lang, target=target)
+    if not _translation_is_valid(title, ko, target):
+        return None
+    return _re.sub(r"\s+", " ", ko).strip()
+
+
+# 한국어 도착일 때만 쓰는 문체 규칙 — 학술 평서체 고정, 높임말 금지.
+_KO_STYLE_RULES = (
+    "Use ONLY plain declarative academic Korean (평서체/하다체): "
+    "endings such as -다, -이다, -한다, -였다, -이었다. "
+    "DO NOT use any polite/honorific forms — never use -습니다, -입니다, "
+    "-해요, -이에요, -지요, -군요, -네요, or any other -요/-니다 endings. "
+)
+
+
+def build_translate_system(src_lang: str = "", target: str = "") -> str:
+    """번역 시스템 프롬프트. src_lang을 주면 원문 언어를 명시한다 — 독일어·네덜란드어처럼
+    서로 닮은 언어에서 모델이 헷갈리는 것을 줄인다. target은 도착언어 코드(기본 설정값).
+    한국어 도착일 때의 문체 규칙(평서체·높임말 금지)은 그 언어에만 해당하므로, 다른
+    언어를 고르면 일반적인 학술 문어체 지시로 갈음한다(2026-08-15)."""
+    target = target or target_language()
+    tgt_name = langdetect.name(target, "en") or "Korean"
+    src_name = langdetect.name(src_lang, "en") if src_lang else ""
+    src_hint = (f"The source text is written in {src_name}. "
+                if src_name and src_lang != target else
+                "Detect the source language automatically. ")
+    style = _KO_STYLE_RULES if target == "ko" else (
+        f"Write in formal academic prose appropriate for scholarly writing in {tgt_name}; "
+        "do not use conversational or promotional register. "
+    )
     return (
         "You are a professional theological/academic translator. "
-        "Detect the source language automatically and translate the user's text into Korean. "
-        "Proper nouns (personal names, place names): on FIRST mention write the Korean "
+        + src_hint +
+        f"Translate the user's text into {tgt_name}. "
+        f"Proper nouns (personal names, place names): on FIRST mention write the {tgt_name} "
         "rendering followed by the original in parentheses; "
-        "if a name is listed below as already introduced, write the Korean form ONLY. "
+        f"if a name is listed below as already introduced, write the {tgt_name} form ONLY. "
         "Preserve technical terms and scripture references as-is. "
-        "Use ONLY plain declarative academic Korean (평서체/하다체): "
-        "endings such as -다, -이다, -한다, -였다, -이었다. "
-        "DO NOT use any polite/honorific forms — never use -습니다, -입니다, "
-        "-해요, -이에요, -지요, -군요, -네요, or any other -요/-니다 endings. "
+        + style +
         "The text may be an incomplete fragment cut mid-sentence (PDF page breaks): "
         "translate it as-is anyway — NEVER comment on it, NEVER ask for more context, "
         "NEVER say the text is incomplete. "
-        "Output ONLY the Korean translation, nothing else."
+        f"Output ONLY the {tgt_name} translation, nothing else."
     )
 
 # 번역 엔진 ID (UI 라디오와 1:1)
@@ -173,15 +280,37 @@ def _merge_dangling(paras: list[str], max_chunk: int = 3000) -> list[str]:
     return merged
 
 
+def _merge_short_blocks(blocks: list[str], min_len: int = 50) -> list[str]:
+    """min_len 이하인 블록을 뒤 블록과 이어 붙여 min_len을 넘을 때까지 합친다 —
+    짧다고 통째로 버리지 않는다(2026-08-11). 사진촬영 OCR은 문단이 아니라 거의
+    줄 단위로 \\n\\n이 남발되는 경우가 많아, 예전처럼 50자 이하 블록을 그냥 버리면
+    책 내용의 상당 부분(실측: 어떤 책은 전체 글자 수의 70%)이 조용히 사라진다."""
+    merged: list[str] = []
+    buf = ""
+    for b in blocks:
+        buf = (buf + "\n\n" + b).strip() if buf else b
+        if len(buf) > min_len:
+            merged.append(buf)
+            buf = ""
+    if buf:
+        if merged:
+            merged[-1] = merged[-1] + "\n\n" + buf
+        else:
+            merged.append(buf)
+    return merged
+
+
 def _split_paragraphs_robust(text_raw: str, target_chunk: int = 1500, min_para: int = 5) -> list[str]:
     """단락 분할 보강. \\n\\n 의존이 실패하면 단일 줄바꿈·문장 단위 fallback.
     OCR 출력 형식에 무관하게 작동. (2026-05-16 신설)
 
-    1차: \\n\\n 분리. 단락 수 ≥ min_para 이고 평균 길이 ≤ target_chunk*2 이면 통과.
+    1차: \\n\\n 분리 후 50자 이하 블록은 뒤 블록과 병합(내용 손실 방지). 단락 수 ≥
+    min_para 이고 평균 길이 ≤ target_chunk*2 이면 통과.
     2차: \\n 단일 분리 후 target_chunk 자 단위 누적 청크.
     3차: 문장(. ! ?) 단위 분리 후 target_chunk 자 단위 누적 청크.
     """
-    primary = [p.strip() for p in text_raw.split("\n\n") if len(p.strip()) > 50]
+    _raw_blocks = [p.strip() for p in text_raw.split("\n\n") if p.strip()]
+    primary = _merge_short_blocks(_raw_blocks, 50)
     if len(primary) >= min_para:
         avg = sum(len(p) for p in primary) / len(primary)
         if avg <= target_chunk * 2:
@@ -195,10 +324,10 @@ def _split_paragraphs_robust(text_raw: str, target_chunk: int = 1500, min_para: 
         if len(buf) + len(ln) + 1 <= target_chunk:
             buf = (buf + " " + ln).strip() if buf else ln
         else:
-            if len(buf) > 50:
+            if buf:
                 chunks.append(buf)
             buf = ln
-    if buf and len(buf) > 50:
+    if buf:
         chunks.append(buf)
     if len(chunks) >= min_para:
         return chunks
@@ -212,22 +341,24 @@ def _split_paragraphs_robust(text_raw: str, target_chunk: int = 1500, min_para: 
         if len(buf) + len(s) + 1 <= target_chunk:
             buf = (buf + " " + s).strip() if buf else s
         else:
-            if len(buf) > 50:
+            if buf:
                 chunks.append(buf)
             buf = s
-    if buf and len(buf) > 50:
+    if buf:
         chunks.append(buf)
     return chunks if chunks else primary  # 정말 아무것도 안 잡히면 1차 반환
 
 
-def translate(text: str, engine: str, glossary: dict | None = None) -> str | None:
-    """단락 하나를 'provider:model' 엔진으로 영→한 번역. 실패 시 None(영어 유지).
-    glossary: 앞 단락들에서 이미 소개된 고유명사 {원어: 한글} — 한글만 쓰게 지시."""
+def translate(text: str, engine: str, glossary: dict | None = None,
+               src_lang: str = "", target: str = "") -> str | None:
+    """단락 하나를 'provider:model' 엔진으로 한국어 번역. 실패 시 None(원문 유지).
+    glossary: 앞 단락들에서 이미 소개된 고유명사 {원어: 한글} — 한글만 쓰게 지시.
+    src_lang: 감지된 원문 언어 코드(있으면 프롬프트에 명시)."""
     global _translate_error_logged
     if not engine or ":" not in engine:
         return None
     provider, model = engine.split(":", 1)
-    sys_prompt = build_translate_system()
+    sys_prompt = build_translate_system(src_lang, target)
     if glossary:
         # 이미 소개된 고유명사 — 목표 언어 표기만 쓰게 지시 (최근 80개 제한)
         _pairs = "; ".join(f"{en} = {ko}" for en, ko in list(glossary.items())[-80:])
@@ -409,13 +540,20 @@ _SKIP_SECTION_NAMES = {
 }
 
 
-def _paragraph_already_target(paragraph: str, threshold: float = 0.6) -> bool:
-    """단락에 한글 비율이 threshold 이상이면 이미 번역된 것으로 간주."""
+def _paragraph_already_target(paragraph: str, threshold: float = 0.6,
+                               target: str = "") -> bool:
+    """단락이 이미 도착언어면 True(번역 생략 신호).
+
+    도착언어가 고유 문자를 쓰면 그 문자 비율로 판단한다. 라틴 문자권이면 문자만으로는
+    프랑스어와 영어를 못 가르므로 기능어 감지에 맡기고, 확신이 없으면 False를 준다 —
+    여기서 틀리면 번역해야 할 단락이 원문 그대로 남기 때문이다(2026-08-15)."""
     p = paragraph.strip()
     if not p:
         return False
-    hits = len(_KO_SCRIPT.findall(p))
-    return (hits / max(len(p), 1)) >= threshold
+    target = target or target_language()
+    if langdetect.has_own_script(target):
+        return langdetect.script_ratio(p, target) >= threshold
+    return langdetect.looks_like(p, target)
 
 
 def should_skip_translation(paragraph: str) -> bool:
@@ -504,8 +642,134 @@ def _needs_translation(stem: str) -> bool:
     return not bool(_HANGUL_RE.search(stem))
 
 
-def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple[bool, str]:
-    """단일 챕터 TXT 번역 → _ko.txt 저장. (ok, msg).
+_CLEAN_WORKERS_DEFAULT = 3
+
+
+def clean_workers() -> int:
+    """자간정리 묶음을 동시에 몇 개까지 던질지. codex/claude CLI는 호출마다 별도
+    프로세스라 GIL과 무관하게 그대로 병렬로 붙는다(2026-08-14)."""
+    try:
+        n = int(llm.get_pref("clean_workers", _CLEAN_WORKERS_DEFAULT))
+    except (TypeError, ValueError):
+        n = _CLEAN_WORKERS_DEFAULT
+    return max(1, min(n, 8))
+
+
+def _ask_breaks(lines: list[str], idxs: list[int], engine: str) -> dict[int, str]:
+    """줄바꿈 묶음 하나를 AI에 물어 {줄 인덱스: 'J'|'S'}로. 실패하면 빈 dict —
+    답을 못 받은 자리는 공백으로 남아 손대기 전 원문과 같아지므로 그대로 안전하다."""
+    if not engine or ":" not in engine:
+        return {}
+    provider, model = engine.split(":", 1)
+    try:
+        out = llm.complete(provider, model, kospace.build_system(),
+                           kospace.format_questions(lines, idxs), max_tokens=4096)
+    except Exception as e:
+        append_log(f"WARN: 자간정리 판정 실패 [{engine}] ({type(e).__name__}): {str(e)[:200]}")
+        return {}
+    return {idxs[n - 1]: v for n, v in kospace.parse_answers(out, len(idxs)).items()}
+
+
+def _is_mostly_korean(text: str, threshold: float = 0.3) -> bool:
+    sample = text[:1000]
+    return len(_KO_SCRIPT.findall(sample)) / max(len(sample), 1) >= threshold
+
+
+def clean_chapter_ko(ch_path: Path, engine: str, progress_cb=None) -> tuple[bool, str]:
+    """챕터 TXT의 OCR 줄바꿈을 복원해 <stem>_clean.txt로 저장. (ok, msg).
+
+    AI에는 줄바꿈마다 '붙임/공백'만 묻고(kospace) 공백을 넣는 일은 여기서 한다 —
+    본문 글자가 AI를 거치지 않으므로 내용이 바뀔 수 없고, 출력 토큰이 예전 방식의
+    10분의 1 수준이라 호출도 훨씬 빠르다(2026-08-14). 묶음은 여러 개를 동시에
+    던지며(clean_workers), 판정 결과는 _clean.progress.json에 남겨 중단 후 다시
+    부르면 이미 받은 판정은 건너뛰고 이어서 처리한다.
+
+    progress_cb(idx, total, 붙임, 공백, 미판정) — 번역 진행 콜백과 인자 모양을 맞췄다.
+    콜백은 항상 이 함수를 부른 스레드에서만 불린다(Streamlit 위젯 갱신이 워커
+    스레드에서는 조용히 무시되기 때문)."""
+    try:
+        text = ch_path.read_text(encoding="utf-8", errors="ignore")
+        clean_path = ch_path.with_name(ch_path.stem + "_clean.txt")
+        progress_path = ch_path.with_name(ch_path.stem + "_clean.progress.json")
+        lines, kinds = kospace.plan(text)
+        if not lines:
+            return False, "본문 없음"
+        pending = kospace.pending_indexes(kinds)
+        total = len(pending)
+        fingerprint = f"{len(text)}:{hashlib.sha1(text.encode('utf-8')).hexdigest()[:16]}"
+
+        # 이어하기 — 원문이 그대로일 때만(fingerprint 일치) 예전 판정을 재사용한다.
+        decided: dict[int, str] = {}
+        if progress_path.exists():
+            try:
+                cached = json.loads(progress_path.read_text(encoding="utf-8"))
+                if isinstance(cached, dict) and cached.get("fingerprint") == fingerprint:
+                    decided = {int(k): v for k, v in (cached.get("decisions") or {}).items()
+                               if v in (kospace.JOIN, kospace.SPACE)}
+            except Exception:
+                decided = {}
+
+        todo = [i for i in pending if i not in decided]
+        batches = [todo[i:i + kospace.BREAKS_PER_CALL]
+                   for i in range(0, len(todo), kospace.BREAKS_PER_CALL)]
+        done = total - len(todo)
+
+        def _report():
+            if progress_cb:
+                joined = sum(1 for v in decided.values() if v == kospace.JOIN)
+                progress_cb(done, total, joined, len(decided) - joined, done - len(decided))
+
+        _report()
+        if batches and engine and ":" in engine:
+            with ThreadPoolExecutor(max_workers=min(clean_workers(), len(batches))) as pool:
+                futures = {pool.submit(_ask_breaks, lines, b, engine): b for b in batches}
+                for fut in as_completed(futures):
+                    try:
+                        decided.update(fut.result())
+                    except Exception as e:
+                        append_log(f"WARN: 자간정리 묶음 실패 ({type(e).__name__}): {str(e)[:150]}")
+                    done += len(futures[fut])
+                    _save_json_atomic(progress_path, {
+                        "fingerprint": fingerprint,
+                        "decisions": {str(k): v for k, v in decided.items()},
+                    })
+                    _report()
+
+        for i, v in decided.items():
+            if 0 <= i < len(kinds) and kinds[i] is None:
+                kinds[i] = v
+        out = kospace.render(lines, kinds)
+        # 설계상 공백 말고는 달라질 수 없지만, 줄 분해·재조립 실수까지 잡으려고 확인한다.
+        if _re.sub(r"\s+", "", out) != _re.sub(r"\s+", "", text):
+            return False, "본문이 달라져 저장하지 않음"
+        # 물어볼 게 있었는데 한 건도 못 받았으면 저장하지 않는다 — 원문과 다를 바 없는
+        # _clean.txt를 남기면 '정리됨'으로 보여 다시 시도할 길이 막힌다.
+        if total and not decided:
+            return False, "AI 판정을 받지 못했습니다 — 잠시 후 다시 시도하세요"
+
+        clean_path.write_text(out, encoding="utf-8")
+        unknown = total - len(decided)
+        if unknown:
+            # 일부만 받았으면 진행 파일을 남겨 둔다: 받은 판정은 이미 반영됐고,
+            # 다시 실행하면 남은 것만 이어서 묻는다(chapters_needing_clean이 이 파일을 본다).
+            _save_json_atomic(progress_path, {
+                "fingerprint": fingerprint,
+                "decisions": {str(k): v for k, v in decided.items()},
+            })
+        else:
+            progress_path.unlink(missing_ok=True)
+        joined = sum(1 for v in decided.values() if v == kospace.JOIN)
+        paras = sum(1 for k in kinds if k == kospace.PARA) + 1
+        return True, (f"{paras}단락 · 줄바꿈 {len(kinds)} "
+                      f"(붙임 {joined} · 공백 {len(decided) - joined} · 미판정 {unknown})")
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
+                           want_plain: bool = True, want_bilingual: bool = False) -> tuple[bool, str]:
+    """단일 챕터 TXT 번역. want_plain이면 _ko.txt, want_bilingual이면 원문·번역을
+    문단별로 나란히 묶은 _bilingual.txt도 저장(둘 다 켜면 둘 다 저장). (ok, msg).
 
     중단 대비 (2026-07-03): Streamlit rerun 등으로 도중에 죽어도 진행분이
     읽을 수 있는 _ko.partial.md로 남는다. 완주하면 _ko.txt로 확정하고
@@ -514,15 +778,22 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
     try:
         text = ch_path.read_text(encoding="utf-8", errors="ignore")
         ko_path = ch_path.with_name(ch_path.stem + "_ko.txt")
+        bilingual_path = ch_path.with_name(ch_path.stem + "_bilingual.txt")
         partial_path = ch_path.with_name(ch_path.stem + "_ko.partial.md")
         progress_path = ch_path.with_name(ch_path.stem + "_ko.progress.json")
         if not needs_translation(ch_path):
-            ko_path.write_text(text, encoding="utf-8")
+            if want_plain:
+                ko_path.write_text(text, encoding="utf-8")
             partial_path.unlink(missing_ok=True)
             progress_path.unlink(missing_ok=True)
-            return True, "이미 한국어 — 그대로 복사"
+            return True, f"이미 {target_language_name()} — 그대로 복사"
+        # 원문 언어를 한 번만 감지해 모든 단락 호출에 함께 넘긴다 — 프롬프트에 언어를
+        # 못박아 두면 닮은 언어(독일어/네덜란드어)에서 모델이 덜 헷갈린다(2026-08-15).
+        _target = target_language()
+        src_lang, _src_conf = langdetect.detect(text)
         paras = _split_paragraphs_robust(text)
         out: list[str] = []
+        bilingual_pairs: list[tuple[str, str]] = []  # (원문, 번역) — dropped 단락은 제외(out과 동일 기준)
         translated_n = preserved_n = dropped_n = failed_n = resumed_n = api_calls = 0
         total = len(paras) or 1
 
@@ -557,6 +828,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
                     dropped_n += 1
                 else:
                     out.append(tgt)
+                    bilingual_pairs.append((p, tgt))
                     if status == "preserved":
                         preserved_n += 1
                     else:
@@ -575,33 +847,50 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None) -> tuple
                 continue
             if should_skip_translation(p):
                 out.append(p)
+                bilingual_pairs.append((p, p))
                 preserved_n += 1
                 cached_rows[idx] = {"idx": idx, "src": p, "tgt": p, "status": "preserved"}
             else:
-                ko = _translate_paragraph(p, engine)
+                ko = _translate_paragraph(p, engine, src_lang=src_lang, target=_target)
                 api_calls += 1
-                if _translation_is_valid(p, ko):
+                if _translation_is_valid(p, ko, _target):
                     out.append(ko)
+                    bilingual_pairs.append((p, ko))
                     translated_n += 1
                     cached_rows[idx] = {"idx": idx, "src": p, "tgt": ko, "status": "translated"}
                 else:
                     out.append(p)
+                    bilingual_pairs.append((p, p))
                     failed_n += 1
                     cached_rows[idx] = {"idx": idx, "src": p, "tgt": p, "status": "failed"}
             _save_json_atomic(progress_path, [cached_rows[i] for i in sorted(cached_rows)])
             _save_partial()
             if progress_cb:
                 progress_cb(idx, total, translated_n, preserved_n, dropped_n, failed_n, resumed_n, api_calls)
-        detail = f"{len(out)}단락 처리 완료 · 재사용 {resumed_n} · 신규번역 {translated_n} · 원문보존 {preserved_n}"
+        _src_label = language_name(src_lang) if src_lang else ""
+        detail = ((f"{_src_label}→{target_language_name()} · " if _src_label else "")
+                  + f"{len(out)}단락 처리 완료 · 재사용 {resumed_n} · 신규번역 {translated_n} · 원문보존 {preserved_n}")
         if dropped_n:
             detail += f" · 삭제 {dropped_n}"
         if failed_n:
             detail += f" · 실패보존 {failed_n}"
         if translated_n == 0:
             ko_path.unlink(missing_ok=True)
+            bilingual_path.unlink(missing_ok=True)
             partial_path.unlink(missing_ok=True)
-            return False, detail + " — 유효한 한국어 번역 결과가 없습니다"
-        ko_path.write_text("\n\n".join(out), encoding="utf-8")
+            return False, detail + f" — 유효한 {target_language_name()} 번역 결과가 없습니다"
+        if want_plain:
+            ko_path.write_text("\n\n".join(out), encoding="utf-8")
+        if want_bilingual:
+            _save_bilingual_atomic(bilingual_path, [f"{src}\n\n{tgt}" for src, tgt in bilingual_pairs])
+        # 챕터 제목도 번역해 사이드카로 저장 — 본문은 번역돼도 파일명에서 뽑는 장 제목은
+        # 그대로 영문으로 남아있던 문제(EPUB 등에서 노출) 수정 (2026-08-11).
+        # 파일명이 "_ko"로 끝나서, 챕터 목록에서 원문과 구분하는 기존 필터에 자동으로 걸린다.
+        title_ko_path = ch_path.with_name(ch_path.stem + "_title_ko.txt")
+        orig_title = _re.sub(r"^\d+_", "", ch_path.stem)
+        ko_title = translate_title(orig_title, engine, src_lang=src_lang, target=_target)
+        if ko_title:
+            title_ko_path.write_text(ko_title, encoding="utf-8")
         # 완주 — 중간 산출물 정리 (partial은 _ko.txt로 확정됨, progress 캐시 소진)
         partial_path.unlink(missing_ok=True)
         progress_path.unlink(missing_ok=True)

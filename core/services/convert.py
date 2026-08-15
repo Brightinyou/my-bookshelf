@@ -44,10 +44,24 @@ def _docx_to_text(path: Path) -> str:
     return "\n".join(p.text for p in doc.paragraphs)
 
 
+_IMAGE_PLACEHOLDER_RE = re.compile(r"^!\[[^\]]*\]\([^)]*\)$", re.MULTILINE)
+
+
 def _hwp_to_text(path: Path) -> str:
+    """HWP/HWPX → 텍스트. IR(to_ir) 기반 마크다운으로 표·목록·각주/미주를
+    구조 보존해 뽑는다 — 평문 extract_text()는 표를 뭉갠다. IR 실패/빈 결과
+    시에만 extract_text()로 안전망 폴백."""
     import rhwp
     doc = rhwp.parse(str(path))
-    return doc.extract_text()
+    try:
+        md = doc.to_ir().to_markdown()
+    except Exception as e:
+        append_log(f"WARN: {path.suffix} IR 변환 실패({type(e).__name__}), 평문 폴백")
+        return doc.extract_text()
+    # 이미지 자체는 텍스트 파이프라인에서 다루지 않음 — bin:// placeholder만 제거
+    md = _IMAGE_PLACEHOLDER_RE.sub("", md)
+    md = re.sub(r"\n{3,}", "\n\n", md).strip()
+    return md if md else doc.extract_text()
 
 
 def office_to_txt(path: Path) -> tuple[Path | None, str, str]:

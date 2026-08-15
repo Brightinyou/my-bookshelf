@@ -201,6 +201,36 @@ def _cli_env() -> dict:
     return env
 
 
+def _run_cli_safe(args: list, input_text: str, timeout: int = 600, cwd=None) -> tuple[int, str, str]:
+    """CLI 서브프로세스를 subprocess.run(timeout=...)의 Windows 함정을 피해 호출한다.
+
+    codex.CMD처럼 배치파일·셸 래퍼를 거쳐 실제 작업 프로세스를 손자로 띄우는
+    CLI(codex.CMD → cmd.exe → node.exe)는, subprocess.run의 timeout이 걸려도
+    "직계 자식(cmd.exe)"만 죽고 그 밑의 손자(node.exe, 실제 작업)는 출력 파이프를
+    쥔 채 계속 살아남아 communicate()가 타임아웃을 넘겨서까지 영원히 멈춘다
+    (2026-08-11 실측: 600초 타임아웃인데 11분 넘게 행 걸림 확인). Windows에서는
+    타임아웃 시 taskkill /T로 프로세스 트리 전체를 강제 종료해야 실제로 풀린다."""
+    proc = subprocess.Popen(
+        args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, cwd=cwd, encoding="utf-8", errors="replace",
+        env=_cli_env(), **_no_window_kwargs(),
+    )
+    try:
+        stdout, stderr = proc.communicate(input=input_text, timeout=timeout)
+        return proc.returncode, stdout, stderr
+    except subprocess.TimeoutExpired:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                            capture_output=True, **_no_window_kwargs())
+        else:
+            proc.kill()
+        try:
+            proc.communicate(timeout=10)
+        except Exception:
+            pass
+        raise RuntimeError(f"CLI 시간 초과({timeout}초) — 멈춘 프로세스 트리를 강제 종료했습니다")
+
+
 # ── Claude CLI (구독) ──
 def claude_cli_path() -> str | None:
     p = shutil.which("claude")
@@ -307,18 +337,14 @@ def _claude_cli(model: str, system: str, prompt: str) -> str:
     cli = claude_cli_path()
     if not cli:
         raise RuntimeError("claude CLI 없음")
-    r = subprocess.run(
+    returncode, stdout, stderr = _run_cli_safe(
         [cli, "-p", "--model", model,
          "--system-prompt", system, "--output-format", "text"],
-        input=prompt,
-        capture_output=True, text=True, timeout=600, cwd=tempfile.gettempdir(),
-        encoding="utf-8", errors="replace",   # 윈도우 cp949가 한글 UTF-8 출력 못 읽음 (2026-06-11)
-        env=_cli_env(),
-        **_no_window_kwargs(),
+        prompt, timeout=600, cwd=tempfile.gettempdir(),
     )
-    if r.returncode != 0:
-        raise RuntimeError(f"claude CLI exit {r.returncode}: {(r.stderr or '')[:200]}")
-    out = (r.stdout or "").strip()
+    if returncode != 0:
+        raise RuntimeError(f"claude CLI exit {returncode}: {(stderr or '')[:200]}")
+    out = (stdout or "").strip()
     # ~/.claude 자동 메모리 hook이 출력 끝에 붙는 경우 제거
     for marker in ("\n메모리 저장:", "\n저장할 새 메모리 없음"):
         idx = out.rfind(marker)
@@ -345,30 +371,25 @@ def _codex_cli(model: str, system: str, prompt: str) -> str:
     try:
         last_err = None
         for extra in attempts:
-            r = subprocess.run(
-                base_args + extra,
-                capture_output=True, text=True, timeout=600,
-                cwd=tempfile.gettempdir(), encoding="utf-8", errors="replace",
-                input=full_prompt,
-                env=_cli_env(),
-                **_no_window_kwargs(),
+            returncode, stdout, stderr = _run_cli_safe(
+                base_args + extra, full_prompt, timeout=600, cwd=tempfile.gettempdir(),
             )
-            if r.returncode == 0:
-                mh = re.search(r"(?m)^model:\s*(\S+)", (r.stdout or "") + (r.stderr or ""))
+            if returncode == 0:
+                mh = re.search(r"(?m)^model:\s*(\S+)", (stdout or "") + (stderr or ""))
                 if mh:
                     global _LAST_CLI_MODEL
                     _LAST_CLI_MODEL = mh.group(1)
                 if out_file.exists():
                     return out_file.read_text(encoding="utf-8").strip()
-                return (r.stdout or "").strip()
-            err = (r.stderr or "")
+                return (stdout or "").strip()
+            err = (stderr or "")
             if "not supported" in err or "invalid_request" in err:
                 last_err = err
                 out_file.unlink(missing_ok=True)
                 continue  # 모델 없이 재시도
             # 실제 사유(usage limit 등)는 버전 배너 뒤에 나오므로 끝부분을 보존 (2026-07-09)
-            detail = (err.strip() + " | " + (r.stdout or "").strip())[-400:]
-            raise RuntimeError(f"codex CLI exit {r.returncode}: …{detail}")
+            detail = (err.strip() + " | " + (stdout or "").strip())[-400:]
+            raise RuntimeError(f"codex CLI exit {returncode}: …{detail}")
         raise RuntimeError(f"codex CLI 실패: {(last_err or '')[:300]}")
     finally:
         out_file.unlink(missing_ok=True)

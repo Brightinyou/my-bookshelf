@@ -30,15 +30,74 @@ def _safe_name(stem: str) -> str:
     return re.sub(r'[/\\:*?"<>|]', "_", stem).strip() or "wiki"
 
 
+_EA_FONT = "맑은 고딕"
+
+
+def _set_ea_font(run, name: str = _EA_FONT) -> None:
+    """런의 동아시아(w:eastAsia) 글꼴을 명시적으로 지정.
+
+    python-docx 기본 템플릿은 Normal/제목/인용 등 대부분 스타일에서 동아시아 글꼴을
+    테마의 빈 값(<a:ea typeface="">)에 맡긴다. MS Word는 이를 한글 폰트로 암묵
+    대체해주지만 다른 뷰어·언어팩 환경에서는 대체되지 않아 한글이 네모로 깨진다
+    (표 셀만 다른 경로로 우연히 정상 렌더링됨). 그래서 런마다 직접 지정한다."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    rPr = run._element.get_or_add_rPr()
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        rFonts = OxmlElement("w:rFonts")
+        rPr.insert(0, rFonts)
+    rFonts.set(qn("w:eastAsia"), name)
+
+
+def _add_font_fallback_chain(docx_path: Path) -> None:
+    """fontTable.xml에 맑은 고딕→굴림→바탕 대체(altName) 체인을 등록.
+
+    rFonts는 폰트 하나만 지정할 수 있어, 지정한 동아시아 폰트가 없는 환경에서도
+    Word가 자동으로 다음 폰트를 시도하도록 OOXML altName 메커니즘을 별도로 쓴다."""
+    import zipfile
+    from lxml import etree
+    from docx.oxml.ns import qn as _qn
+
+    with zipfile.ZipFile(docx_path, "r") as zin:
+        names = zin.namelist()
+        data = {n: zin.read(n) for n in names}
+
+    root = etree.fromstring(data["word/fontTable.xml"])
+    existing = {f.get(_qn("w:name")) for f in root.findall(_qn("w:font"))}
+
+    def _ensure(name: str, alt: str | None) -> None:
+        if name in existing:
+            return
+        el = etree.SubElement(root, _qn("w:font"))
+        el.set(_qn("w:name"), name)
+        if alt:
+            alt_el = etree.SubElement(el, _qn("w:altName"))
+            alt_el.set(_qn("w:val"), alt)
+
+    _ensure(_EA_FONT, "굴림")
+    _ensure("굴림", "바탕")
+
+    data["word/fontTable.xml"] = etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone=True
+    )
+    with zipfile.ZipFile(docx_path, "w", zipfile.ZIP_DEFLATED) as zout:
+        for n in names:
+            zout.writestr(n, data[n])
+
+
 def _add_inline(paragraph, text: str) -> None:
     """**굵게** 정도만 처리한 인라인 런 추가."""
     for i, seg in enumerate(re.split(r"(\*\*[^*]+\*\*)", text)):
         if not seg:
             continue
         if seg.startswith("**") and seg.endswith("**"):
-            paragraph.add_run(seg[2:-2]).bold = True
+            r = paragraph.add_run(seg[2:-2])
+            r.bold = True
         else:
-            paragraph.add_run(seg)
+            r = paragraph.add_run(seg)
+        _set_ea_font(r)
 
 
 def note_md_to_docx(md: str, out_path: Path, *, meta: dict | None = None) -> Path:
@@ -62,7 +121,9 @@ def note_md_to_docx(md: str, out_path: Path, *, meta: dict | None = None) -> Pat
 
     title = fm.get("title") or (meta or {}).get("title") or ""
     if title:
-        doc.add_heading(title, level=0)
+        _h = doc.add_heading(title, level=0)
+        for _r in _h.runs:
+            _set_ea_font(_r)
     _bib = " · ".join(
         x for x in [fm.get("author", ""), fm.get("published", ""), fm.get("publisher", "")] if x
     )
@@ -71,6 +132,7 @@ def note_md_to_docx(md: str, out_path: Path, *, meta: dict | None = None) -> Pat
         _r = _p.add_run(_bib)
         _r.italic = True
         _r.font.size = Pt(10)
+        _set_ea_font(_r)
 
     # ── 본문 라인 단위 변환 ──
     lines = body.splitlines()
@@ -96,12 +158,17 @@ def note_md_to_docx(md: str, out_path: Path, *, meta: dict | None = None) -> Pat
                     cells = tbl.add_row().cells
                     for c in range(ncol):
                         cells[c].text = r[c] if c < len(r) else ""
+                        for _p in cells[c].paragraphs:
+                            for _r in _p.runs:
+                                _set_ea_font(_r)
             continue
         # 헤딩
         h = re.match(r"^(#{1,6})\s+(.*)$", ln)
         if h:
             level = min(len(h.group(1)), 4)
-            doc.add_heading(h.group(2), level=level)
+            _h = doc.add_heading(h.group(2), level=level)
+            for _r in _h.runs:
+                _set_ea_font(_r)
             i += 1
             continue
         # 인용
@@ -113,7 +180,9 @@ def note_md_to_docx(md: str, out_path: Path, *, meta: dict | None = None) -> Pat
         # 키워드 해시태그 줄 (#키워드 — 해설)
         if ln.lstrip().startswith("#") and not ln.lstrip().startswith("##"):
             _p = doc.add_paragraph()
-            _p.add_run(ln.strip()).bold = True
+            _r = _p.add_run(ln.strip())
+            _r.bold = True
+            _set_ea_font(_r)
             i += 1
             continue
         # 불릿
@@ -129,6 +198,7 @@ def note_md_to_docx(md: str, out_path: Path, *, meta: dict | None = None) -> Pat
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_path))
+    _add_font_fallback_chain(out_path)
     return out_path
 
 

@@ -285,7 +285,7 @@ def build_single_chapter_wiki(ws_name: str, stem: str, summary_path: Path, wiki_
     ch_dir = json_path.parent
     all_stems = [_re.sub(r"^\d+_", "", f.stem)
                  for f in sorted(ch_dir.glob("??_*.txt"))
-                 if not f.stem.endswith(("_ko", "_wiki"))]
+                 if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
     cur_idx = all_stems.index(ch_title) if ch_title in all_stems else -1
     prev_link = _ch_link(stem, all_stems[cur_idx - 1]) if cur_idx > 0 else ""
     next_link = _ch_link(stem, all_stems[cur_idx + 1]) if 0 <= cur_idx < len(all_stems) - 1 else ""

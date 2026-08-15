@@ -6,9 +6,15 @@ from collections import Counter
 
 _HANGUL = re.compile(r"[가-힣]")
 
+# 페이지 경계 표시(사설영역 문자, 실제 문서에 나올 일이 없다). reflow()의 strip()에
+# 삼켜지지 않도록 공백이 아닌 문자를 쓰고, reflow 마지막에 실제 \f로 치환한다 —
+# 장분할(toc.py)이 원본 쪽 번호를 문자 위치로 되짚는 데 \f를 쓰기 때문 (2026-08-09).
+_PAGE_MARK = ""
+
 
 def strip_page_furniture(pages):
-    """반복 머리말/꼬리말·쪽번호·세로(회전) 텍스트를 제거한 라인 리스트."""
+    """반복 머리말/꼬리말·쪽번호·세로(회전) 텍스트를 제거한 라인 리스트.
+    페이지 경계마다 _PAGE_MARK를 심어 이후 reflow에서도 원본 쪽 경계가 살아남게 한다."""
     # 1) 페이지 가장자리에서 반복되는 머리말/꼬리말 수집
     edges = Counter()
     for pg in pages:
@@ -28,20 +34,23 @@ def strip_page_furniture(pages):
     out = []
     seen = set()   # 반복 콘텐츠 줄은 '첫 등장만' 유지 → 제목/저자가 러닝헤더로도
                    # 반복될 때, 첫 페이지의 진짜 제목은 살리고 이후 헤더만 제거한다.
-    for l in flat:
-        s = l.strip()
-        if not s:
-            out.append("")
-            continue
-        if re.fullmatch(r"\d{1,4}", s):                 # 단독 쪽번호 → 항상 제거
-            continue
-        if _is_vertical_noise(s):                       # 세로(회전) 텍스트 흔적
-            continue
-        if (s in repeated) or (len(s) < 90 and freq[s] >= 3):
-            if s in seen:
-                continue                                # 두 번째 이후 = 러닝헤더/꼬리말
-            seen.add(s)                                 # 첫 등장 = 실제 콘텐츠로 유지
-        out.append(l)
+    for pi, pg in enumerate(pages):
+        for l in pg.split("\n"):
+            s = l.strip()
+            if not s:
+                out.append("")
+                continue
+            if re.fullmatch(r"\d{1,4}", s):                 # 단독 쪽번호 → 항상 제거
+                continue
+            if _is_vertical_noise(s):                       # 세로(회전) 텍스트 흔적
+                continue
+            if (s in repeated) or (len(s) < 90 and freq[s] >= 3):
+                if s in seen:
+                    continue                                # 두 번째 이후 = 러닝헤더/꼬리말
+                seen.add(s)                                 # 첫 등장 = 실제 콘텐츠로 유지
+            out.append(l)
+        if pi < len(pages) - 1:
+            out.append(_PAGE_MARK)
     return out
 
 
@@ -78,7 +87,7 @@ def reflow(text: str) -> str:
                 # (한글은 어절 경계 줄바꿈이 흔해 붙이면 단어가 뭉친다)
                 buf += " " + row
         out.append(buf)
-    return "\n\n".join(out)
+    return "\n\n".join(out).replace(_PAGE_MARK, "\f")
 
 
 def clean_default_text(raw: str) -> str:
