@@ -72,7 +72,7 @@ def tf(s: str, *args) -> str:
 
 _EN: dict[str, str] = {
     # ── 헤더 / 상태 배너 ──────────────────────────────────
-    "PDF → TXT변환 → 장별 분할 → 영문번역 → 요약생성 → Obsidian Wiki":
+    "PDF → TXT변환 → 장별 분할 → 번역 → 요약생성 → Obsidian Wiki":
         "PDF → Text → Chapter split → Translation → Summaries → Obsidian Wiki",
     "API 키": "API keys",
     "CLI 구독": "CLI tools",
@@ -98,7 +98,7 @@ _EN: dict[str, str] = {
     "📂 장분할 앱": "📂 Chapter Splitter",
     "책 TXT를 챕터 단위로 분리 · 1_txt → chapters":
         "Split book text into chapters · 1_txt → chapters",
-    "🌐 영문번역 앱": "🌐 Translator",
+    "🌐 번역 앱": "🌐 Translator",
     "챕터를 한국어로 번역 · chapters → 번역본(_ko.txt)":
         "Translate chapters into Korean · chapters → _ko.txt",
     "📝 문서요약 앱": "📝 Summarizer",
@@ -115,7 +115,7 @@ _EN: dict[str, str] = {
     "🧭 메뉴": "🧭 Menu",
     "📄 TXT변환": "📄 Convert",
     "📂 장분할": "📂 Split",
-    "🌐 영문번역": "🌐 Translate",
+    "🌐 번역": "🌐 Translate",
     "📝 문서요약": "📝 Summarize",
     "📖 위키반영": "📖 Publish",
 
@@ -160,9 +160,26 @@ _EN: dict[str, str] = {
     "② 처리후 · 챕터 폴더": "② Output · Chapter folders",
     "%d권": "%d books",
     "%d권 분할됨": "%d split",
-    "🌐 영문번역 앱 (Translator)": "🌐 Translator",
-    "챕터 TXT를 한국어로 번역해 같은 폴더에 `_ko.txt`로 저장합니다.":
-        "Translates chapter text into Korean, saved as `_ko.txt` in the same folder.",
+    "🌐 번역 앱 (Translator)": "🌐 Translator",
+    "챕터 TXT를 %s로 번역해 같은 폴더에 `_ko.txt`로 저장합니다. "
+    "원문 언어(영어·독일어·네덜란드어·프랑스어·라틴어·일본어·중국어 등)는 자동으로 감지하며, "
+    "도착언어는 설정에서 바꿉니다.":
+        "Translates chapter text into %s, saved as `_ko.txt` in the same folder. "
+        "The source language (English, German, Dutch, French, Latin, Japanese, Chinese and more) "
+        "is detected automatically; change the target language in Settings.",
+
+    # ── 도착언어 설정 (2026-08-15) ────────────────────────
+    "화면에 쓰는 언어입니다 — 번역 결과물의 언어는 바로 아래에서 따로 고릅니다.":
+        "This is the interface language — pick the language of the translated output just below.",
+    "🎯 번역 도착언어": "🎯 Target language",
+    "번역본(_ko.txt)·챕터 요약·위키 노트가 모두 이 언어로 만들어집니다. "
+    "원문 언어는 자동으로 감지하므로 따로 고르지 않아도 됩니다.":
+        "Translations (_ko.txt), chapter summaries and wiki notes are all produced in this "
+        "language. The source language is detected automatically, so you never pick it.",
+    "⚠️ 이미 만들어 둔 번역본·요약은 예전 도착언어 그대로 남아 있습니다 — "
+    "새 언어로 바꾸려면 해당 파일을 지우고 다시 처리하세요.":
+        "⚠️ Translations and summaries you already produced stay in the previous target "
+        "language — delete those files and re-run to switch them over.",
     "① 처리전 · 원문 챕터": "① Input · Source chapters",
     "② 처리후 · 번역본 (_ko.txt)": "② Output · Translations (_ko.txt)",
     "%d개 번역됨": "%d translated",
@@ -183,8 +200,8 @@ _EN: dict[str, str] = {
     # ── 1: TXT변환 ───────────────────────────────────────
     "처리 모드": "Mode",
     "📄 TXT저장만": "📄 Convert to TXT only",
-    "🚀 전체 실행 (TXT변환→장별분할→번역(영어문서인 경우)→Wiki)":
-        "🚀 Run all (convert → split → translate if English → wiki)",
+    "🚀 전체 실행 (TXT변환→장별분할→번역(한국어가 아닌 경우)→Wiki)":
+        "🚀 Run all (convert → split → translate if not Korean → wiki)",
     "번역 엔진 없음 — ⚙️ 설정 탭에서 API 키를 입력하세요.":
         "No translation engine — enter an API key in ⚙️ Settings.",
     "PDF 또는 TXT 업로드 (여러 파일 가능)": "Upload PDF or TXT (multiple files allowed)",
@@ -296,7 +313,7 @@ _EN: dict[str, str] = {
     "2-장별분할 완료": "Chapter split finished",
     "%d권 분할을 마쳤습니다. 다음 단계로 이동하세요.":
         "Split %d book(s). Continue to the next step.",
-    "💡 다음 단계: **🌐 영문번역 앱**으로 이동하세요": "💡 Next: go to **🌐 Translator**",
+    "💡 다음 단계: **🌐 번역 앱**으로 이동하세요": "💡 Next: go to **🌐 Translator**",
 
     # ── 3: 번역 ─────────────────────────────────────────
     "번역 (_ko.txt)": "Translation (_ko.txt)",
@@ -319,7 +336,7 @@ _EN: dict[str, str] = {
     "➕ 선택 항목 큐에 추가 (%d개)": "➕ Add selected to queue (%d)",
     "단락 %d/%d · 재사용 %d · API 호출 %d · 번역 %d · 보존 %d · 제외 %d · 실패 %d":
         "Paragraph %d/%d · reused %d · API calls %d · translated %d · preserved %d · dropped %d · failed %d",
-    "3-영문번역 완료": "Translation finished",
+    "3-번역 완료": "Translation finished",
     "%d개 챕터 번역을 마쳤습니다. 다음 단계에서 요약 MD를 생성하세요.":
         "Translated %d chapter(s). Generate summaries in the next step.",
     "💡 다음 단계: **📝 문서요약 앱**으로 이동하세요": "💡 Next: go to **📝 Summarizer**",
@@ -331,7 +348,7 @@ _EN: dict[str, str] = {
     "#### 요약 대기 (%d개) / 완료 %d개": "#### Summary queue (%d) / done %d",
     "▶ 선택 요약 (%d개)": "▶ Summarize selected (%d)",
     "▶ 전체 요약 (%d개)": "▶ Summarize all (%d)",
-    "요약 대기 없음 — 🌐 영문번역 앱 처리 후 자동 등록되거나 아래에서 수동 추가하세요":
+    "요약 대기 없음 — 🌐 번역 앱 처리 후 자동 등록되거나 아래에서 수동 추가하세요":
         "Nothing to summarize — chapters register automatically after 🌐 Translator, or add manually below",
     "#### 요약 실패 (%d개)": "#### Failed summaries (%d)",
     "📚 책 전체요약 생성: %s": "📚 Generating book overview: %s",
@@ -371,7 +388,7 @@ _EN: dict[str, str] = {
         "Could not read the Obsidian vault list. Check that Obsidian is installed and has been run.",
     "Wiki 생성 API 없음 — ⚙️ 설정 탭에서 키를 입력하세요.":
         "No wiki-generation API — enter a key in ⚙️ Settings.",
-    "#### 챕터 요약 → Wiki (%d권 대기)": "#### Summaries → Wiki (%d waiting)",
+    "#### 챕터 → %s (%d권 대기)": "#### Chapters → %s (%d waiting)",
     "#### 새 요약 있음 · 기존 Wiki 갱신 확인 (%d권)": "#### New summaries · Confirm existing Wiki updates (%d)",
     "기존 Wiki가 있습니다. 명시적으로 선택한 책만 새 요약으로 다시 반영합니다. 선택하지 않은 책은 기존 노트를 유지합니다.":
         "An existing Wiki was found. Only explicitly selected books will be updated with the new summaries; unselected books keep their existing notes.",
@@ -391,11 +408,14 @@ _EN: dict[str, str] = {
     "%d챕터": "%d chapters",
     " · 요약 %d개": " · %d summarized",
     " · 요약 전": " · not summarized yet",
+    "업로드한 TXT는 챕터 분할 없이 단일장으로 등록되어 바로 EPUB 대상이 됩니다.":
+        "Uploaded TXT is registered as a single chapter (no splitting) and becomes an EPUB target right away.",
+    "EPUB 대기에 %d개 등록됨": "%d added to the EPUB queue",
     "#### 단일 TXT → Wiki (%d권 · 챕터 분할 없음)": "#### Single TXT → Wiki (%d · no chapter split)",
     "전체 TXT를 Gemini에 넣어 백그라운드로 단일 위키 노트 생성":
         "Feeds the whole TXT to Gemini and builds a single wiki note in the background",
     "▶ 선택 단일 Wiki (%d권)": "▶ Publish selected as single note (%d)",
-    "#### Wiki 완료 (%d노트)": "#### Wiki notes (%d)",
+    "#### Wiki 완료": "#### Wiki notes",
     "📓 Obsidian 보관함(Vault) 열기": "📓 Open Obsidian vault",
     "5-Wiki 반영 완료": "Wiki publish finished",
     "%d권 Wiki 반영을 마쳤습니다.": "Published %d book(s) to the wiki.",
@@ -428,13 +448,13 @@ _EN.update({
     "메뉴": "Menu",
     "텍스트 변환": "Text",
     "챕터 분할": "Chapter split",
-    "영문번역": "Translation",
+    "번역": "Translation",
     "문서요약": "Summaries",
     "위키반영": "Wiki",
     "설정": "Settings",
     ":material/description: 텍스트 변환": ":material/description: Text conversion",
     ":material/content_cut: 챕터 분할": ":material/content_cut: Chapter split",
-    ":material/translate: 영문번역": ":material/translate: Translation",
+    ":material/translate: 번역": ":material/translate: Translation",
     ":material/summarize: 문서요약": ":material/summarize: Summaries",
     ":material/menu_book: 위키반영": ":material/menu_book: Wiki",
     # 탭 설명
@@ -484,6 +504,16 @@ _EN.update({
     "%d개 요약됨": "%d summarized",
     "%d노트": "%d notes",
     "총 %d권": "%d total",
+    # 처리 중 경과시간 표시 (2026-08-11)
+    "⏱ %s 경과": "⏱ %s elapsed",
+    "%d시간 %d분 %d초": "%dh %dm %ds",
+    "%d분 %d초": "%dm %ds",
+    "%d초": "%ds",
+    "처리 중…": "Working…",
+    "%s — Wiki 노트 생성 중": "%s — generating Wiki note",
+    "%s — DOCX 문서 생성 중": "%s — generating DOCX document",
+    "%s — HWPX 문서 생성 중": "%s — generating HWPX document",
+
     # 버튼 (동작)
     "시작 (%d개)": "Start (%d)",
     "시작 (%d권)": "Start (%d)",
@@ -529,7 +559,7 @@ _EN.update({
     # 처리 화면(런패널)
     "%d/%d 처리 중": "Processing %d/%d",
     "챕터 분할 처리 중": "Splitting chapters",
-    "영문번역 처리 중": "Translating",
+    "번역 처리 중": "Translating",
     "문서요약 처리 중": "Summarizing",
     "위키반영 처리 중": "Building Wiki",
     "처리 중에는 다른 기능이 잠깁니다. '중단'을 누르면 현재 항목까지 마친 뒤 멈추고, 남은 작업은 다시 '시작'으로 이어집니다.":
@@ -552,7 +582,7 @@ _EN.update({
         "No translation queue — split chapters in 📂 Chapter split first",
     "분할 대기 없음 — 📄 텍스트 변환에서 TXT를 먼저 생성하거나 아래에서 수동 추가하세요":
         "No split queue — create TXT in 📄 Text first, or add manually below",
-    "요약 대기 없음 — 🌐 영문번역 처리 후 자동 등록되거나 위에서 TXT를 직접 업로드하세요":
+    "요약 대기 없음 — 🌐 번역 처리 후 자동 등록되거나 위에서 TXT를 직접 업로드하세요":
         "No summary queue — auto-added after 🌐 Translation, or upload TXT above",
     "Wiki 대기 없음 — 📝 문서요약에서 요약 완료 후 자동 등록되거나 아래에서 수동 추가하세요":
         "No Wiki queue — auto-added after 📝 Summaries, or add manually below",
@@ -564,9 +594,9 @@ _EN.update({
         "Uploaded TXT is added to the summary queue below. Press [▶ Start] to begin.",
     "⚠️ 짧은 문서가 감지되었습니다. 아래 '짧은 문서 확인'에서 분할 처리 또는 다음단계로 이동을 선택하세요.":
         "⚠️ Short documents detected. In 'Short documents' below, choose Split or Move to next step.",
-    "짧은 문서는 챕터로 나누기 애매합니다. 챕터로 분할하거나, 통째로 다음 단계(영문→영문번역·한글→문서요약)로 보낼 수 있습니다.":
+    "짧은 문서는 챕터로 나누기 애매합니다. 챕터로 분할하거나, 통째로 다음 단계(외국어→번역·한국어→문서요약)로 보낼 수 있습니다.":
         "Short docs are hard to split. Split into chapters, or send whole to the next step (EN→Translation, KO→Summaries).",
-    "분할 없이 단일장으로 저장하고 영문은 영문번역, 한글은 문서요약으로 이동":
+    "분할 없이 단일장으로 저장하고 한국어가 아니면 번역, 한국어면 문서요약으로 이동":
         "Save as a single chapter without splitting; EN→Translation, KO→Summaries",
     "아직 위키로 만들지 않은 단일 TXT입니다. 위키로 만들거나, 필요 없으면 원본 TXT를 삭제할 수 있습니다.":
         "Single TXTs not yet turned into Wiki. Build a Wiki, or delete the source TXT if not needed.",
@@ -581,9 +611,9 @@ _EN.update({
     "번역을 마쳤습니다. 다음 단계에서 요약을 생성하세요.": "Translation done. Generate summaries next.",
     "요약을 마쳤습니다. 다음 단계에서 Wiki 반영을 진행하세요.": "Summaries done. Build the Wiki next.",
     "Wiki 반영을 마쳤습니다.": "Wiki build done.",
-    "영문 → 영문번역": "EN → Translation",
+    "외국어 → 번역": "Foreign → Translation",
     "한글 → 문서요약": "KO → Summaries",
-    "영문 문서 → 영문번역": "EN document → Translation",
+    "외국어 문서 → 번역": "Foreign document → Translation",
     "한글 문서 → 문서요약": "KO document → Summaries",
     # 저작권/주의
     "API 키는 이 화면에서 직접 저장한 값만 사용합니다. ":
@@ -593,10 +623,10 @@ _EN.update({
     # 다음 단계 안내 · 폴더 · 기타
     "📁 폴더 열기": "📁 Open folder",
     "💡 다음 단계: **📂 챕터 분할**으로 이동하세요": "💡 Next: go to **📂 Chapter split**",
-    "💡 다음 단계: **🌐 영문번역**으로 이동하세요": "💡 Next: go to **🌐 Translation**",
+    "💡 다음 단계: **🌐 번역**으로 이동하세요": "💡 Next: go to **🌐 Translation**",
     "💡 다음 단계: **📝 문서요약**으로 이동하세요": "💡 Next: go to **📝 Summaries**",
     "💡 다음 단계: **📖 위키반영**으로 이동하세요": "💡 Next: go to **📖 Wiki**",
-    "영문 책 → 영문번역": "EN book → Translation",
+    "외국어 책 → 번역": "Foreign book → Translation",
     "한글 책 → 문서요약": "KO book → Summaries",
     "%s 을(를) 단일장으로 저장했습니다.": "Saved %s as a single chapter.",
     "TXT 내용이 비어 있습니다.": "TXT content is empty.",
@@ -653,7 +683,7 @@ _EN.update({
     "예, 바로 진행": "Yes, proceed now",
     "직접 화면에서 선택": "Choose on the screen",
     "이어서 장별로 분할할까요?": "Split into chapters next?",
-    "이어서 영문번역을 진행할까요?": "Translate to Korean next?",
+    "이어서 번역을 진행할까요?": "Translate to Korean next?",
     "이어서 장별 요약을 진행할까요?": "Summarize chapters next?",
     "번역을 마쳤습니다.": "Translation complete.",
     "요약을 마쳤습니다.": "Summarization complete.",
@@ -703,21 +733,45 @@ _EN.update({
     "요약 기반 (_wiki.md에서 생성)": "Summary-based (generated from _wiki.md)",
     "전문 그대로 (요약 아님 — 챕터 원문·번역본 전체)": "Full text (not a summary — the complete chapters/translation)",
     "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
-    "번역본이 없는 한글 원문 챕터는 OCR 자간 깨짐만 AI가 자동으로 붙입니다 — "
-    "번역·교정이 아니라 공백 제거만 하며, 한 글자라도 달라지면 원문을 그대로 씁니다. "
+    "번역본(_ko.txt)이나 자간정리본(_clean.txt)이 있으면 그걸 쓰고, 없으면 원문 그대로 담습니다 — "
+    "AI를 부르지 않으므로 항상 즉시 끝납니다. 한글 원문 책의 OCR 줄바꿈을 다듬으려면 "
+    "아래 '자간정리 먼저 실행'을 한 번 돌려두세요. "
     "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다.":
         "Bundles the full source/translated chapters into a single .epub e-book (full text, not a "
-        "summary). Untranslated Korean source chapters automatically get OCR spacing fixed by AI — "
-        "this only removes stray whitespace, never translation or proofreading, and falls back to "
-        "the untouched original the moment a single character would change. "
+        "summary). It uses the translation (_ko.txt) or the repaired text (_clean.txt) when present, "
+        "otherwise the source as-is — it never calls the AI, so it always finishes instantly. To tidy "
+        "up OCR line breaks in Korean source books, run 'Repair line breaks first' below once. "
         "⚠️ This contains the entire copyrighted book, so use it for personal use only — "
         "distributing or sharing it may violate copyright law.",
+
+    # ── 자간정리 (한글 원문 책의 OCR 줄바꿈 복원, 2026-08-15) ────────────
+    "자간정리 처리 중": "Repairing line breaks",
+    "자간정리 완료": "Line-break repair finished",
+    "자간정리 결과": "Line-break repair results",
+    "%d권 자간정리 완료 — 이제 EPUB 생성은 바로 끝납니다.":
+        "Repaired %d book(s) — EPUB creation is instant from now on.",
+    "자간정리된 책이 없습니다.": "No books were repaired.",
+    "⚠️ %d권 실패:": "⚠️ %d book(s) failed:",
+    "한글 원문 책 다듬기 (선택) — 스캔 PDF의 줄바꿈으로 쪼개진 어절을 AI가 이어 붙입니다. "
+    "한 번 해두면 결과가 _clean.txt로 남아 다시 걸리지 않습니다.":
+        "Tidy up Korean source books (optional) — the AI rejoins words that a scanned PDF's line "
+        "breaks split apart. Do it once and the result is kept as _clean.txt, so it never costs you "
+        "time again.",
+    "✓ 대기 중인 책에 자간정리가 필요한 한글 원문 챕터가 없습니다.":
+        "✓ No queued book has Korean source chapters needing repair.",
+    "자간정리 대상: %d권 · %d챕터": "To repair: %d book(s) · %d chapter(s)",
+    "자간정리 먼저 실행 (%d권)": "Repair line breaks first (%d)",
+    "동시 실행": "Concurrency",
+    "AI 판정 묶음을 동시에 몇 개까지 보낼지. 올리면 빨라지지만 사용량 한도에 걸릴 수 있습니다.":
+        "How many AI batches to send at once. Higher is faster but may hit usage limits.",
+    "사용 가능한 AI가 없어 자간정리를 실행할 수 없습니다 — 설정 탭을 확인하세요.":
+        "No AI available, so line-break repair cannot run — check the Settings tab.",
     "⚠️ 저작권이 있는 책 전체 내용이 그대로 담깁니다 — 개인적인 사용 목적으로만 사용하세요.":
         "⚠️ This contains the entire copyrighted book as-is — for personal use only.",
     "Obsidian 보관함에 위키 노트로 저장합니다.": "Saves as wiki notes in the Obsidian vault.",
     "편집 가능한 Word(.docx) 문서로 저장합니다.": "Saves as an editable Word (.docx) document.",
     "출력 방식을 하나 이상 선택하세요 (위키 또는 DOCX).": "Select at least one output (Wiki or DOCX).",
-    "PDF → TXT변환 → 장별 분할 → 영문번역 → 요약생성 → %s":
+    "PDF → TXT변환 → 장별 분할 → 번역 → 요약생성 → %s":
         "PDF → Text → Chapter split → Translation → Summaries → %s",
     "요약된 「%s」을(를) %s(으)로 저장할까요?": "Save the summarized \"%s\" as %s?",
     "요약된 %d권을 %s(으)로 저장할까요?": "Save %d summarized books as %s?",

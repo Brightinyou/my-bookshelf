@@ -50,20 +50,94 @@ def _split_title_author(stem: str) -> tuple[str, str]:
 _HANGUL_RE = re.compile(r"[가-힣]")
 
 
-def _chapter_source_text(ch_path: Path, engine: str = "", clean: bool = False) -> str:
-    """번역본(_ko.txt)이 있으면 그걸, 없으면 원문(요청 시 AI 자간정리 후) 그대로.
-    번역은 이미 그 자체로 OCR 잡음을 흡수하므로 정리 대상이 아니다 — 원문에만 적용."""
+def _chapter_source_text(ch_path: Path, engine: str = "", clean: bool = False,
+                          progress_cb=None, prefix: str = "") -> str:
+    """번역본(_ko.txt) > 자간정리본(_clean.txt) > 원문 순으로 고른다.
+    번역은 그 자체로 OCR 잡음을 흡수하므로 정리 대상이 아니다 — 원문에만 적용.
+
+    clean=False가 기본이다(2026-08-14): 자간정리는 EPUB 생성과 분리된 별도 단계라
+    (clean_book_chapters) 여기서는 이미 만들어진 _clean.txt를 쓰기만 한다. 그래서
+    EPUB 생성 자체는 한글책이든 영어책이든 항상 즉시 끝난다.
+
+    prefix는 진행 표시 앞에 붙일 문구('챕터 3/15 · ') — 진행 표시가 placeholder
+    하나를 덮어쓰는 구조라, 매 메시지가 챕터 맥락을 같이 들고 있어야 어느 챕터를
+    처리 중인지 보인다(2026-08-14)."""
     ko = ch_path.with_name(ch_path.stem + "_ko.txt")
     if ko.exists():
         return ko.read_text(encoding="utf-8", errors="ignore")
-    if clean and engine:
+    clean_path = ch_path.with_name(ch_path.stem + "_clean.txt")
+    if clean and engine and not clean_path.exists():
         from services.translate import clean_chapter_ko
-        clean_path = ch_path.with_name(ch_path.stem + "_clean.txt")
-        if not clean_path.exists():
-            clean_chapter_ko(ch_path, engine)
-        if clean_path.exists():
-            return clean_path.read_text(encoding="utf-8", errors="ignore")
+        _inner_cb = None
+        if progress_cb:
+            def _inner_cb(idx, total, joined_n, spaced_n, unknown_n):
+                progress_cb(f"{prefix}자간정리 줄바꿈 {idx}/{total} "
+                            f"(붙임 {joined_n}·공백 {spaced_n}·미판정 {unknown_n})")
+        clean_chapter_ko(ch_path, engine, progress_cb=_inner_cb)
+    if clean_path.exists():
+        return clean_path.read_text(encoding="utf-8", errors="ignore")
     return ch_path.read_text(encoding="utf-8", errors="ignore")
+
+
+def chapter_files(ws_name: str, stem: str) -> list[Path]:
+    """책 한 권의 본문 챕터 TXT — 파생물(_ko/_wiki/_bilingual/_clean)은 뺀다."""
+    ch_dir = chapters_dir(ws_name, stem)
+    if not ch_dir.exists():
+        return []
+    return sorted(f for f in ch_dir.glob("??_*.txt")
+                  if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean")))
+
+
+def chapters_needing_clean(ws_name: str, stem: str) -> list[Path]:
+    """자간정리가 필요한 챕터 — 번역본도 완성된 정리본도 아직 없는 한글 원문 챕터.
+    진행 파일(_clean.progress.json)이 남아 있으면 판정을 일부만 받은 것이라 다시 대상이
+    된다 — 이어서 남은 줄바꿈만 묻는다."""
+    out = []
+    for ch in chapter_files(ws_name, stem):
+        if ch.with_name(ch.stem + "_ko.txt").exists():
+            continue        # 번역본이 있으면 EPUB은 그걸 쓴다
+        if (ch.with_name(ch.stem + "_clean.txt").exists()
+                and not ch.with_name(ch.stem + "_clean.progress.json").exists()):
+            continue        # 이미 끝까지 정리됨
+        sample = ch.read_text(encoding="utf-8", errors="ignore")[:2000]
+        if len(_HANGUL_RE.findall(sample)) / max(len(sample), 1) >= 0.3:
+            out.append(ch)
+    return out
+
+
+def clean_book_chapters(ws_name: str, stem: str, engine: str,
+                         progress_cb=None) -> tuple[bool, str]:
+    """책 한 권의 한글 원문 챕터를 자간정리해 _clean.txt로 남긴다. (ok, msg).
+    EPUB 생성에서 떼어낸 별도 단계다 — 오래 걸리는 AI 작업을 여기서 끝내두면
+    EPUB 버튼은 항상 즉시 끝나고, 중간에 멈춰도 이미 정리된 챕터는 남는다."""
+    targets = chapters_needing_clean(ws_name, stem)
+    if not targets:
+        return True, "자간정리할 한글 원문 챕터 없음"
+    if not engine or ":" not in engine:
+        return False, "사용 가능한 AI 없음"
+    ok_n, fail = 0, []
+    for i, ch in enumerate(targets, 1):
+        _prefix = f"챕터 {i}/{len(targets)} — {ch.stem} · "
+        _inner_cb = None
+        if progress_cb:
+            def _inner_cb(idx, total, joined_n, spaced_n, unknown_n, _p=_prefix):
+                progress_cb(f"{_p}줄바꿈 {idx}/{total} "
+                            f"(붙임 {joined_n}·공백 {spaced_n}·미판정 {unknown_n})")
+            progress_cb(f"{_prefix}시작")
+        _ok, _msg = clean_chapter_ko_lazy(ch, engine, progress_cb=_inner_cb)
+        if _ok:
+            ok_n += 1
+        else:
+            fail.append(f"{ch.stem}: {_msg}")
+    if fail:
+        return False, f"{ok_n}/{len(targets)}장 정리 · 실패 {len(fail)}: " + " / ".join(fail[:2])
+    return True, f"{ok_n}장 자간정리 완료"
+
+
+def clean_chapter_ko_lazy(ch_path: Path, engine: str, progress_cb=None):
+    """services.translate를 함수 안에서 불러온다 — 모듈 로딩 순환을 피하려는 기존 방식 그대로."""
+    from services.translate import clean_chapter_ko
+    return clean_chapter_ko(ch_path, engine, progress_cb=progress_cb)
 
 
 _CSS = """@namespace epub "http://www.idpf.org/2007/ops";
@@ -90,16 +164,17 @@ def _chapter_xhtml(title: str, text: str) -> str:
 
 
 def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
-                              engine: str = "", clean: bool = False) -> tuple[bool, str]:
+                              engine: str = "", clean: bool = False,
+                              progress_cb=None) -> tuple[bool, str]:
     """책 한 권 분량 챕터 TXT를 한 EPUB로 합친다. (ok, 저장 경로 또는 오류 메시지).
-    clean=True면 번역본이 없는 한글 원문 챕터에 AI 자간정리를 적용(engine 필요)."""
-    ch_dir = chapters_dir(ws_name, stem)
-    if not ch_dir.exists():
+    번역본(_ko.txt)·자간정리본(_clean.txt)이 있으면 그걸 쓰고, 없으면 원문 그대로다.
+    clean=True로 부르면 정리본이 없는 한글 챕터를 그 자리에서 정리하지만(engine 필요),
+    기본은 False다 — 자간정리는 clean_book_chapters로 떼어낸 별도 단계이고, 그래야
+    EPUB 생성이 항상 즉시 끝난다(2026-08-14).
+    progress_cb(text: str)가 있으면 챕터 진행을 실시간으로 알려준다."""
+    if not chapters_dir(ws_name, stem).exists():
         return False, "챕터 폴더 없음"
-    chapters = sorted(
-        f for f in ch_dir.glob("??_*.txt")
-        if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))
-    )
+    chapters = chapter_files(ws_name, stem)
     if not chapters:
         return False, "챕터 없음"
 
@@ -110,7 +185,21 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
     first_text = ""
     for i, ch_path in enumerate(chapters, 1):
         ch_title = re.sub(r"^\d+_", "", ch_path.stem)
-        text = _chapter_source_text(ch_path, engine=engine, clean=clean)
+        # 본문이 번역돼 있으면(=_ko.txt 존재) 제목도 번역본을 우선 쓴다 — "번역제목 (원제)"
+        # 형태로, 번역 사이드카(_title_ko.txt, translate_one_chapter가 만듦)가 없으면
+        # 원제 그대로(2026-08-11 — 본문은 번역됐는데 제목만 영문으로 남던 문제 수정).
+        _ko_txt_path = ch_path.with_name(ch_path.stem + "_ko.txt")
+        if _ko_txt_path.exists():
+            _title_ko_path = ch_path.with_name(ch_path.stem + "_title_ko.txt")
+            if _title_ko_path.exists():
+                _ko_title = _title_ko_path.read_text(encoding="utf-8", errors="ignore").strip()
+                if _ko_title:
+                    ch_title = f"{_ko_title} ({ch_title})"
+        _prefix = f"챕터 {i}/{len(chapters)} — {ch_title} · "
+        if progress_cb:
+            progress_cb(f"{_prefix}본문 읽는 중")
+        text = _chapter_source_text(ch_path, engine=engine, clean=clean,
+                                     progress_cb=progress_cb, prefix=_prefix)
         if i == 1:
             first_text = text
         fname = f"chap{i:03d}.xhtml"

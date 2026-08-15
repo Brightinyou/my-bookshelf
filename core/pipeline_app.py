@@ -9,6 +9,7 @@ import shutil
 import ssl
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 import urllib.error
@@ -22,6 +23,7 @@ if str(CORE_DIR) not in sys.path:
 
 import pandas as pd
 import streamlit as st
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 import config as cfg
 import llm_providers as llm
@@ -46,14 +48,16 @@ from services.files import (
 from services.pipeline_queue import (
     queue_add, queue_clear, queue_list, queue_remove,
 )
-from services.convert import _do_ocr_only, pdf_to_txt
+from services.convert import OCR_REQUIRED_MSG, _do_ocr_only, pdf_to_txt
 from services import updater
 from services.translate import (
     _needs_translation, _paragraph_already_target, _split_paragraphs_robust,
-    _translate_paragraph, _translation_is_valid, build_translate_system,
+    _translate_paragraph, _translation_is_valid, book_language, build_translate_system,
+    clean_workers as translate_clean_workers,
     engine_label, find_sequential_footnotes, find_skip_section_paragraphs,
-    is_english, needs_translation, should_drop_paragraph,
-    should_skip_translation, target_lang, translate, translate_engine_options,
+    language_name, needs_translation, set_target_language, should_drop_paragraph,
+    source_language, target_language, target_language_name, target_language_options,
+    should_skip_translation, translate, translate_engine_options,
     translate_one_chapter,
 )
 from services.chapters import (
@@ -74,7 +78,9 @@ from services.wiki import (
 )
 from services.docx_export import build_docx_from_chapter_summaries, set_docx_dir
 from services.hwpx_export import build_hwpx_from_chapter_summaries, set_hwpx_dir
-from services.epub_export import build_epub_from_chapters, set_epub_dir
+from services.epub_export import (
+    build_epub_from_chapters, chapters_needing_clean, clean_book_chapters, set_epub_dir,
+)
 from services.i18n import get_lang, set_lang, t, tf
 
 # ── 설정 ─────────────────────────────────────────────────
@@ -505,29 +511,51 @@ def _out_flow() -> str:
                                 (_use_ep, "EPUB"), (_use_ob, "Obsidian Wiki")] if on]
     return " + ".join(parts) if parts else "출력 미선택"
 if _translation_on:
-    st.caption(tf("PDF → TXT변환 → 장별 분할 → 영문번역 → 요약생성 → %s", _out_flow()))
+    st.caption(tf("PDF → TXT변환 → 장별 분할 → 번역 → 요약생성 → %s", _out_flow()))
 else:
     st.caption(f"PDF → Text → Chapter split → Summaries → {_out_flow()}")
+
+
+def _book_chapters(stem: str) -> list[Path]:
+    """책의 본문 챕터 파일들 — 파생물(_ko/_wiki/_bilingual/_clean) 제외."""
+    _cdir = chapters_dir(DEFAULT_WS, stem)
+    if not _cdir.exists():
+        return []
+    return sorted(f for f in _cdir.glob("??_*.txt")
+                  if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean")))
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _book_language(stem: str, _sig: tuple) -> tuple[str, float]:
+    """책 원문 언어 (코드, 확신도). _sig(파일 수·수정시각)가 바뀌면 다시 감지한다."""
+    return book_language(_book_chapters(stem))
+
+
+def _book_language_cached(stem: str) -> tuple[str, float]:
+    chs = _book_chapters(stem)
+    if not chs:
+        return "", 0.0
+    sig = (len(chs), round(max(f.stat().st_mtime for f in chs), 3))
+    return _book_language(stem, sig)
 
 
 def _route_translate(stem: str) -> bool:
     """이 책을 번역 대기로 보낼지 — 영어 UI에서는 항상 False(요약으로 직행).
 
-    실제 첫 챕터 본문의 한글 비율로 판단한다. 파일명(저자명)만 보고 판단하면
-    "The Artifice of Intelligence_노린 헤르츠펠트"처럼 원서 제목에 저자명만
-    한글 음역인 경우 번역이 필요 없다고 오판해 번역을 건너뛴다(2026-08-11 실측).
+    실제 본문 언어로 판단한다. 파일명(저자명)만 보고 판단하면 "The Artifice of
+    Intelligence_노린 헤르츠펠트"처럼 원서 제목에 저자명만 한글 음역인 경우 번역이
+    필요 없다고 오판해 번역을 건너뛴다(2026-08-11 실측).
+
+    첫 챕터 하나가 아니라 여러 챕터를 섞어 본다(2026-08-15): 『서양철학사』(한국어
+    번역서)는 1장이 독일어 참고문헌으로 뒤덮여 있어 그 장만 보면 '독일어'로 잡혀
+    한국어 책이 통째로 번역 대기에 들어갔다.
     챕터 파일을 아직 못 찾을 때만 옛 파일명 휴리스틱으로 폴백한다."""
     if not _translation_on:
         return False
-    _cdir_rt = chapters_dir(DEFAULT_WS, stem)
-    _first_ch_rt = next(
-        iter(sorted(f for f in _cdir_rt.glob("??_*.txt")
-                    if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean")))),
-        None,
-    ) if _cdir_rt.exists() else None
-    if _first_ch_rt is not None:
-        return needs_translation(_first_ch_rt)
-    return _needs_translation(stem)
+    if not _book_chapters(stem):
+        return _needs_translation(stem)
+    _code, _ = _book_language_cached(stem)
+    return bool(_code) and _code != "ko"
 
 _loading_step("파일 목록 확인 중…", "처리된 파일과 API 설정을 읽고 있습니다")
 
@@ -561,7 +589,7 @@ _STAGE_ICONS = {
 TASKS = [
     ("1_txt", "텍스트 변환", "PDF·DOCX·HWP·HWPX·TXT를 텍스트로 변환 · 업로드 대기 → 변환 TXT"),
     ("2_split", "챕터 분할", "책 TXT를 챕터 단위로 분리 · 변환 TXT → chapters"),
-    ("3_translate", "영문번역", "챕터를 한국어로 번역 · chapters → 번역본(_ko.txt)"),
+    ("3_translate", "번역", "챕터를 한국어로 번역 · chapters → 번역본(_ko.txt)"),
     ("4_summary", "문서요약", "챕터별 요약 노트 생성 · chapters → 요약(_wiki.md)"),
     ("5_wiki", "위키반영", "요약을 Obsidian 노트로 저장 · 요약(_wiki.md) → 보관함(Vault)"),
     ("settings", "설정", "API 키와 위키 생성 모델 설정"),
@@ -654,7 +682,7 @@ _STAGE_TASKS = [
     ("menu", "메뉴"),
     ("1_txt", "텍스트 변환"),
     ("2_split", "챕터 분할"),
-    ("3_translate", "영문번역"),
+    ("3_translate", "번역"),
     ("4_summary", "문서요약"),
     ("5_wiki", "위키반영"),
     ("settings", "설정"),
@@ -1061,6 +1089,22 @@ def _prepare_uploaded_single_chapter(ws_name: str, upload_name: str, upload_byte
         existing_text = existing_path.read_text(encoding="utf-8", errors="ignore")
         if existing_text == source_text:
             return True, existing_path, stem, t("기존 단일장 파일을 이어서 사용합니다.")
+    else:
+        # 파일명이 달라도 이미 등록된 책과 본문 내용이 같으면 새 책으로 중복 생성하지
+        # 않는다 — 같은 책을 다른 이름의 TXT로 드래그앤드롭했을 때 중복 폴더가 생기던
+        # 문제(2026-08-11, "1_기술신학..." 중복 사례).
+        for _d in (cfg.CHAPTERS_DIR.iterdir() if cfg.CHAPTERS_DIR.exists() else []):
+            if not _d.is_dir() or _d.name == stem:
+                continue
+            _chs = [f for f in _d.glob("??_*.txt")
+                    if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+            if len(_chs) != 1:
+                continue
+            try:
+                if _chs[0].read_text(encoding="utf-8", errors="ignore") == source_text:
+                    return True, _chs[0], _d.name, t("동일한 내용의 책이 이미 있어 기존 파일을 이어서 사용합니다.")
+            except Exception:
+                continue
 
     ch_path, _ = _write_single_chapter_from_text(ws_name, stem, source_text)
     return True, ch_path, stem, t("단일장 파일을 저장했습니다.")
@@ -1131,6 +1175,7 @@ def _run_start(tab: str, work: list) -> None:
     st.session_state[f"{tab}_queue"] = list(work)
     st.session_state[f"{tab}_total"] = len(work)
     st.session_state[f"{tab}_log"] = []
+    st.session_state[f"{tab}_start_ts"] = time.time()
     st.session_state["_run_lock"] = tab
     st.rerun()
 
@@ -1138,25 +1183,74 @@ def _run_start(tab: str, work: list) -> None:
 def _run_finish(tab: str) -> None:
     st.session_state[f"{tab}_running"] = False
     st.session_state.pop(f"{tab}_status_place", None)
+    st.session_state.pop(f"{tab}_start_ts", None)
     if st.session_state.get("_run_lock") == tab:
         st.session_state.pop("_run_lock", None)
 
 
-def _run_panel(tab: str, title: str, process_one, on_done=None, item_progress_text=None) -> None:
+def _fmt_elapsed(secs: float) -> str:
+    """경과 시간을 사람이 읽기 좋은 문구로 (2026-08-11 — 처리 중 진행이 보이도록)."""
+    secs = max(0, int(secs))
+    m, s = divmod(secs, 60)
+    h, m = divmod(m, 60)
+    if h:
+        return tf("%d시간 %d분 %d초", h, m, s)
+    if m:
+        return tf("%d분 %d초", m, s)
+    return tf("%d초", s)
+
+
+def _run_with_elapsed_ticker(fn, elapsed_place, start_ts: float):
+    """fn()을 별도 스레드에서 실행하는 동안, 메인 스레드는 1초마다 경과 시간을 독립적으로
+    갱신한다. AI 배치 호출 하나가 수십 초씩 걸리면 그 사이엔 진행 콜백이 전혀 안 불려서
+    경과 시간도 같이 멈춘 것처럼 보이던 문제 — 콜백과 무관하게 똑딱이는 타이머가 필요해
+    스레드로 분리했다(2026-08-11). add_script_run_ctx로 워커 스레드에서도 다른 placeholder
+    (진행 텍스트 등)를 안전하게 갱신할 수 있다."""
+    result: dict = {}
+
+    def _target():
+        try:
+            result["value"] = fn()
+        except Exception as e:
+            result["error"] = e
+
+    thread = threading.Thread(target=_target, daemon=True)
+    add_script_run_ctx(thread)
+    thread.start()
+    while thread.is_alive():
+        elapsed_place.caption(tf("⏱ %s 경과", _fmt_elapsed(time.time() - start_ts)))
+        thread.join(timeout=1.0)
+    elapsed_place.caption(tf("⏱ %s 경과", _fmt_elapsed(time.time() - start_ts)))
+    if "error" in result:
+        raise result["error"]
+    return result["value"]
+
+
+def _run_panel(tab: str, title: str, process_one, on_done=None,
+               item_progress_text=None, detail_progress: bool = False) -> None:
     """처리 화면 렌더 + 항목 1개 처리 + rerun. process_one(item)->(ok, msg 문자열).
-    on_done(): 큐 소진 시 1회 실행(전체요약 등 후처리)."""
+    on_done(): 큐 소진 시 1회 실행(전체요약 등 후처리).
+    item_progress_text: 번역처럼 고정된 8개 인자 콜백(기존 방식, 그대로 유지).
+    detail_progress=True: 자유 문자열 콜백 process_one(item, cb) — cb(text)를 호출하는
+    쪽마다 경과 시간과 함께 실시간으로 보여준다(EPUB 등, 2026-08-11). 처리 중엔 회전
+    스피너도 같이 떠서 '멈춘 게 아니다'가 한눈에 보이게 했다."""
     queue = list(st.session_state.get(f"{tab}_queue", []))
     total = st.session_state.get(f"{tab}_total", len(queue)) or 1
     done = total - len(queue)
     log = list(st.session_state.get(f"{tab}_log", []))
+    _start_ts = st.session_state.get(f"{tab}_start_ts", time.time())
 
     st.markdown(f"### ⏳ {t(title)}")
+    _elapsed_place = st.empty()
+    _elapsed_place.caption(tf("⏱ %s 경과", _fmt_elapsed(time.time() - _start_ts)))
     st.progress(min(done / total, 1.0), text=tf("%d/%d 처리 중", done, total))
     _stopped = st.button(t("중단"), icon=":material/stop:", key=f"{tab}_stopbtn", type="primary")
     st.caption(t("처리 중에는 다른 기능이 잠깁니다. '중단'을 누르면 현재 항목까지 마친 뒤 멈추고, 남은 작업은 다시 '시작'으로 이어집니다."))
-    with st.container(height=300, border=True):
-        for _ln in log[-80:]:
-            st.markdown(_ln)
+    # 완료 로그가 없으면 빈 테두리 박스만 남아 혼란스러워 아예 안 그린다(2026-08-11).
+    if log:
+        with st.container(height=300, border=True):
+            for _ln in log[-80:]:
+                st.markdown(_ln)
 
     if _stopped:
         _run_finish(tab)
@@ -1184,9 +1278,22 @@ def _run_panel(tab: str, title: str, process_one, on_done=None, item_progress_te
                     ),
                 )
 
-            _ok, _msg = process_one(_item, _progress_cb)
+            with st.spinner(t("처리 중…")):
+                _ok, _msg = _run_with_elapsed_ticker(
+                    lambda: process_one(_item, _progress_cb), _elapsed_place, _start_ts)
+        elif detail_progress:
+            _detail_place = st.empty()
+
+            def _detail_cb(text: str):
+                _detail_place.caption(text)
+
+            with st.spinner(t("처리 중…")):
+                _ok, _msg = _run_with_elapsed_ticker(
+                    lambda: process_one(_item, _detail_cb), _elapsed_place, _start_ts)
         else:
-            _ok, _msg = process_one(_item)
+            with st.spinner(t("처리 중…")):
+                _ok, _msg = _run_with_elapsed_ticker(
+                    lambda: process_one(_item), _elapsed_place, _start_ts)
     except Exception as _e:
         _ok, _msg = False, f"{type(_e).__name__}: {str(_e)[:150]}"
     log.append(f"{'✅' if _ok else '❌'} {_msg}")
@@ -1432,23 +1539,31 @@ if _active_view in {"1_txt", "all_run"}:
     )
     st.caption(t(_DND_HINT))
     if _uploads1:
-        _already_queued1 = st.session_state.get("_ocr_queued", set())
+        # 파일명이 아니라 내용 해시(토큰)로 "이미 대기열에 올렸는지" 추적한다 — 처리 완료 후
+        # 이 추적을 지워버리면(예전 방식), 업로더 위젯은 파일을 계속 들고 있어서 다음
+        # rerun에 똑같은 파일이 "새로 업로드된 것"으로 오인돼 UPLOAD_TMP에 다시 쓰이고,
+        # 중복확인 응답까지 초기화돼 "이미 처리된 파일" 경고가 다시 뜨는 버그가 있었다
+        # (2026-08-12). 토큰은 내용 기반이라 처리 후에도 계속 남겨둬도 안전 — 진짜 다른
+        # 내용으로 재업로드되면 토큰 자체가 달라져 정상적으로 새로 인식된다.
+        _already_queued1 = set(st.session_state.get("_ocr_queued", []))
         _added1 = []
         for _uf_new in _uploads1:
-            if _uf_new.name in _already_queued1:
+            _uf_new_bytes = _uf_new.getvalue()
+            _uf_new_token = _upload_token(_uf_new.name, _uf_new_bytes)
+            if _uf_new_token in _already_queued1:
                 continue  # 이미 대기 목록에 추가된 파일 건너뜀
             _dest1 = UPLOAD_TMP / _uf_new.name
             try:
-                _dest1.write_bytes(_uf_new.read())
+                _dest1.write_bytes(_uf_new_bytes)
                 _added1.append(_uf_new.name)
-                _already_queued1.add(_uf_new.name)
+                _already_queued1.add(_uf_new_token)
                 # 같은 이름으로 새로 올라온 파일이므로 예전 중복확인 응답은 무효화
                 # (내용이 바뀌었을 수 있음 — 다시 물어야 함).
                 st.session_state.get("_ocr_dup_confirmed", set()).discard(_uf_new.name)
                 st.session_state.get("_ocr_dup_dismissed", set()).discard(_uf_new.name)
             except Exception as _e1:
                 st.error(f"❌ 저장 실패: {_uf_new.name} — {_e1}")
-        st.session_state["_ocr_queued"] = _already_queued1
+        st.session_state["_ocr_queued"] = sorted(_already_queued1)
         if _added1:
             st.success(tf("📥 처리 대기 목록에 추가됨: %s", ", ".join(_added1)))
             st.rerun()  # 대기 목록 갱신 (세션스테이트로 중복 저장 방지됨)
@@ -1574,7 +1689,6 @@ if _active_view in {"1_txt", "all_run"}:
                     Path(_dobj1._p).unlink(missing_ok=True)
                 except Exception:
                     pass
-            st.session_state.pop("_ocr_queued", None)
             st.rerun()
         _to_run1 = _sel1 if _run_sel1 else []
         if _to_run1:
@@ -1616,7 +1730,6 @@ if _active_view in {"1_txt", "all_run"}:
                 )
             elif _ocr_needed1:
                 _set_ocr_notice(_ocr_needed1)
-            st.session_state.pop("_ocr_queued", None)  # 처리 완료 후 큐 초기화
             st.rerun()
     else:
         st.info(t("대기 중인 파일 없음 — 위에서 PDF를 업로드하세요."))
@@ -1715,10 +1828,10 @@ if _active_view == "2_split":
         _set_stage_completion(
             t("2-챕터 분할 완료"),
             t("분할을 마쳤습니다.")
-            + (" " + t("영문 책 → 영문번역") if _any_en else " " + t("한글 책 → 문서요약")),
+            + (" " + t("외국어 책 → 번역") if _any_en else " " + t("한글 책 → 문서요약")),
             next_stage="3_translate" if _any_en else "4_summary",
             open_target=_stage_folder("2_split"),
-            question=t("이어서 영문번역을 진행할까요?") if _any_en else t("이어서 장별 요약을 진행할까요?"),
+            question=t("이어서 번역을 진행할까요?") if _any_en else t("이어서 장별 요약을 진행할까요?"),
             next_items=_items2,
         )
 
@@ -1748,19 +1861,30 @@ if _active_view == "2_split":
                               type=["txt", "md"], accept_multiple_files=True, key="split_uploader")
     st.caption(t(_DND_HINT))
     if _up2:
+        # 내용 해시(토큰)로 "이미 이 업로드를 반영했는지" 추적한다 — 업로더 위젯은 파일을
+        # 계속 들고 있으므로, 추적 없이 매 rerun마다 다시 저장 + 재분할 확인 상태를
+        # 초기화하면 사용자가 '다시 분할'을 눌러도 바로 다음 rerun에 그 확인이 다시
+        # 지워져 영원히 분할 대기에 안 뜨는 교착 상태가 됐다(2026-08-12).
+        _split_up_seen2 = set(st.session_state.get("_split_up_tokens", []))
         _added_split_stems2: list[str] = []
         for _u2 in _up2:
+            _u2_bytes = _u2.getvalue()
+            _u2_token = _upload_token(_u2.name, _u2_bytes)
+            if _u2_token in _split_up_seen2:
+                continue
+            _split_up_seen2.add(_u2_token)
             cfg.TXT_DIR.mkdir(parents=True, exist_ok=True)
             _dst2 = cfg.TXT_DIR / _u2.name
-            _dst2.write_bytes(_u2.read())
+            _dst2.write_bytes(_u2_bytes)
             _stem_u2 = _nfc(Path(_u2.name).stem)
             _added_split_stems2.append(_stem_u2)
             # 같은 이름으로 새로 올라온 TXT이므로 예전 재분할 확인 응답은 무효화
             st.session_state.get("_split_dup_confirmed", set()).discard(_stem_u2)
             st.session_state.get("_split_dup_dismissed", set()).discard(_stem_u2)
+        st.session_state["_split_up_tokens"] = sorted(_split_up_seen2)
         if _added_split_stems2:
             queue_add("tab2_ready", _added_split_stems2)
-        st.success(tf("%d개 TXT 저장 완료", len(_up2))); st.rerun()
+            st.success(tf("%d개 TXT 저장 완료", len(_added_split_stems2))); st.rerun()
 
     # ── 분할 대기 (큐 기반 + 1_txt/ 전체 폴백) ──────────────
     _q2_stems = queue_list("tab2_ready")
@@ -1831,7 +1955,7 @@ if _active_view == "2_split":
                               use_container_width=True, type="primary", disabled=len(_sel2)==0)
         _next2 = _b2c2.button(tf("다음단계로 이동 (%d권)", len(_sel2)), icon=":material/arrow_forward:", key="split2_next",
                               use_container_width=True, disabled=len(_sel2)==0,
-                              help=t("분할 없이 단일장으로 저장하고 영문은 영문번역, 한글은 문서요약으로 이동"))
+                              help=t("분할 없이 단일장으로 저장하고 한국어가 아니면 번역, 한국어면 문서요약으로 이동"))
         _del2 = _b2c3.button(tf("삭제 (%d권)", len(_sel2)), icon=":material/delete:", key="split2_del",
                              use_container_width=True, disabled=len(_sel2)==0)
         if _del2 and _sel2:
@@ -1866,10 +1990,10 @@ if _active_view == "2_split":
                 _set_stage_completion(
                     t("2-단일장 저장 완료"),
                     tf("%d건을 다음 단계로 보냈습니다.", _completed2)
-                    + (" " + t("영문 → 영문번역") if _queued_translate2 else " " + t("한글 → 문서요약")),
+                    + (" " + t("외국어 → 번역") if _queued_translate2 else " " + t("한글 → 문서요약")),
                     next_stage=_next_stage2,
                     open_target=_stage_folder("2_split"),
-                    question=t("이어서 영문번역을 진행할까요?") if _queued_translate2 else t("이어서 장별 요약을 진행할까요?"),
+                    question=t("이어서 번역을 진행할까요?") if _queued_translate2 else t("이어서 장별 요약을 진행할까요?"),
                     next_items=_done_stems2,
                 )
                 st.rerun()
@@ -1898,7 +2022,7 @@ if _active_view == "2_split":
                                   key="shortsplit2_split", use_container_width=True, disabled=len(_sel_short2) == 0)
         _sh_next2 = _shc2.button(tf("다음단계로 이동 (%d권)", len(_sel_short2)), icon=":material/arrow_forward:",
                                  key="shortsplit2_next", type="primary", use_container_width=True, disabled=len(_sel_short2) == 0,
-                                 help=t("분할 없이 단일장으로 저장하고 영문은 영문번역, 한글은 문서요약으로 이동"))
+                                 help=t("분할 없이 단일장으로 저장하고 한국어가 아니면 번역, 한국어면 문서요약으로 이동"))
         _sh_del2 = _shc3.button(tf("삭제 (%d권)", len(_sel_short2)), icon=":material/delete:",
                                 key="shortsplit2_del", use_container_width=True, disabled=len(_sel_short2) == 0)
 
@@ -2026,7 +2150,7 @@ if _active_view == "2_split":
                      disabled=len(_msel2)==0):
             queue_add("tab2_ready", _msel2); st.rerun()
 
-    st.info(t("💡 다음 단계: 영문 도서는 **:material/translate: 영문번역**으로, 한글 도서는 **📝 문서요약**으로 이동하세요") if _translation_on
+    st.info(t("💡 다음 단계: 외국어 도서는 **:material/translate: 번역**으로, 한국어 도서는 **📝 문서요약**으로 이동하세요") if _translation_on
             else t("💡 다음 단계: **📝 문서요약**으로 이동하세요"))
 
 
@@ -2061,7 +2185,7 @@ if _active_view == "3_translate":
                     + tf("⚠️ %d개 번역 실패 — 대기 목록에 그대로 남아있습니다:", len(_fails3)) + "\n" \
                     + "\n".join(f"- {m}" for m in _fails3)
             _set_stage_completion(
-                t("3-영문번역 결과") if _oks3 else t("3-영문번역 실패"),
+                t("3-번역 결과") if _oks3 else t("3-번역 실패"),
                 _msg3,
                 next_stage="4_summary" if _oks3 else None,
                 open_target=_stage_folder("3_translate"),
@@ -2069,7 +2193,7 @@ if _active_view == "3_translate":
             )
             return
         _set_stage_completion(
-            t("3-영문번역 완료"),
+            t("3-번역 완료"),
             t("번역을 마쳤습니다."),
             next_stage="4_summary",
             open_target=_stage_folder("3_translate"),
@@ -2081,7 +2205,7 @@ if _active_view == "3_translate":
     _ch_root3f = cfg.CHAPTERS_DIR
     if _run_active("tr3"):
         _run_panel(
-            "tr3", "영문번역 처리 중", _proc_translate3, on_done=_tr3_on_done,
+            "tr3", "번역 처리 중", _proc_translate3, on_done=_tr3_on_done,
             item_progress_text=lambda done, total, translated, preserved, dropped, failed, resumed, api_calls: tf(
                 "단락 %d/%d · 재사용 %d · API 호출 %d · 번역 %d · 보존 %d · 제외 %d · 실패 %d",
                 done, total, resumed, api_calls, translated, preserved, dropped, failed,
@@ -2089,8 +2213,10 @@ if _active_view == "3_translate":
         )
         st.stop()
     _stage_flow_panel(
-        ":material/translate: 영문번역",
-        "챕터 TXT를 한국어로 번역해 같은 폴더에 `_ko.txt`로 저장합니다.",
+        ":material/translate: 번역",
+        tf("챕터 TXT를 %s로 번역해 같은 폴더에 `_ko.txt`로 저장합니다. "
+            "원문 언어(영어·독일어·네덜란드어·프랑스어·라틴어·일본어·중국어 등)는 자동으로 감지하며, "
+            "도착언어는 설정에서 바꿉니다.", target_language_name()),
         [
             ("① 처리전 · 원문 챕터", _ch_root3f, tf("%d개", _src_n3f)),
             ("② 처리후 · 번역본 (_ko.txt)", _ch_root3f, tf("%d개 번역됨", _ko_n3f)),
@@ -2158,6 +2284,12 @@ if _active_view == "3_translate":
                 _tr_done3 += 1
             else:
                 _meta3 = f"{_cf3.stat().st_size//1024}KB"
+                # 감지된 원문 언어를 항목마다 보여준다 — 영어만 다루던 때와 달리
+                # 독일어·일본어 원서가 섞이면 무엇이 무슨 언어인지 눈으로 봐야 한다
+                # (2026-08-15).
+                _lang3, _ = source_language(_cf3)
+                if _lang3:
+                    _meta3 += f" · {language_name(_lang3)}"
                 if _cf3.with_name(_cf3.stem + "_ko.progress.json").exists():
                     _meta3 += t(" · ♻️ 중단됨 — 이어하기 가능")
                 _tr_pend3.append({
@@ -2414,7 +2546,7 @@ if _active_view == "4_summary":
             if _rs4 and _sel4_rels:
                 _run_start("summ4", _sel4_rels)
         else:
-            st.info(t("요약 대기 없음 — 🌐 영문번역 처리 후 자동 등록되거나 위에서 TXT를 직접 업로드하세요"))
+            st.info(t("요약 대기 없음 — 🌐 번역 처리 후 자동 등록되거나 위에서 TXT를 직접 업로드하세요"))
 
         if st.session_state.get("_autostart_tab") == "summ4" and not _run_active("summ4"):
             st.session_state.pop("_autostart_tab", None)
@@ -2466,11 +2598,13 @@ if _active_view == "5_wiki":
     _epub_dir5 = _current_epub_dir()
     _epub_engine5 = _settings_engine_id()
 
-    def _proc_wiki5(stem):
+    def _proc_wiki5(stem, progress_cb=None):
         # 옵시디언·DOCX·HWPX·EPUB 토글 조합대로 출력을 생성한다 (여러 개 켜면 전부).
         _res = []
         _produced = {"wiki": None, "docx": None, "hwpx": None, "epub": None}
         if _use_ob:
+            if progress_cb:
+                progress_cb(tf("%s — Wiki 노트 생성 중", stem))
             _cdir = chapters_dir(DEFAULT_WS, stem)
             for _cjf in list_summary_files(_cdir):
                 build_single_chapter_wiki(DEFAULT_WS, stem, _cjf, wiki_dir=_cur_wiki5_path)
@@ -2479,18 +2613,25 @@ if _active_view == "5_wiki":
             if _wok:
                 _produced["wiki"] = Path(_wmsg)
         if _use_dx:
+            if progress_cb:
+                progress_cb(tf("%s — DOCX 문서 생성 중", stem))
             _dok, _dmsg = build_docx_from_chapter_summaries(DEFAULT_WS, stem, _docx_dir5)
             _res.append(("DOCX", _dok, Path(_dmsg).name if _dok else str(_dmsg)[:45]))
             if _dok:
                 _produced["docx"] = Path(_dmsg)
         if _use_hx:
+            if progress_cb:
+                progress_cb(tf("%s — HWPX 문서 생성 중", stem))
             _hok, _hmsg = build_hwpx_from_chapter_summaries(DEFAULT_WS, stem, _hwpx_dir5)
             _res.append(("HWPX", _hok, Path(_hmsg).name if _hok else str(_hmsg)[:45]))
             if _hok:
                 _produced["hwpx"] = Path(_hmsg)
         if _use_ep:
+            # clean=False — 자간정리는 아래 '자간정리 먼저 실행' 버튼이 맡는 별도
+            # 단계다. 그래야 EPUB 생성이 한글책이든 영어책이든 즉시 끝난다(2026-08-14).
             _eok, _emsg = build_epub_from_chapters(DEFAULT_WS, stem, _epub_dir5,
-                                                    engine=_epub_engine5, clean=True)
+                                                    engine=_epub_engine5, clean=False,
+                                                    progress_cb=progress_cb)
             _res.append(("EPUB", _eok, Path(_emsg).name if _eok else str(_emsg)[:45]))
             if _eok:
                 _produced["epub"] = Path(_emsg)
@@ -2503,6 +2644,29 @@ if _active_view == "5_wiki":
             _touched5[stem] = _produced
             st.session_state["wiki5_touched"] = _touched5
         return _allok, f"{stem}: " + " · ".join(f"{nm} {'✓' if ok else '✗ ' + m}" for nm, ok, m in _res)
+
+    def _proc_clean5(stem, progress_cb=None):
+        """자간정리 전용 처리기 — 한 권의 한글 원문 챕터를 _clean.txt로 만들어 둔다.
+        EPUB 큐(tab5_ready)는 건드리지 않는다: 정리는 EPUB의 준비 작업일 뿐이라
+        끝난 뒤에도 그 책은 EPUB 대기 목록에 그대로 남아야 한다."""
+        _cok, _cmsg = clean_book_chapters(DEFAULT_WS, stem, _epub_engine5,
+                                           progress_cb=progress_cb)
+        return _cok, f"{stem}: {str(_cmsg)[:90]}"
+
+    def _clean5_on_done():
+        _log5c = st.session_state.get("clean5_log", [])
+        _fails5c = [ln[2:].strip() for ln in _log5c if ln.startswith("❌")]
+        _oks5c = [ln[2:].strip() for ln in _log5c if ln.startswith("✅")]
+        _set_stage_completion(
+            t("자간정리 완료") if not _fails5c else t("자간정리 결과"),
+            (tf("%d권 자간정리 완료 — 이제 EPUB 생성은 바로 끝납니다.", len(_oks5c))
+             if _oks5c else t("자간정리된 책이 없습니다."))
+            + ("" if not _fails5c else "\n\n" + tf("⚠️ %d권 실패:", len(_fails5c)) + "\n"
+               + "\n".join(f"- {m}" for m in _fails5c)),
+            next_stage=None,
+            open_target=None,
+            kind="warning" if _fails5c else "success",
+        )
 
     def _wiki5_on_done():
         # 방금 처리에서 책이 정확히 한 권이면, 폴더 대신 그 결과물을 바로 연다
@@ -2559,8 +2723,12 @@ if _active_view == "5_wiki":
     _n_docx5 = len(list(_docx_dir5.glob("*.docx"))) if _docx_dir5.exists() else 0
     _n_hwpx5 = len(list(_hwpx_dir5.glob("*.hwpx"))) if _hwpx_dir5.exists() else 0
     _n_epub5 = len(list(_epub_dir5.glob("*.epub"))) if _epub_dir5.exists() else 0
+    if _run_active("clean5"):
+        _run_panel("clean5", "자간정리 처리 중", _proc_clean5, on_done=_clean5_on_done,
+                   detail_progress=True)
+        st.stop()
     if _run_active("wiki5"):
-        _run_panel("wiki5", "출력 생성 중", _proc_wiki5, on_done=_wiki5_on_done)
+        _run_panel("wiki5", "출력 생성 중", _proc_wiki5, on_done=_wiki5_on_done, detail_progress=True)
         st.stop()
     # 켠 출력만 카드로 — 여러 개 켜면 폴더가 서로 달라 카드도 그만큼 늘어난다
     # (2026-07-25, HWPX 2026-08-09, EPUB 2026-08-11)
@@ -2594,18 +2762,106 @@ if _active_view == "5_wiki":
         t("EPUB 전자책 생성"), value=_use_ep, key="wiki5_use_epub",
         help=t(
             "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
-            "번역본이 없는 한글 원문 챕터는 OCR 자간 깨짐만 AI가 자동으로 붙입니다 — "
-            "번역·교정이 아니라 공백 제거만 하며, 한 글자라도 달라지면 원문을 그대로 씁니다. "
+            "번역본(_ko.txt)이나 자간정리본(_clean.txt)이 있으면 그걸 쓰고, 없으면 원문 그대로 담습니다 — "
+            "AI를 부르지 않으므로 항상 즉시 끝납니다. 한글 원문 책의 OCR 줄바꿈을 다듬으려면 "
+            "아래 '자간정리 먼저 실행'을 한 번 돌려두세요. "
             "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다."
         ),
     )
     if _use_ep:
         st.caption(tf("전자책은 여기에 저장됩니다: `%s`", str(_epub_dir5)))
         st.caption(t("⚠️ 저작권이 있는 책 전체 내용이 그대로 담깁니다 — 개인적인 사용 목적으로만 사용하세요."))
+
+        # ── 자간정리(선택) — EPUB 생성에서 떼어낸 별도 단계 (2026-08-14) ──────
+        # 스캔 PDF에서 뽑은 한글 본문은 인쇄된 줄마다 어절이 쪼개져 있다. 그 자리를
+        # 붙일지 띄울지는 AI만 가릴 수 있어 시간이 걸리는데, 예전에는 그 작업이 EPUB
+        # 버튼 안에 숨어 있어서 "한글책은 EPUB이 몇십 분씩 걸린다"로 보였다. 이제
+        # 여기서 미리 끝내두면 EPUB은 항상 즉시 끝난다.
+        _clean_targets5 = {}
+        for _cs5 in queue_list("tab5_ready"):
+            _need5 = chapters_needing_clean(DEFAULT_WS, _cs5)
+            if _need5:
+                _clean_targets5[_cs5] = len(_need5)
+        st.caption(t("한글 원문 책 다듬기 (선택) — 스캔 PDF의 줄바꿈으로 쪼개진 어절을 AI가 이어 붙입니다. "
+                      "한 번 해두면 결과가 _clean.txt로 남아 다시 걸리지 않습니다."))
+        if not _clean_targets5:
+            st.caption(t("✓ 대기 중인 책에 자간정리가 필요한 한글 원문 챕터가 없습니다."))
+        else:
+            st.caption(tf("자간정리 대상: %d권 · %d챕터",
+                           len(_clean_targets5), sum(_clean_targets5.values())))
+            _cb5a, _cb5b = st.columns([3, 2])
+            if _cb5a.button(tf("자간정리 먼저 실행 (%d권)", len(_clean_targets5)),
+                             icon=":material/format_align_left:", key="clean5_start",
+                             use_container_width=True, disabled=not _epub_engine5):
+                _run_start("clean5", list(_clean_targets5))
+            # 판정 묶음을 동시에 몇 개까지 던질지. AI 호출 하나가 수십 초라 병렬이
+            # 그대로 배수로 붙지만, 너무 올리면 사용량 한도에 걸린다(2026-08-14).
+            _cw5 = _cb5b.number_input(t("동시 실행"), min_value=1, max_value=8,
+                                       value=translate_clean_workers(), step=1,
+                                       key="clean5_workers",
+                                       help=t("AI 판정 묶음을 동시에 몇 개까지 보낼지. "
+                                              "올리면 빨라지지만 사용량 한도에 걸릴 수 있습니다."))
+            if int(_cw5) != translate_clean_workers():
+                llm.set_pref("clean_workers", int(_cw5))
+                st.rerun()
+            if not _epub_engine5:
+                st.caption(t("사용 가능한 AI가 없어 자간정리를 실행할 수 없습니다 — 설정 탭을 확인하세요."))
         # EPUB 전용 수동 추가 — 요약(_wiki.md) 없이 챕터만 있어도 대상이 된다.
         # 아래 '요약 완료된 책' 추가와 달리, 요약·번역을 안 거친 책도 여기서 바로
         # 큐(tab5_ready)에 넣을 수 있다 (2026-08-11).
         with st.expander(t("➕ EPUB 대상 수동으로 추가 (챕터가 있는 책 — 번역·요약 여부 무관)")):
+            # TXT·PDF 직접 업로드(드래그앤드롭) — 챕터 분할 없이 단일장으로 즉시 등록.
+            # PDF는 텍스트 레이어를 바로 추출해 TXT와 동일하게 처리한다(스캔 이미지
+            # PDF처럼 텍스트 레이어가 없으면 별도 OCR이 필요해 안내만 하고 건너뛴다,
+            # 2026-08-11).
+            _epup5 = st.file_uploader(t("TXT 또는 PDF 직접 업로드"), type=["txt", "pdf"],
+                                       accept_multiple_files=True, key="epub5_uploader")
+            st.caption(t(_DND_HINT))
+            st.caption(t("업로드한 파일은 챕터 분할 없이 단일장으로 등록되어 바로 EPUB 대상이 됩니다. "
+                          "PDF는 텍스트를 자동 추출합니다(스캔 이미지 PDF는 1-업로드 탭에서 OCR을 먼저 거쳐야 합니다)."))
+            if not _epup5:
+                st.session_state.pop("_epub5_uploaded_tokens", None)
+            if _epup5:
+                _epseen5 = set(st.session_state.get("_epub5_uploaded_tokens", []))
+                _epstaged5 = 0
+                for _epu5 in _epup5:
+                    _epu5_bytes = _epu5.getvalue()
+                    _eptoken5 = _upload_token(_epu5.name, _epu5_bytes)
+                    if _eptoken5 in _epseen5:
+                        continue
+                    _epseen5.add(_eptoken5)
+                    _epu5_name = _epu5.name
+                    if _epu5_name.lower().endswith(".pdf"):
+                        UPLOAD_TMP.mkdir(parents=True, exist_ok=True)
+                        _eppdf_tmp5 = UPLOAD_TMP / _epu5_name
+                        _eppdf_tmp5.write_bytes(_epu5_bytes)
+                        _eptxt_path5, _, _eperr5, _epnote5 = pdf_to_txt(_eppdf_tmp5)
+                        if not _eptxt_path5:
+                            _eppdf_tmp5.unlink(missing_ok=True)
+                            st.error(f"❌ {_epu5_name}: "
+                                     + (t("스캔 이미지 PDF로 보입니다 — 1-업로드 탭에서 OCR 처리 후 다시 시도하세요.")
+                                        if _eperr5 == OCR_REQUIRED_MSG else (_eperr5 or t("PDF에서 텍스트를 추출하지 못했습니다."))))
+                            continue
+                        _epu5_bytes = _eptxt_path5.read_text(encoding="utf-8", errors="ignore").encode("utf-8")
+                        _eptxt_path5.unlink(missing_ok=True)
+                        cfg.PDF_DIR.mkdir(parents=True, exist_ok=True)
+                        _eppdf_tmp5.replace(cfg.PDF_DIR / _epu5_name)  # 원본 PDF 보관(다른 업로드 경로와 동일한 위치)
+                        _epu5_name = Path(_epu5_name).stem + ".txt"
+                        if _epnote5:
+                            st.caption(f"ℹ️ {_epu5.name}: {_epnote5}")
+                    _epok5, _epch5_path, _epbook5, _epmsg5 = _prepare_uploaded_single_chapter(
+                        DEFAULT_WS, _epu5_name, _epu5_bytes, "epub"
+                    )
+                    if not _epok5 or _epch5_path is None:
+                        st.error(f"❌ {_epu5.name}: {_epmsg5}")
+                        continue
+                    queue_add("tab5_ready", [_epbook5])
+                    _epstaged5 += 1
+                st.session_state["_epub5_uploaded_tokens"] = sorted(_epseen5)
+                if _epstaged5:
+                    st.success(tf("EPUB 대기에 %d개 등록됨", _epstaged5)); st.rerun()
+            st.divider()
+
             _epch_root5 = cfg.CHAPTERS_DIR
             _epall5 = list(_epch_root5.iterdir()) if _epch_root5.exists() else []
             _epsearch5 = st.text_input(t("책 이름 검색"), key="epub5_search", placeholder=t("검색어 입력…"))
@@ -2617,15 +2873,15 @@ if _active_view == "5_wiki":
                            if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
                 if not _epchs5:
                     continue
-                _epbooks5.append((_epd, len(_epchs5), len(list_summary_files(_epd))))
+                _epbooks5.append((_epd, len(_epchs5)))
             _epbooks5.sort(key=lambda b: b[0].stat().st_mtime, reverse=True)
             _epfilt5 = ([b for b in _epbooks5 if _epsearch5.lower() in b[0].name.lower()]
                         if _epsearch5 else _epbooks5)
+            # 요약 개수는 EPUB과 무관해 오해를 살 수 있어 표시하지 않는다(2026-08-11) —
+            # EPUB은 항상 챕터 원문·번역본만 쓰고 _wiki.md는 절대 읽지 않는다.
             _epitems5 = [
-                {"key": d.name, "label": d.name,
-                 "meta": tf("%d챕터", n) + (tf(" · 요약 %d개", s) if s else t(" · 요약 전")),
-                 "obj": d.name}
-                for d, n, s in _epfilt5
+                {"key": d.name, "label": d.name, "meta": tf("%d챕터", n), "obj": d.name}
+                for d, n in _epfilt5
             ]
             _epsel5 = _checklist(_epitems5, "epub5m", height=200)
             _epc5a, _epc5b = st.columns(2)
@@ -2708,25 +2964,38 @@ if _active_view == "5_wiki":
         _jsons5 = list_summary_files(_ch5)
         _total5 = len([f for f in _ch5.glob("??_*.txt")
                        if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]) if _ch5.exists() else 0
-        _ratio5 = tf("%d/%d챕터 요약됨", len(_jsons5), _total5)
+        # 요약 기반(위키/DOCX/HWPX) 정보는 그 출력 중 하나라도 켜져 있을 때만 의미가
+        # 있다 — EPUB만 켰을 때는 요약·전체요약 여부와 무관하므로 챕터 수만 보여준다
+        # (2026-08-11).
+        if _use_ob or _use_dx or _use_hx:
+            _ratio5 = tf("%d/%d챕터 요약됨", len(_jsons5), _total5)
+            _has_ov5 = find_overview_file(DEFAULT_WS, _stem5) is not None
+            _meta5 = _ratio5 + " · " + (t("전체요약 ✓") if _has_ov5 else t("전체요약 — (반영 시 자동 생성)"))
+        else:
+            _meta5 = tf("%d챕터", _total5)
         # 챕터 이름 목록 (NN_제목.txt → 제목)
         _ch_names5 = [_re.sub(r'^\d+_', '', f.stem) for f in sorted(_ch5.glob("??_*.txt"))
                       if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))] if _ch5.exists() else []
-        _has_ov5 = find_overview_file(DEFAULT_WS, _stem5) is not None
         _wiki_item5 = {
             "key": _stem5,
             "label": _stem5,
-            "meta": _ratio5 + " · " + (t("전체요약 ✓") if _has_ov5 else t("전체요약 — (반영 시 자동 생성)")),
+            "meta": _meta5,
             "obj": {"ws": DEFAULT_WS, "stem": _stem5},
             "ch_names": _ch_names5,
         }
-        if _stem5 in _wiki_stems5:
+        # '이미 위키 노트가 있음' 갱신 확인은 위키 출력을 실제로 켰을 때만 의미가
+        # 있다 — EPUB(또는 DOCX/HWPX)만 켠 경우 위키 보관함 상태와 무관하게 항상
+        # 대기 목록에 그대로 뜨게 한다(2026-08-11 — 이미 위키 반영된 책은 EPUB만
+        # 원해도 위키 전용 "갱신 확인" 화면으로 빠져 헷갈리던 문제).
+        if _use_ob and _stem5 in _wiki_stems5:
             _wiki_refresh5.append(_wiki_item5)
         else:
             _wiki_pend5.append(_wiki_item5)
 
-    # 챕터 요약 → Wiki
-    st.markdown(tf("#### 챕터 요약 → Wiki (%d권 대기)", len(_wiki_pend5)))
+    # 챕터 → (선택한 출력 방식) — 헤더가 실제 켜진 토글을 그대로 반영한다 (2026-08-11)
+    _sel_outputs5 = [nm for on, nm in [(_use_ep, "EPUB"), (_use_dx, "DOCX"), (_use_hx, "HWPX"), (_use_ob, "Wiki")] if on]
+    _outputs_label5 = "+".join(_sel_outputs5) if _sel_outputs5 else t("출력 선택")
+    st.markdown(tf("#### 챕터 → %s (%d권 대기)", _outputs_label5, len(_wiki_pend5)))
     if _wiki_pend5:
         # 전체 선택 / 해제 (분할 탭 체크리스트와 동일한 조작)
         _wk5_keys = [f"wiki5_{_it5['key']}" for _it5 in _wiki_pend5]
@@ -2901,24 +3170,17 @@ if _active_view == "5_wiki":
                     pass
             st.rerun()
 
-    # Wiki 완료 목록
+    # Wiki 완료
     st.divider()
     _wiki_files5 = sorted(_cur_wiki5_path.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True) \
                    if _cur_wiki5_path.exists() else []
-    st.markdown(tf("#### Wiki 완료 (%d노트)", len(_wiki_files5)))
+    st.markdown(t("#### Wiki 완료"))
     if _wiki_files5:
         _wv_col1, _wv_col2 = st.columns(2)
         if _wv_col1.button(t("Obsidian 보관함(Vault) 열기"), icon=":material/menu_book:", key="w5_vault", use_container_width=True):
             open_wiki_vault()
         if _wv_col2.button(t("폴더 열기"), icon=":material/folder_open:", key="w5_folder", use_container_width=True):
             open_path(_cur_wiki5_path)
-        with st.container(height=300, border=True):
-            for _wf5 in _wiki_files5[:100]:
-                _wc1, _wc2, _wc3 = st.columns([5, 2, 1])
-                _wc1.caption(f"**{_wf5.stem}**")
-                _wc2.caption(datetime.fromtimestamp(_wf5.stat().st_mtime).strftime("%m-%d %H:%M"))
-                if _wc3.button("", icon=":material/folder_open:", key=f"w5_open_{_wf5}", help="열기"):
-                    open_path(_wf5)
     else:
         st.caption("생성된 Wiki 없음")
 
@@ -2933,6 +3195,26 @@ if _active_view == "settings":
     if _lang_new != _lang_cur:
         set_lang(_lang_new)
         st.rerun()
+    st.caption(t("화면에 쓰는 언어입니다 — 번역 결과물의 언어는 바로 아래에서 따로 고릅니다."))
+
+    # ── 도착언어 — 번역본·요약·위키가 모두 이 언어로 나온다 (2026-08-15) ──────
+    # 화면 언어(위)와 별개다: 한국어 화면을 쓰면서 결과물만 영어로 뽑을 수 있다.
+    _tgt_opts = target_language_options()
+    _tgt_cur = target_language()
+    _tgt_codes = [c for c, _ in _tgt_opts]
+    _tgt_new = st.selectbox(
+        t("🎯 번역 도착언어"), _tgt_codes,
+        index=_tgt_codes.index(_tgt_cur) if _tgt_cur in _tgt_codes else 0,
+        format_func=lambda c: dict(_tgt_opts).get(c, c), key="target_lang_select",
+        help=t("번역본(_ko.txt)·챕터 요약·위키 노트가 모두 이 언어로 만들어집니다. "
+                "원문 언어는 자동으로 감지하므로 따로 고르지 않아도 됩니다."),
+    )
+    if _tgt_new != _tgt_cur:
+        set_target_language(_tgt_new)
+        st.rerun()
+    if _tgt_cur != "ko":
+        st.caption(t("⚠️ 이미 만들어 둔 번역본·요약은 예전 도착언어 그대로 남아 있습니다 — "
+                      "새 언어로 바꾸려면 해당 파일을 지우고 다시 처리하세요."))
     st.divider()
 
     # ── 업데이트 ──────────────────────────────────────────

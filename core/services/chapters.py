@@ -203,9 +203,19 @@ def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -
     ch_dir = chapters_dir(ws_name, stem)
     ch_dir.mkdir(parents=True, exist_ok=True)
     saved = 0
-    for i, (title, body) in enumerate(chapters, 1):
+    real_i = 0
+    for idx, (title, body) in enumerate(chapters):
         safe = _re.sub(r'[/\\:*?"<>|]', ' ', title).strip()[:50].strip(" .,:-")
-        (ch_dir / f"{i:02d}_{safe}.txt").write_text(body, encoding="utf-8")
+        # 자동 생성된 "머리말"(첫 장 표시 이전 본문, _split_at 참고)은 실제 장이 아니므로
+        # 01번을 차지하면 안 된다 — 그러면 진짜 1장(Introduction 등)이 02번으로 밀린다.
+        # 00번을 따로 줘서 읽는 순서(정렬)는 유지하되 실제 장 번호는 1부터 시작하게
+        # 한다(2026-08-12).
+        if idx == 0 and title == "머리말":
+            prefix = "00"
+        else:
+            real_i += 1
+            prefix = f"{real_i:02d}"
+        (ch_dir / f"{prefix}_{safe}.txt").write_text(body, encoding="utf-8")
         saved += 1
     # 커버리지 자기진단 — 챕터에 담긴 분량이 원문의 60% 미만이면 앞부분 유실
     # 의심(각주·러닝헤더 오탐으로 첫 장 이전이 통째로 버려진 사고, 2026-07-08)

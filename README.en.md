@@ -13,7 +13,7 @@ This repository shares one core (`core/`) across macOS and Windows. Only the ins
 Feed a book or paper as PDF/DOCX/HWP/HWPX/TXT, and it produces **readable summary Wiki notes** saved into your Obsidian vault through these stages:
 
 ```
-PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translation (English docs only)  →  Summaries  →  Word (.docx) · Hangul (.hwpx) · Obsidian Wiki (any combination)
+PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translation (non-Korean docs)  →  Summaries  →  Word (.docx) · Hangul (.hwpx) · Obsidian Wiki (any combination)
 ```
 
 - **PDF** must be text-based (has a text layer), not a raw scan (scanned PDFs need OCR first). **DOCX, HWP, HWPX and TXT** are processed as-is.
@@ -69,7 +69,7 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 
 ### ② ✂️ Chapter split
 - Splits a book TXT into **per-chapter files** under a per-book folder.
-- **[Split]** — split into chapters. **[Move to next step]** — if no split is needed, send the whole document onward (EN → Translation, KO → Summaries).
+- **[Split]** — split into chapters. **[Move to next step]** — if no split is needed, send the whole document onward (foreign → Translation, Korean → Summaries).
 - Short documents are handled separately under "Short documents".
 
 ### ③ 📝 Summaries
@@ -80,7 +80,8 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 
 ### ④ 📖 Output (Create EPUB · Create DOCX · Create HWPX · Wiki)
 - This stage has **four independent toggles at the top of the tab**. **Enable several to produce all of them.** The top menu name changes accordingly. The screen separates the three summary-based outputs (DOCX, HWPX, Obsidian) from EPUB, which is full text.
-  - **EPUB e-book** *(full text — not a summary)*: bundles the **complete** source/translated chapters into a single book-length `.epub` file saved in the `5_전자책(EPUB)` folder. Untranslated Korean source chapters automatically get OCR spacing fixed by AI — this only removes stray whitespace, never translation or proofreading, and any paragraph where even one character would change falls back to the untouched original. **⚠️ Because this contains the entire copyrighted book as-is, use it for personal use only — distributing or sharing it may violate copyright law.**
+  - **EPUB e-book** *(full text — not a summary)*: bundles the **complete** source/translated chapters into a single book-length `.epub` file saved in the `5_전자책(EPUB)` folder. **It never calls the AI, so it always finishes instantly.** **⚠️ Because this contains the entire copyrighted book as-is, use it for personal use only — distributing or sharing it may violate copyright law.**
+  - **Line-break repair** *(Korean source books only · optional)*: Korean text extracted from a scanned PDF is split apart wherever a printed line ended, breaking words in half. Whether each split should close up or take a space is decided by the AI. Turning on the EPUB toggle shows how many books need it; run **[Repair line breaks first]** once and the result is kept, so it never costs you time again. **The body text itself never passes through the AI — only whitespace is applied on our side, so the wording cannot change.** Paragraphs are also restored to real paragraphs rather than printed lines, which reads far better in an e-reader. Since it is a long job, the **[Concurrency]** value (default 3) controls how fast it runs.
   - **Word document (DOCX)** *(summary-based)*: merges summaries into an editable **Word (.docx)** document saved in the `5_위키문서(DOCX)` folder (handy to share with or cite for others).
   - **Hangul document (HWPX)** *(summary-based)*: merges summaries into an editable **Hangul (.hwpx)** document saved in the `5_위키문서(HWPX)` folder (handy where a Korean HWP-format submission is required).
   - **Obsidian Wiki** *(summary-based)*: merges summaries into a **hub note + per-chapter notes** in the Obsidian vault.
@@ -106,7 +107,9 @@ For the AI stages (Chapter split, Translation, Summaries, Wiki), pressing **[▶
 
 Switch Korean/English in `⚙️ Settings → Language`.
 
-- **Switching to English hides the Translation stage** from the menu, navigation and pipeline. There is no point translating an English document back into English, so after chapter split, documents go straight to Summaries.
+- **Switching to English hides the Translation stage** from the menu, navigation and pipeline; after chapter split, documents go straight to Summaries.
+- This is the *interface* language only. The language your output is written in is a separate setting — `⚙️ Settings → 🎯 Target language` (Korean, English, Japanese, Chinese, German, French, Spanish, Italian, Portuguese, Dutch, Russian; Korean by default). Translations, chapter summaries and wiki notes are all produced in that language.
+- Changing the target language does **not** rewrite work you already produced — delete those files and re-run to switch them over. (Translation files keep the name `_ko.txt` whatever the target language: several stages are keyed to that name, and renaming would hide your existing translations.)
 - Switching back to Korean brings the Translation stage back.
 
 ---

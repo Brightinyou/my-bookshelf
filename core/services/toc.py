@@ -417,11 +417,34 @@ def _page_offsets(txt: str) -> list[int]:
     return offs
 
 
+_BACKMATTER_RE = re.compile(
+    r"(?m)^\s*(ACKNOWLEDGMENTS?|REFERENCES|BIBLIOGRAPHY|APPENDI(?:X|CES)|GLOSSARY|"
+    r"FURTHER READING|INDEX|참고문헌|찾아보기)\s*$",
+    re.IGNORECASE,
+)
+
+
 def _split_at(txt: str, marks: list[tuple[int, str]]) -> list[tuple[str, str]] | None:
     if len(marks) < 3:
         return None
     positions = [p for p, _t in marks]
     bounds = positions + [len(txt)]
+    # 마지막 장 뒤에 후주·참고문헌·색인 같은 부록이 남아있으면 통째로 마지막 장
+    # 본문에 붙어버린다 — 북마크·시각 TOC가 본문 장까지만 잡고 부록은 안 잡는 책에서
+    # 실측(2026-08-12, 마지막 장 하나가 다른 장의 3배 가까이 부풀어 색인·저자소개까지
+    # 담고 있었음). 마지막 장 시작에서 3000자 이상 지난 뒤 부록 표시가 나오면 거기서
+    # 잘라 별도 "부록" 장으로 뗀다 — 버리지 않는 이유는 EPUB이 "요약이 아닌 본문
+    # 전체"를 표방하기 때문(2026-08-12, 번역·위키요약에서 굳이 필요없다면 그건 각
+    # 단계의 스킵 필터가 알아서 거른다).
+    backmatter: tuple[str, str] | None = None
+    _tail_start = bounds[-2] + 3000
+    if _tail_start < bounds[-1]:
+        _m_back = _BACKMATTER_RE.search(txt, _tail_start)
+        if _m_back:
+            back_body = txt[_m_back.start():bounds[-1]].strip()
+            if len(back_body) >= 300:
+                backmatter = ("부록", back_body)
+            bounds[-1] = _m_back.start()
     chapters: list[tuple[str, str]] = []
     # 첫 장 표시 이전(표지·서문·머리말 등)은 그냥 버려지면 안 된다 — 실측: 영문서
     # 한 권에서 표지·추천사·서문이 통째로 유실됨(2026-08-11). 충분히 길면 별도
@@ -431,14 +454,20 @@ def _split_at(txt: str, marks: list[tuple[int, str]]) -> list[tuple[str, str]] |
         chapters.append(("머리말", lead))
     elif lead:
         bounds[0] = 0
-    n = 0
     for i, (_p, title) in enumerate(marks):
         body = txt[bounds[i]:bounds[i + 1]].strip()
         if len(body) < 300 and chapters:
             chapters[-1] = (chapters[-1][0], chapters[-1][1] + "\n\n" + body)
             continue
-        n += 1
-        chapters.append((f"{n}. {title}", body))
+        # 위치 기준 순번(1,2,3...)을 새로 붙이지 않고 제목을 원문 그대로 쓴다 — 실제
+        # 장 번호가 제목에 이미 있으면("8 포스트휴머니즘이란...") 그대로 살고, 머리말류
+        # (표지·추천사·서문 등 번호 없는 항목)는 억지로 번호가 안 붙는다. 예전에는
+        # 무조건 "{n}. "을 붙여서 번호가 겹치거나("8. 8 포스트휴머니즘"), 머리말이 앞에
+        # 끼면 실제 장 번호와 파일 순번이 어긋났다(2026-08-12).
+        label = title.strip() or f"장 {i + 1}"
+        chapters.append((label, body))
+    if backmatter:
+        chapters.append(backmatter)
     return chapters if len(chapters) >= 3 else None
 
 
