@@ -96,9 +96,38 @@ def _clean_sentence(s: str) -> bool:
     if len(re.findall(r"[^\w가-힣()\.,\'\"·\-—%·:!?\s]", s)) > 3: return False  # 잡기호
     return True
 
+# ── 인용 총량 상한 (2026-08-17) ───────────────────────────────
+# 핵심 인용은 이 파이프라인에서 '원문 그대로'가 보장되는 유일한 출력이다.
+# 그래서 개수(target)만 막아두면 한 문장이 아주 길 때, 그리고 장별 노트가
+# 쌓일 때 축자 원문이 계속 누적된다. 길이와 원문 대비 총량 양쪽으로 막는다.
+# 총량을 원문 비례로 잡았기 때문에, 장별 노트를 모두 합쳐도 책 전체 기준
+# 비율이 그대로 유지된다.
+MAX_CITE_CHARS  = 200     # 인용 1건의 최대 길이
+MAX_CITE_RATIO  = 0.02    # 원문 글자수 대비 인용 총량 상한
+MIN_CITE_BUDGET = 400     # 원문이 아주 짧아도 최소한 이만큼은 허용
+
+
+def _apply_cite_budget(rows, target, src_chars):
+    """인용을 개수·1건 길이·원문 대비 총량 세 가지로 제한한다.
+    길이를 넘는 인용은 잘라내지 않고 버린다 — 중간에서 자르면 읽는 쪽에서
+    부분 인용인지 알 수 없어, 논문에 그대로 옮겨 적을 위험이 생긴다.
+    반환: (남긴 rows, 상한에 걸려 버린 개수)"""
+    budget = max(MIN_CITE_BUDGET, int(src_chars * MAX_CITE_RATIO))
+    kept, used, dropped = [], 0, 0
+    for th, q in rows:
+        if len(kept) >= target:
+            break
+        if len(q) > MAX_CITE_CHARS or used + len(q) > budget:
+            dropped += 1
+            continue
+        kept.append((th, q)); used += len(q)
+    return kept, dropped
+
+
 def rebuild_citations(body: str, source_full: str, keywords: list, title: str, target: int = 5):
-    """Gemini 인용 중 *원문 확인된 것만* 남기고, 부족분은 원본에서 직접 깨끗한 문장으로 채움.
-    → 인용 전부 100% 원문 보장."""
+    """Gemini 인용 중 *원문 대조로 확인된 것만* 남긴다 → 지어낸 인용 제거.
+    남은 인용은 다시 개수·길이·총량 상한을 통과한 것만 쓴다.
+    반환: (본문, 보존 인용 수, 상한에 걸려 버린 수)"""
     src = nfc(source_full); Sx = re.sub(r"\s+", "", src)
     # 1) Gemini 인용 중 원문 일치만 수집
     rows = []
@@ -113,7 +142,7 @@ def rebuild_citations(body: str, source_full: str, keywords: list, title: str, t
                 qclean = re.sub(r"\s+", " ", cols[1]).strip()
                 if len(_despace(qclean)) >= 10 and _despace(qclean) in Sx:
                     rows.append((cols[0], qclean))
-    rows = rows[:target]
+    rows, n_over = _apply_cite_budget(rows, target, len(src))
     n_kept = len(rows)
     # 표 재구성 → 본문의 핵심 인용 자리에 교체 삽입
     tbl = ["## 핵심 인용", "", "| 주제 | 원문 인용(대조 검증) |", "|---|---|"]
@@ -128,7 +157,7 @@ def rebuild_citations(body: str, source_full: str, keywords: list, title: str, t
             continue
         out.append(ln)
     if not inserted: out += [""] + tbl
-    return "\n".join(out), n_kept, 0
+    return "\n".join(out), n_kept, n_over
 
 
 def make_filename(title):
@@ -156,10 +185,11 @@ def generate(txt_path):
     data = llm.complete_json(prov, model, "", prompt, max_tokens=max_out)
     # 인용 원문 대조 — Gemini 인용 중 원문확인분만 + 부족분은 원본에서 직접 추출(100% 원문)
     if data.get("body"):
-        data["body"], n_kept, _ = rebuild_citations(
+        data["body"], n_kept, n_over = rebuild_citations(
             data["body"], raw_full, data.get("tags", []), nfc(data.get("title", title_guess)),
             target=cite_keep)
-        print(f"   🔎 인용: 원문확인 {n_kept}개만 보존(지어낸 인용 제거)")
+        _over = f" · 길이/총량 상한으로 {n_over}개 제외" if n_over else ""
+        print(f"   🔎 인용: 원문확인 {n_kept}개만 보존(지어낸 인용 제거){_over}")
     return data
 
 def write_note(data, txt_path):

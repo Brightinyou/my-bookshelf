@@ -727,7 +727,9 @@ def generate_chapter(book, chap_title, chap_text):
         target_chars=p["target"], per_sub=p["per_sub"],
         sent_ov=p["sent_ov"], n_kw=p["n_kw"], **_lang_rules()), p["max_out"])
     if data.get("body"):
-        data["body"], _, _ = gw.rebuild_citations(data["body"], chap_text, [], chap_title, target=p["n_cite"])
+        data["body"], _, n_over = gw.rebuild_citations(data["body"], chap_text, [], chap_title, target=p["n_cite"])
+        if n_over:
+            print(f"      ↳ 인용 {n_over}개는 길이/총량 상한으로 제외", flush=True)
     return data
 
 OVERVIEW_PROMPT = """다음은 책 『{book}』를 장별로 요약한 것입니다. 이를 바탕으로 책 전체 개요를 쓰세요.
