@@ -108,7 +108,7 @@ Switch stages from the top menu. Every upload area accepts **file picker or drag
 
 ### ⑤ 📖 Output (Create EPUB · Create DOCX · Create HWPX · Wiki)
 - This stage has **four independent toggles**. Enable any combination to generate every selected format.
-  - **EPUB e-book** *(full text, not a summary)*: packages the complete source/translated chapters into an `.epub` in `5_전자책(EPUB)`. It is instant once optional Korean line-break repair has finished. Use copyrighted full-text exports only for personal use.
+  - **EPUB e-book** *(full text, not a summary)*: packages the complete source/translated chapters into an `.epub` in `5_전자책(EPUB)`. It is instant once optional Korean line-break repair has finished. ⚠️ This reproduces the entire copyrighted work. Use it only on documents **you already have the right to use**, and only within your own personal use. What copying, translation, or format conversion is permitted varies by country and by how you obtained the document — this feature grants you no right to distribute or share the result.
   - **Line-break repair** *(optional, Korean source books)*: restores printed line breaks into readable paragraphs before EPUB export. AI decides whitespace only; it does not alter the body text.
   - **Word document (DOCX)** *(summary-based)*: saves editable summaries in `5_위키문서(DOCX)`.
   - **Hangul document (HWPX)** *(summary-based)*: saves editable summaries in `5_위키문서(HWPX)`.
@@ -178,6 +178,7 @@ Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`).
 - The program is provided "as-is", with no warranty of fitness for a particular purpose or integrity. The author is not liable for any data loss or damage from its use.
 
 **About your documents and generated output**
+- This is a personal tool for converting, translating, and summarizing documents **you already have the right to use**. Using it does not grant you any right you did not already have, and it does not authorize you to distribute or share the resulting EPUB, translation, or summary with third parties. What is permitted varies by country and by how you obtained the document. In particular, there is no general "personal copying" exemption in every jurisdiction — do not assume that private use is automatically lawful where you live.
 - You are responsible for confirming the source document's copyright, translation, summary and redistribution rights. This program does not automatically judge legal, publishing or academic-submission requirements.
 - Enabling an AI API or CLI tool sends part or all of your document to an external AI service. Do not input sensitive data, unpublished manuscripts, or material whose distribution rights are unclear.
 - Accuracy and completeness of generated translations, summaries and Wiki notes are not guaranteed. Always compare against the source before publishing, submitting, citing or distributing.

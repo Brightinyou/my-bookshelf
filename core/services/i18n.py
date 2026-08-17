@@ -741,8 +741,9 @@ _EN.update({
         "summary). It uses the translation (_ko.txt) or the repaired text (_clean.txt) when present, "
         "otherwise the source as-is — it never calls the AI, so it always finishes instantly. To tidy "
         "up OCR line breaks in Korean source books, run 'Repair line breaks first' below once. "
-        "⚠️ This contains the entire copyrighted book, so use it for personal use only — "
-        "distributing or sharing it may violate copyright law.",
+        "⚠️ This reproduces the entire copyrighted book. Use it only on documents you already "
+        "have the right to use, and only within your own personal use — what is permitted "
+        "varies by country, and this feature grants you no right to distribute or share it.",
 
     # ── 자간정리 (한글 원문 책의 OCR 줄바꿈 복원, 2026-08-15) ────────────
     "자간정리 처리 중": "Repairing line breaks",
@@ -767,7 +768,8 @@ _EN.update({
     "사용 가능한 AI가 없어 자간정리를 실행할 수 없습니다 — 설정 탭을 확인하세요.":
         "No AI available, so line-break repair cannot run — check the Settings tab.",
     "⚠️ 저작권이 있는 책 전체 내용이 그대로 담깁니다 — 개인적인 사용 목적으로만 사용하세요.":
-        "⚠️ This contains the entire copyrighted book as-is — for personal use only.",
+        "⚠️ This reproduces the entire copyrighted book — use it only on documents you have "
+        "the right to use, and only for your own personal use.",
     "Obsidian 보관함에 위키 노트로 저장합니다.": "Saves as wiki notes in the Obsidian vault.",
     "편집 가능한 Word(.docx) 문서로 저장합니다.": "Saves as an editable Word (.docx) document.",
     "출력 방식을 하나 이상 선택하세요 (위키 또는 DOCX).": "Select at least one output (Wiki or DOCX).",
