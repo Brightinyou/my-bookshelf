@@ -9,14 +9,38 @@ binary tool.
 ## Bundled binary — requires attention
 
 ### Poppler (`vendor/poppler/`) — GPL v2 or later
-- Version bundled: 26.02.0 (`pdftotext.exe`, used for PDF text extraction fallback)
-- Source: https://poppler.freedesktop.org/
-- My Bookshelf invokes `pdftotext` as a separate subprocess (not linked into
-  the Python code), so this is "mere aggregation" — it does not place the
-  rest of the codebase under the GPL. The GPL license text is bundled
-  alongside the binary at `vendor/poppler/share/poppler/COPYING` and
-  `COPYING.gpl2`. The corresponding source for this exact version is publicly
-  available at the URL above.
+
+**Scope.** The Poppler binary is bundled **only in the Windows distribution**
+(`vendor/poppler/Library/bin/pdftotext.exe`, used as the PDF text-extraction
+fallback). The macOS build does **not** redistribute Poppler: it calls a
+`pdftotext` that the user installs themselves (e.g. `brew install poppler`),
+so the obligations below apply to the Windows release.
+
+- Version bundled: Poppler 26.02.0
+- Upstream project: https://poppler.freedesktop.org/
+- **Corresponding source (direct download):**
+  https://poppler.freedesktop.org/poppler-26.02.0.tar.xz
+
+**No effect on the rest of the project.** My Bookshelf invokes `pdftotext` as a
+separate subprocess and does not link against Poppler, so the two are merely
+aggregated on the same medium. This does not place My Bookshelf's own code
+under the GPL. The GPL license text ships alongside the binary at
+`vendor/poppler/share/poppler/COPYING` and `COPYING.gpl2`.
+
+**How we satisfy the source-code requirement.** Poppler is offered under "GPL
+v2 or later", and for this redistribution we elect **GPL v3**. Under GPL v3
+section 6(d), we offer access to the Corresponding Source from the third-party
+server named above, and these directions sit next to the object code we
+distribute. A link to a project homepage would not be enough on its own, so we
+link the exact source archive for the exact version we ship.
+
+**Written offer (also valid under GPL v2 section 3(b)).** In addition, for at
+least three years from the date you received this distribution, we will give
+any third party a complete machine-readable copy of the Corresponding Source
+for the Poppler binary we shipped — including the source of the specific build,
+if it differs in any way from the upstream archive above — for no more than our
+cost of physically performing the distribution. To request it, open an issue at
+https://github.com/Brightinyou/my-bookshelf-for-pc/issues .
 
 ## Python libraries — permissive (MIT / BSD / Apache-2.0 / MPL-2.0)
 
