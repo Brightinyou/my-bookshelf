@@ -573,6 +573,61 @@ def llm_toc_split(txt: str):
     return chapters if len(chapters) >= 3 else None
 
 
+# ── 첫 장 이전 본문 복구 ────────────────────────────────────────────────
+# 정규식·LLM 분할 경로는 "첫 장 표시" 위치부터 잘라내므로 그 앞에 있던 본문이
+# 통째로 버려진다. 실측(2026-08-17, 이종민 논문): 표제지·차례에 이어 한 줄로
+# 붙어 있던 "I. 서 론"이 헤딩 후보로 잡히지 않아 서론 전체(약 2,000자)가 챕터·
+# EPUB·위키 어디에도 실리지 않았다. 커버리지 자기진단(<60%)도 서론이 전체의
+# 5%뿐이라 걸리지 않았다. services/toc.py의 _split_at은 이미 같은 이유로 앞부분을
+# "머리말" 장으로 살리고 있다 — 나머지 분할 경로에도 같은 안전망을 둔다.
+_LEAD_MIN = 300
+
+# 전각 로마숫자(Ⅰ~Ⅹ) → 반각. OCR 텍스트에 섞여 나온다.
+_FW_ROMAN = str.maketrans({
+    "Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "Ⅳ": "IV", "Ⅴ": "V",
+    "Ⅵ": "VI", "Ⅶ": "VII", "Ⅷ": "VIII", "Ⅸ": "IX", "Ⅹ": "X",
+})
+
+_LEAD_INTRO_RE = re.compile(
+    r"(?:^|[\s\-–—─])(?:(?P<roman>[IVXⅠ-Ⅹ]{1,4})|(?P<num>\d{1,2}))\s*[.．)]\s*"
+    r"(?P<title>서\s*론|서\s*설|서\s*언|들어가는\s*말|머\s*리\s*말|Introduction)\b",
+    re.I,
+)
+
+
+def _lead_title(lead: str) -> str:
+    """앞부분 덩어리의 장 제목. 서론 표시가 있으면 그 번호·제목을, 없으면 '머리말'."""
+    best = None
+    for m in _LEAD_INTRO_RE.finditer(lead):
+        # 표시 뒤에 본문이 충분히 따라와야 실제 서론 — 차례 줄에 적힌 항목은 제외
+        if len(lead) - m.end() >= 400:
+            best = m
+    if best is None:
+        return "머리말"
+    title = re.sub(r"\s+", "", best.group("title"))
+    if title.lower() == "introduction":
+        title = "Introduction"
+    roman = best.group("roman")
+    num = roman.translate(_FW_ROMAN).upper() if roman else best.group("num")
+    return f"{num}. {title}"
+
+
+def _recover_lead(src: str, chapters):
+    """첫 장 이전 본문이 충분히 길면 앞에 한 장으로 되살린다."""
+    if not src or not chapters:
+        return chapters
+    first = (chapters[0][1] or "").strip()
+    if not first:
+        return chapters
+    idx = src.find(first[:160])
+    if idx <= 0:
+        return chapters
+    lead = src[:idx].strip()
+    if len(lead) < _LEAD_MIN:
+        return chapters
+    return [(_lead_title(lead), lead), *chapters]
+
+
 def chapter_split(md_text: str, txt_text: str = None, pdf_path=None):
     """(mode, [(title, body)]). mode=bookmark|visual|heading|toc|numbered|llm|single.
 
@@ -588,24 +643,27 @@ def chapter_split(md_text: str, txt_text: str = None, pdf_path=None):
         except Exception:
             pass
     if md_text:
-        chs = heading_chapters(_strip_noise(md_text))
+        cleaned = _strip_noise(md_text)
+        chs = heading_chapters(cleaned)
         if chs:
-            return "heading", chs
+            return "heading", _recover_lead(cleaned, chs)
     for src in (txt_text, md_text):     # 목차 복원은 줄바꿈 보존된 TXT 우선
         if not src:
             continue
-        chs = toc_split(_strip_noise(src))
+        cleaned = _strip_noise(src)
+        chs = toc_split(cleaned)
         if chs and len(chs) >= 3:
-            return "toc", chs
-        chs = numbered_heading_split(_strip_noise(src))
+            return "toc", _recover_lead(cleaned, chs)
+        chs = numbered_heading_split(cleaned)
         if chs and len(chs) >= 3:
-            return "numbered", chs
+            return "numbered", _recover_lead(cleaned, chs)
     # 최후 폴백: LLM 장 경계 판정 (호출 1회로 제한)
     src = txt_text or md_text
     if src:
-        chs = llm_toc_split(_strip_noise(src))
+        cleaned = _strip_noise(src)
+        chs = llm_toc_split(cleaned)
         if chs and len(chs) >= 3:
-            return "llm", chs
+            return "llm", _recover_lead(cleaned, chs)
     return "single", None
 
 

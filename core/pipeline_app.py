@@ -65,7 +65,7 @@ from services.chapters import (
     _write_single_chapter_from_text, chapters_dir, list_done_books,
     find_overview_file, list_summary_files,
     load_summary_file, split_book_to_chapters, summarize_book_overview,
-    summarize_one_chapter, summary_file_for, SPLIT_MODE_LABELS,
+    summarize_one_chapter, summary_file_for, LAST_SPLIT_WARNING, SPLIT_MODE_LABELS,
 )
 from services.papers import (
     download_paper_source, prepare_downloaded_paper_source,
@@ -1804,7 +1804,11 @@ if _active_view == "2_split":
             queue_add("tab4_ready", _new)
         _archive_split_source(_stem)
         _track_flow_book(_stem)
-        return True, f"{_stem} → {len(_new)}챕터 ({t(SPLIT_MODE_LABELS.get(_smode, _smode))})"
+        # 커버리지 미달 경고는 로그가 아니라 화면에 붙인다 — 본문 일부가 빠진 채로
+        # 번역·요약·EPUB까지 진행되던 사고 방지 (2026-08-17)
+        _cov_warn = LAST_SPLIT_WARNING.pop(_stem, "")
+        _res_msg = f"{_stem} → {len(_new)}챕터 ({t(SPLIT_MODE_LABELS.get(_smode, _smode))})"
+        return True, (f"{_res_msg} ⚠️ {_cov_warn}" if _cov_warn else _res_msg)
 
     def _split2_on_done():
         _any_en = st.session_state.pop("split2_any_en", False)

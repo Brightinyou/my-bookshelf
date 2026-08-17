@@ -174,6 +174,48 @@ SPLIT_MODE_LABELS = {
 }
 
 
+# 마지막 분할의 커버리지 경고 {stem: 사람이 읽는 문구} — UI가 성공 메시지에 덧붙인다.
+# 로그에만 남기면 사용자는 본문이 빠진 줄 모르고 번역·요약·EPUB까지 그대로 진행한다
+# (2026-08-17, 서론이 통째로 빠진 EPUB이 그렇게 만들어졌다).
+LAST_SPLIT_WARNING: dict[str, str] = {}
+
+
+# 챕터 파생물 접미사 — 원문 챕터 TXT 하나에서 파생되는 파일들 (번역·진행·위키)
+_CHAPTER_DERIVED_SUFFIXES = (
+    ".txt", "_ko.txt", "_ko.partial.md", "_ko.progress.json",
+    "_wiki.md", "_wiki.json",
+)
+
+
+def _chapter_stem_of(name: str) -> str | None:
+    """챕터 파일 이름에서 원문 챕터 stem을 되찾는다. 챕터 파생물이 아니면 None."""
+    if not _re.match(r"^\d{2}_", name):
+        return None
+    for suf in sorted(_CHAPTER_DERIVED_SUFFIXES, key=len, reverse=True):
+        if name.endswith(suf):
+            return name[: -len(suf)]
+    return None
+
+
+def _purge_stale_chapter_files(ch_dir: Path, new_stems: set[str]) -> None:
+    """이전 분할이 남긴 챕터 파일 정리.
+
+    재분할로 장 번호가 밀리면(예: 서론이 복구돼 01_II→02_II) 옛 파일이 그대로 남아
+    같은 장이 두 벌씩 잡히고, EPUB·위키에 중복 장이 실린다. 이번 분할이 만들지 않은
+    챕터 stem의 파일(원문·번역본·위키까지)만 지운다 — 전체요약 등 챕터 파생물이
+    아닌 파일은 건드리지 않는다 (2026-08-17)."""
+    for f in ch_dir.iterdir():
+        if not f.is_file():
+            continue
+        stem = _chapter_stem_of(f.name)
+        if stem is None or stem in new_stems:
+            continue
+        try:
+            f.unlink()
+        except Exception:
+            pass
+
+
 def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -> tuple[int, str, str]:
     """장 분리 실행. 챕터 TXT 파일 저장. (저장 수, 오류 메시지, 분할 방식) 반환."""
     try:
@@ -204,6 +246,7 @@ def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -
     ch_dir.mkdir(parents=True, exist_ok=True)
     saved = 0
     real_i = 0
+    new_stems: set[str] = set()
     for idx, (title, body) in enumerate(chapters):
         safe = _re.sub(r'[/\\:*?"<>|]', ' ', title).strip()[:50].strip(" .,:-")
         # 자동 생성된 "머리말"(첫 장 표시 이전 본문, _split_at 참고)은 실제 장이 아니므로
@@ -216,11 +259,17 @@ def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -
             real_i += 1
             prefix = f"{real_i:02d}"
         (ch_dir / f"{prefix}_{safe}.txt").write_text(body, encoding="utf-8")
+        new_stems.add(f"{prefix}_{safe}")
         saved += 1
-    # 커버리지 자기진단 — 챕터에 담긴 분량이 원문의 60% 미만이면 앞부분 유실
-    # 의심(각주·러닝헤더 오탐으로 첫 장 이전이 통째로 버려진 사고, 2026-07-08)
+    _purge_stale_chapter_files(ch_dir, new_stems)
+    # 커버리지 자기진단 — 챕터에 담긴 분량이 원문에 크게 못 미치면 유실 의심
+    # (각주·러닝헤더 오탐으로 첫 장 이전이 통째로 버려진 사고, 2026-07-08).
+    # 기준을 60%→85%로 올린다: 서론 하나(전체의 5%)가 통째로 빠진 사고가 95%
+    # 커버리지라 경고 없이 지나갔다 (2026-08-17, chapter_wiki._recover_lead 참고).
     coverage = sum(len(b) for _t, b in chapters) / max(1, len(source_text))
-    if coverage < 0.6:
+    LAST_SPLIT_WARNING.pop(stem, None)
+    if coverage < 0.85:
+        LAST_SPLIT_WARNING[stem] = f"본문의 {coverage:.0%}만 챕터에 담겼습니다 — 앞뒤 일부가 빠졌을 수 있습니다"
         append_log(f"WARN: 장분할 커버리지 {coverage:.0%} — {stem}: 본문 일부가 챕터에 담기지 않았을 수 있음 (분할={mode})")
     return saved, "", mode
 
