@@ -263,28 +263,42 @@ def _visual_toc_claude_cli(model: str, scan_pdf: Path, prompt: str) -> str:
     return (r.stdout or "").strip()
 
 
+def _toc_skip(pdf_path: Path, reason: str) -> None:
+    """시각 판독을 건너뛴 이유를 남긴다.
+
+    예전에는 모든 중단 지점이 조용히 None을 돌려줘서, 차례 판독이 안 된 책이
+    본문 추정 분할로 떨어져도 왜 그랬는지 알 길이 없었다 (2026-08-17, 여러
+    학자의 글을 엮은 책이 4장으로 뭉개진 사고). 이유를 반드시 기록한다."""
+    append_log(f"WARN: PDF 시각 차례 판독 건너뜀 ({reason}) — {Path(pdf_path).name}")
+
+
 def pdf_visual_toc(pdf_path: Path, txt: str | None = None) -> list[tuple[str, int | None]] | None:
     """연결된 공급자로 차례/장구분 페이지 시각 판독 → [(제목, 원본페이지 1-기반|None)].
     실패·미지원 공급자·후보 부족 시 None."""
     try:
         prov, model = llm.wiki_provider_model()
         if not llm.has_key(prov):
+            _toc_skip(pdf_path, f"공급자 {prov} 사용 불가 — AI 설정 확인")
             return None
-    except Exception:
+    except Exception as e:
+        _toc_skip(pdf_path, f"공급자 확인 실패 {type(e).__name__}")
         return None
     if txt is None:
+        _toc_skip(pdf_path, "TXT 없음")
         return None
     try:
         import pypdfium2 as pdfium
         _src = pdfium.PdfDocument(str(pdf_path))
         total_pages = len(_src)
         _src.close()
-    except Exception:
+    except Exception as e:
+        _toc_skip(pdf_path, f"PDF 열기 실패 {type(e).__name__}")
         return None
     idxs = _scan_page_indices(txt, total_pages)
     if prov == "codex_cli":
         idxs = idxs[:40]                           # 이미지 첨부 상한
     if len(idxs) < 3:
+        _toc_skip(pdf_path, f"판독 대상 페이지 부족 {len(idxs)}쪽")
         return None
     mapping = ", ".join(f"{k + 1}번째→원본 {i + 1}p" for k, i in enumerate(idxs))
     prompt = _VISUAL_TOC_PROMPT.format(mapping=mapping)
@@ -295,6 +309,7 @@ def pdf_visual_toc(pdf_path: Path, txt: str | None = None) -> list[tuple[str, in
             # PDF 직접 입력이 없는 CLI — 페이지를 PNG로 렌더링해 -i로 첨부
             pngs = _render_pages_png(pdf_path, idxs)
             if len(pngs) < 3:
+                _toc_skip(pdf_path, f"페이지 이미지 렌더링 {len(pngs)}장뿐")
                 return None
             prompt_img = prompt.replace(
                 "이 PDF는 한 권의 책에서 추려낸 페이지들입니다",
@@ -304,6 +319,7 @@ def pdf_visual_toc(pdf_path: Path, txt: str | None = None) -> list[tuple[str, in
         else:
             scan = _build_scan_pdf(pdf_path, idxs)
             if scan is None:
+                _toc_skip(pdf_path, "판독용 임시 PDF 생성 실패")
                 return None
             if prov == "gemini":
                 raw = _visual_toc_gemini(model, llm.get_key(prov), scan, prompt)
@@ -314,6 +330,7 @@ def pdf_visual_toc(pdf_path: Path, txt: str | None = None) -> list[tuple[str, in
             elif prov == "claude_cli":
                 raw = _visual_toc_claude_cli(model, scan, prompt)
             else:
+                _toc_skip(pdf_path, f"{prov}는 시각 판독 미지원")
                 return None
         data = _parse_json_lenient(raw)
     except Exception as e:
@@ -331,6 +348,7 @@ def pdf_visual_toc(pdf_path: Path, txt: str | None = None) -> list[tuple[str, in
             pass
     rows = data.get("chapters") if isinstance(data, dict) else None
     if not isinstance(rows, list):
+        _toc_skip(pdf_path, f"[{prov}] 응답에 chapters 목록이 없음")
         return None
     out: list[tuple[str, int | None]] = []
     for r in rows:
@@ -340,6 +358,7 @@ def pdf_visual_toc(pdf_path: Path, txt: str | None = None) -> list[tuple[str, in
         page = r.get("page")
         out.append((title, int(page) if isinstance(page, (int, float)) else None))
     if not (3 <= len(out) <= MAX_CHAPTERS):
+        _toc_skip(pdf_path, f"[{prov}] 읽어낸 장 수 {len(out)}개 — 3~{MAX_CHAPTERS} 범위 밖")
         return None
     append_log(f"PDF 시각 차례 판독 [{prov}]: {len(out)}개 장 — {pdf_path.name}")
     return out
@@ -516,4 +535,136 @@ def pdf_chapter_split(txt: str, pdf_path: Path) -> tuple[str, list[tuple[str, st
                        + (f" (제목 {missing}개 위치 미확정)" if missing > 0 else "")
                        + f" — {pdf_path.name}")
             return "visual", chs
+        # titles가 비면 pdf_visual_toc이 이미 이유를 남겼다 — 여기선 위치 확정 실패만.
+        _toc_skip(pdf_path, f"제목 {len(titles)}개를 읽었으나 본문에서 위치를 "
+                            f"{len(dedup)}곳만 찾음 — 3곳 미만이면 분할 불가")
     return None
+
+
+# ── 사용자가 차례 페이지를 직접 짚는 경로 (2026-08-17) ──────────────
+# 지금까지는 앞부분 40~55쪽을 통째로 AI에 던지고 "차례가 있으면 알아서 찾아라"고
+# 시켰다. 어느 쪽이 차례인지 모른 채 던지는 셈이라 실패가 잦았다. 사람이 "17쪽이
+# 차례"라고 짚어 주면 과제가 "이 페이지를 그대로 옮겨 적어라"로 바뀐다 — 훨씬 쉽고,
+# 보내는 페이지도 1~3쪽이라 싸고 빠르다.
+
+_TOC_PAGE_PROMPT = """첨부한 페이지들은 어떤 책의 **차례(목차)** 입니다.
+여기 인쇄된 장(章) 제목을 **읽는 순서 그대로** 옮겨 적으세요.
+
+- 제목은 인쇄된 그대로. 맞춤법을 고치거나 다듬지 마세요.
+- **층위 선택**: 최상위 구분이 부(部)/권처럼 2~3개뿐이면 그 한 단계 아래(장)를 고르고,
+  그 아래 절·항(1., 2., …)은 빼세요.
+- 쪽번호·점선은 빼고 제목만.
+- 머리말·판권·추천사도 차례에 있으면 그대로 포함하세요.
+
+출력은 JSON 하나만: {"titles": ["제목1", "제목2"]}"""
+
+
+# 차례 줄 생김새 — 끝이 쪽번호로 끝나고, 대개 점선(…·....)이 앞에 붙는다
+_TOC_LINE = re.compile(r"(?:[.·ㆍ…]{2,}|\s)\s*\d{1,4}\s*$")
+
+
+def toc_page_candidates(txt: str, limit: int = 6) -> list[int]:
+    """차례가 있을 만한 0-기반 페이지 번호.
+
+    1) '차례/목차/CONTENTS' 글자를 찾는다.
+    2) 그 글자가 없는 차례도 있다(2026-08-17, 피터 싱어 『이 시대에 윤리적으로
+       살아가기』는 표제 없이 항목만 나열). 그래서 **쪽번호로 끝나는 줄이 여러 개
+       모여 있는 페이지**도 후보로 올린다."""
+    pages = txt.split("\f")
+    hits: list[int] = []
+
+    def _add(i: int) -> None:
+        for j in (i, i + 1):
+            if 0 <= j < len(pages) and j not in hits:
+                hits.append(j)
+
+    for i, p in enumerate(pages[:40]):
+        if re.search(r"차례|목차|CONTENTS", re.sub(r"\s+", "", p[:400]), re.I):
+            _add(i)
+    if not hits:
+        for i, p in enumerate(pages[:40]):
+            lines = [ln for ln in p.splitlines() if ln.strip()]
+            if len(lines) >= 4 and sum(1 for ln in lines if _TOC_LINE.search(ln)) >= 4:
+                _add(i)
+    return hits[:limit]
+
+
+def page_previews(pdf_path: Path, indices: list[int], scale: float = 0.55) -> list[tuple[int, bytes]]:
+    """미리보기용 페이지 이미지 [(0-기반 쪽번호, JPEG bytes)]."""
+    import io
+
+    import pypdfium2 as pdfium
+    out: list[tuple[int, bytes]] = []
+    src = pdfium.PdfDocument(str(pdf_path))
+    try:
+        for i in indices:
+            if not (0 <= i < len(src)):
+                continue
+            buf = io.BytesIO()
+            src[i].render(scale=scale).to_pil().convert("RGB").save(buf, "JPEG", quality=70)
+            out.append((i, buf.getvalue()))
+    finally:
+        src.close()
+    return out
+
+
+def toc_page_text(pdf_path: Path, txt: str, indices: list[int]) -> str:
+    """고른 페이지의 텍스트 층 내용. OCR이 깨진 책은 이게 쓸모없고, 그때 AI 판독을 쓴다."""
+    pages = txt.split("\f")
+    return "\n".join(pages[i] for i in indices if 0 <= i < len(pages)).strip()
+
+
+def read_toc_pages_ai(pdf_path: Path, indices: list[int]) -> tuple[list[str], str]:
+    """고른 페이지를 이미지로 판독해 장 제목 목록을 얻는다. (제목들, 안내문)."""
+    if not indices:
+        return [], "페이지를 고르세요"
+    try:
+        prov, model = llm.wiki_provider_model()
+        if not llm.has_key(prov):
+            return [], f"AI 공급자({prov})를 쓸 수 없습니다 — 설정에서 확인하세요"
+    except Exception as e:
+        return [], f"AI 공급자 확인 실패 ({type(e).__name__})"
+    scan: Path | None = None
+    pngs: list[Path] = []
+    try:
+        if prov == "codex_cli":
+            pngs = _render_pages_png(pdf_path, indices, scale=1.6, max_pages=6)
+            if not pngs:
+                return [], "페이지 이미지를 만들지 못했습니다"
+            raw = _visual_toc_codex_cli(model, pngs, _TOC_PAGE_PROMPT)
+        else:
+            scan = _build_scan_pdf(pdf_path, indices)
+            if scan is None:
+                return [], "판독용 임시 PDF를 만들지 못했습니다"
+            if prov == "gemini":
+                raw = _visual_toc_gemini(model, llm.get_key(prov), scan, _TOC_PAGE_PROMPT)
+            elif prov == "anthropic":
+                raw = _visual_toc_anthropic(model, llm.get_key(prov), scan, _TOC_PAGE_PROMPT)
+            elif prov == "openai":
+                raw = _visual_toc_openai(model, llm.get_key(prov), scan, _TOC_PAGE_PROMPT)
+            elif prov == "claude_cli":
+                raw = _visual_toc_claude_cli(model, scan, _TOC_PAGE_PROMPT)
+            else:
+                return [], f"{prov}는 이미지 판독을 지원하지 않습니다"
+        data = _parse_json_lenient(raw)
+    except Exception as e:
+        append_log(f"WARN: 차례 페이지 판독 실패 [{prov}] ({type(e).__name__}) {str(e)[:200]}")
+        return [], f"판독 실패 ({type(e).__name__}) — 텍스트로 읽기를 써 보세요"
+    finally:
+        try:
+            if scan is not None:
+                scan.unlink(missing_ok=True)
+            if pngs:
+                import shutil as _shutil
+                _shutil.rmtree(pngs[0].parent, ignore_errors=True)
+        except Exception:
+            pass
+    rows = data.get("titles") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        rows = [r.get("title") for r in (data.get("chapters") or [])] if isinstance(data, dict) else []
+    titles = [str(r).strip() for r in (rows or []) if str(r or "").strip()]
+    if not titles:
+        return [], "제목을 읽어내지 못했습니다 — 다른 쪽을 골라 보세요"
+    append_log(f"차례 페이지 판독 [{prov}]: {len(titles)}개 제목 — {Path(pdf_path).name} "
+               f"{[i + 1 for i in indices]}쪽")
+    return titles, f"{len(titles)}개 제목을 읽었습니다"

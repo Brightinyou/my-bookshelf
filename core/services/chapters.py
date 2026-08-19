@@ -187,6 +187,60 @@ _CHAPTER_DERIVED_SUFFIXES = (
 )
 
 
+_ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100}
+
+# 전각 로마숫자(Ⅰ~Ⅹ) → 반각. OCR 텍스트에 섞여 나온다.
+_FW_ROMAN_MAP = str.maketrans({
+    "Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "Ⅳ": "IV", "Ⅴ": "V",
+    "Ⅵ": "VI", "Ⅶ": "VII", "Ⅷ": "VIII", "Ⅸ": "IX", "Ⅹ": "X",
+})
+
+
+def _roman_to_int(s: str) -> int | None:
+    total = prev = 0
+    for ch in reversed(s.upper()):
+        v = _ROMAN_VALUES.get(ch)
+        if v is None:
+            return None
+        total += -v if v < prev else v
+        prev = max(prev, v)
+    return total or None
+
+
+def strip_redundant_number(title: str, n: int) -> str:
+    """장 제목 앞의 번호가 파일 순번과 같으면 떼어낸다 (2026-08-17).
+
+    파일 이름은 `01_제목.txt` 꼴이고 순번(01)은 정렬·목록 조회에 쓰이므로 남긴다.
+    그런데 분할기들이 제목에도 번호를 붙여 와서(`toc_split`의 `f"{num}. {text}"` 등)
+    `01_1. 1장.txt`처럼 같은 숫자가 세 번 반복됐다. 순번과 **같은 번호일 때만** 떼며,
+    떼고 나서 남는 게 없으면 원래 제목을 그대로 둔다(`1.` → 그대로).
+    로마숫자(`I.`·전각 `Ⅰ.`)와 `1장 서론` 꼴도 같은 기준으로 처리하고,
+    `1. 1. 성서와 철학`처럼 두 겹으로 붙은 경우까지 반복해서 벗긴다.
+    번호가 순번과 다르면(`04_4. 7. Study 5`의 `7.`) 책의 실제 절 번호이므로 남긴다."""
+    t = title.strip()
+    for _ in range(3):
+        base = t
+        t = t.translate(_FW_ROMAN_MAP)
+        for pat, conv in (
+            (r"^(\d{1,3})\s*[.):]\s*(.+)$", int),                 # "1. 제목"
+            (r"^(\d{1,3})\s+(\S.*)$", int),                       # "1 제목"
+            (r"^([IVXLCivxlc]{1,6})\s*[.):]\s*(.+)$", _roman_to_int),   # "I. 제목"
+            (r"^제?\s*(\d{1,3})\s*장\s*[.:)]?\s+(.+)$", int),      # "1장 제목"
+        ):
+            m = _re.match(pat, t)
+            if m:
+                try:
+                    val = conv(m.group(1))
+                except Exception:
+                    val = None
+                if val == n:
+                    t = m.group(2).strip()
+                    break
+        if t == base:
+            break
+    return t or title.strip()
+
+
 def _chapter_stem_of(name: str) -> str | None:
     """챕터 파일 이름에서 원문 챕터 stem을 되찾는다. 챕터 파생물이 아니면 None."""
     if not _re.match(r"^\d{2}_", name):
@@ -197,19 +251,28 @@ def _chapter_stem_of(name: str) -> str | None:
     return None
 
 
-def _purge_stale_chapter_files(ch_dir: Path, new_stems: set[str]) -> None:
+def _purge_stale_chapter_files(ch_dir: Path, new_stems: set[str],
+                                changed_stems: set[str] | None = None) -> None:
     """이전 분할이 남긴 챕터 파일 정리.
 
-    재분할로 장 번호가 밀리면(예: 서론이 복구돼 01_II→02_II) 옛 파일이 그대로 남아
-    같은 장이 두 벌씩 잡히고, EPUB·위키에 중복 장이 실린다. 이번 분할이 만들지 않은
-    챕터 stem의 파일(원문·번역본·위키까지)만 지운다 — 전체요약 등 챕터 파생물이
-    아닌 파일은 건드리지 않는다 (2026-08-17)."""
+    두 가지를 지운다 (2026-08-17):
+    1. 이번 분할이 만들지 않은 챕터 stem의 파일 전부 — 재분할로 장 번호가 밀리면
+       (예: 서론이 복구돼 01_II→02_II) 옛 파일이 남아 같은 장이 두 벌씩 잡히고
+       EPUB·위키에 중복 장이 실린다.
+    2. 이름은 같지만 본문이 바뀐 장(changed_stems)의 **파생물**(번역본·요약) —
+       옛 본문으로 만든 요약이 새 본문 옆에 남으면 내용이 어긋난다.
+    전체요약처럼 챕터 파생물이 아닌 파일은 여기서 건드리지 않는다."""
+    changed_stems = changed_stems or set()
     for f in ch_dir.iterdir():
         if not f.is_file():
             continue
         stem = _chapter_stem_of(f.name)
-        if stem is None or stem in new_stems:
+        if stem is None:
             continue
+        if stem in new_stems:
+            # 본문이 바뀐 장은 파생물만 버리고 방금 쓴 원문(.txt)은 남긴다
+            if not (stem in changed_stems and f.name != f"{stem}.txt"):
+                continue
         try:
             f.unlink()
         except Exception:
@@ -247,30 +310,61 @@ def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -
     saved = 0
     real_i = 0
     new_stems: set[str] = set()
+    changed_stems: set[str] = set()
+    _prev_stems = {f.stem for f in ch_dir.glob("??_*.txt")
+                   if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))}
     for idx, (title, body) in enumerate(chapters):
-        safe = _re.sub(r'[/\\:*?"<>|]', ' ', title).strip()[:50].strip(" .,:-")
         # 자동 생성된 "머리말"(첫 장 표시 이전 본문, _split_at 참고)은 실제 장이 아니므로
         # 01번을 차지하면 안 된다 — 그러면 진짜 1장(Introduction 등)이 02번으로 밀린다.
         # 00번을 따로 줘서 읽는 순서(정렬)는 유지하되 실제 장 번호는 1부터 시작하게
         # 한다(2026-08-12).
         if idx == 0 and title == "머리말":
             prefix = "00"
+            disp = title
         else:
             real_i += 1
             prefix = f"{real_i:02d}"
-        (ch_dir / f"{prefix}_{safe}.txt").write_text(body, encoding="utf-8")
+            disp = strip_redundant_number(title, real_i)
+        safe = _re.sub(r'[/\\:*?"<>|]', ' ', disp).strip()[:50].strip(" .,:-")
+        ch_file = ch_dir / f"{prefix}_{safe}.txt"
+        # 같은 이름이라도 내용이 바뀌었으면 그 장의 번역본·요약은 옛 본문의 것이다.
+        # 남겨두면 새 본문과 짝이 안 맞는 요약이 위키·EPUB에 실린다 (2026-08-17).
+        if ch_file.exists() and ch_file.read_text(encoding="utf-8", errors="ignore") != body:
+            changed_stems.add(f"{prefix}_{safe}")
+        ch_file.write_text(body, encoding="utf-8")
         new_stems.add(f"{prefix}_{safe}")
         saved += 1
-    _purge_stale_chapter_files(ch_dir, new_stems)
+    _purge_stale_chapter_files(ch_dir, new_stems, changed_stems)
+    # 장 구성이나 본문이 바뀌었으면 책 전체요약도 옛 챕터로 만든 것이라 버린다
+    # — 다음 요약 단계에서 새로 만든다.
+    if changed_stems or _prev_stems - new_stems or new_stems - _prev_stems:
+        for _ov in list(ch_dir.glob("*_전체요약.md")) + list(ch_dir.glob("*_overview.md")):
+            try:
+                _ov.unlink()
+            except Exception:
+                pass
     # 커버리지 자기진단 — 챕터에 담긴 분량이 원문에 크게 못 미치면 유실 의심
     # (각주·러닝헤더 오탐으로 첫 장 이전이 통째로 버려진 사고, 2026-07-08).
     # 기준을 60%→85%로 올린다: 서론 하나(전체의 5%)가 통째로 빠진 사고가 95%
     # 커버리지라 경고 없이 지나갔다 (2026-08-17, chapter_wiki._recover_lead 참고).
     coverage = sum(len(b) for _t, b in chapters) / max(1, len(source_text))
     LAST_SPLIT_WARNING.pop(stem, None)
+    # 원본 PDF가 있는데도 차례(북마크·시각) 판독이 아니라 본문 추정으로 나뉜 경우.
+    # 이때 나온 장 구분은 자주 엉뚱하다 — 여러 학자의 글을 엮은 책이 목차 12편 대신
+    # 4덩어리로 뭉개진 사고(2026-08-17). 본문은 다 담기므로 커버리지로는 안 잡힌다.
+    if pdf_p.exists() and mode not in ("bookmark", "visual"):
+        LAST_SPLIT_WARNING[stem] = ("PDF 차례를 읽지 못해 본문 추정으로 나눴습니다 — "
+                                    "장 구분이 맞는지 확인하세요(기록 파일에 이유가 남습니다)")
+        append_log(f"WARN: 장분할이 차례 판독 없이 진행됨 — {stem} (분할={mode})")
     if coverage < 0.85:
         LAST_SPLIT_WARNING[stem] = f"본문의 {coverage:.0%}만 챕터에 담겼습니다 — 앞뒤 일부가 빠졌을 수 있습니다"
         append_log(f"WARN: 장분할 커버리지 {coverage:.0%} — {stem}: 본문 일부가 챕터에 담기지 않았을 수 있음 (분할={mode})")
+    # 장 지도 기록 — 확인 화면이 이걸 읽고, 사람이 고치면 여기에 남는다 (2026-08-17)
+    try:
+        from services.chapter_map import save_map
+        save_map(ws_name, stem, mode=mode, confirmed=False, source="auto")
+    except Exception as e:
+        append_log(f"WARN: 장 지도 기록 실패 — {stem} ({type(e).__name__})")
     return saved, "", mode
 
 

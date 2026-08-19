@@ -343,6 +343,15 @@ def build_wiki_from_chapter_summaries(ws_name: str, stem: str, wiki_dir: Path | 
         if d is None:
             continue
         title = _re.sub(r"^\d+_", "", jf.stem.replace("_wiki", ""))
+        try:                              # 부(部) 표시 — chapter_map에 지정돼 있으면 앞에 붙인다
+            from services.chapter_map import part_of, part_ranges
+            _pr = part_ranges(ws_name, stem)
+            if _pr:
+                _pt = part_of(_pr, int(jf.stem[:2]))
+                if _pt:
+                    title = f"{_pt} · {title}"
+        except Exception:
+            pass
         sections.append({"idx": i, "title": title,
                          "summary": d.get("summary", ""),
                          "body": d.get("body", "")})

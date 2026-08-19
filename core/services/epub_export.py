@@ -184,7 +184,12 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
     manifest_items, spine_items, nav_items, ncx_points, text_entries = [], [], [], [], []
     first_text = ""
     for i, ch_path in enumerate(chapters, 1):
-        ch_title = re.sub(r"^\d+_", "", ch_path.stem)
+        # 부(部)가 지정된 책은 "제1부 원리론 · 정의와 평등"처럼 앞에 부를 붙인다
+        try:
+            from services.chapter_map import display_title as _disp_title
+            ch_title = _disp_title(ws_name, stem, ch_path)
+        except Exception:
+            ch_title = re.sub(r"^\d+_", "", ch_path.stem)
         # 본문이 번역돼 있으면(=_ko.txt 존재) 제목도 번역본을 우선 쓴다 — "번역제목 (원제)"
         # 형태로, 번역 사이드카(_title_ko.txt, translate_one_chapter가 만듦)가 없으면
         # 원제 그대로(2026-08-11 — 본문은 번역됐는데 제목만 영문으로 남던 문제 수정).

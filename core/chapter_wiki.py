@@ -404,12 +404,39 @@ def _heading_candidates(txt: str):
     return candidates
 
 
+# 부(部)·편·권 구분 줄 — "〈제 2부〉"처럼 그 줄에 다른 내용이 없는 것만 인정한다.
+# 러닝헤더("제2부 : 종교 평화 없이… 147")는 제목·쪽번호가 붙어 있어 걸리지 않는다.
+_PART_DIVIDER_RE = re.compile(r"[〈<\[(【]?제?\d{1,2}[부편권장?]?[〉>\])】]?$")
+
+
+def _part_divider_positions(txt: str) -> list[int]:
+    """부가 바뀌는 지점의 문자 위치. 여기서는 장 번호가 1로 되돌아가도 된다."""
+    out: list[int] = []
+    pos = 0
+    for raw in txt.splitlines(True):
+        s = re.sub(r"\s+", "", raw)
+        if re.fullmatch(r"[〈<\[(【]?제?\d{1,2}[부편권][〉>\])】]?", s) or \
+           re.fullmatch(r"(?i)part[ivx\d]+", s):
+            out.append(pos)
+        pos += len(raw)
+    return out
+
+
 def numbered_heading_split(txt: str):
     """Fallback: split sequential Korean/English numbered headings, with or without TOC."""
     candidates = _heading_candidates(txt)
     if len(candidates) < 3:
         return None
     min_gap = 800 if len(txt) < 120_000 else 1600
+    # 부마다 장 번호가 1부터 다시 시작하는 책이 있다(한스 큉 『세계 윤리 구상』:
+    # 1부 1~6장 · 2부 1~5장 · 3부 1~5장). 연속 번호만 따라가면 1부 끝에서 멈춰
+    # 나머지가 통째로 마지막 장에 딸려 들어간다 — 부 구분 줄이 사이에 있으면
+    # 번호가 1로 돌아가도 같은 흐름으로 본다 (2026-08-19).
+    part_pos = _part_divider_positions(txt)
+
+    def _part_between(a: int, b: int) -> bool:
+        return any(a < p < b for p in part_pos)
+
     best = None
     for start_idx, start in enumerate(candidates):
         if start["num"] != 1:
@@ -424,6 +451,10 @@ def numbered_heading_split(txt: str):
                 seq.append(cand)
                 prev = cand
                 expected += 1
+            elif cand["num"] == 1 and _part_between(prev["pos"], cand["pos"]):
+                seq.append(cand)          # 부가 바뀌며 장 번호 재시작
+                prev = cand
+                expected = 2
             elif cand["num"] == 1 and len(seq) < 3 and not cand.get("pageno"):
                 # 진짜 "1장" 헤딩 재등장 = 잘못된 시작점. 단 쪽번호 달린 줄은
                 # 1장 러닝헤더일 뿐이므로 시퀀스를 죽이지 않는다 (2026-07-08)
@@ -640,8 +671,13 @@ def chapter_split(md_text: str, txt_text: str = None, pdf_path=None):
             r = pdf_chapter_split(txt_text, pdf_path)
             if r:
                 return r
-        except Exception:
-            pass
+        except Exception as e:
+            # 조용히 삼키면 왜 본문 추정으로 떨어졌는지 알 수 없다 (2026-08-17)
+            try:
+                from services.common import append_log
+                append_log(f"WARN: PDF 장 지도 판독 중 오류 ({type(e).__name__}) {str(e)[:200]}")
+            except Exception:
+                pass
     if md_text:
         cleaned = _strip_noise(md_text)
         chs = heading_chapters(cleaned)

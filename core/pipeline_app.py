@@ -31,6 +31,8 @@ from version import APP_VERSION
 
 # ── 처리 로직 서비스 (2026-07-03 pipeline_app.py에서 분리) ──
 # UI 코드가 기존 이름 그대로 쓰도록 명시적으로 재노출한다.
+from services import chapter_map as cmap
+from services import toc as toc_svc
 from services import wiki as wiki_svc
 from services.common import (
     DEFAULT_WS, MD_SUB, PAUSE_DIR, PDF_SUB, TRANS_SUB, TXT_SUB,
@@ -567,11 +569,46 @@ _wiki_key_ok = bool(_avail_ai_providers)
 wg_ok = wiki_generator_running()
 # CLI 구독은 설치·활성된 도구명을 짧게 표시(Claude/Codex), API 키는 개수 (2026-07-10)
 _CLI_SHORT = {"claude_cli": "Claude", "codex_cli": "Codex"}
-_avail_cli_short = [_CLI_SHORT.get(p, llm.PROVIDERS[p]["label"])
+# 어느 도구를 쓰는지만이 아니라 **어떤 모델로 도는지**도 보이게 한다 (2026-08-17).
+# 지금 위키 생성에 걸린 공급자면 그 모델을, 아니면 그 도구의 기본 모델을 적는다.
+_wp_now, _wm_now = llm.wiki_provider_model()
+
+
+def _short_model(model: str, tool: str = "") -> str:
+    """`claude-sonnet-4-6` → `Sonnet 4.6`. 앞에 붙는 도구 이름(Claude)과 겹치는
+    접두만 뗀다 — Codex의 `gpt-5.5`는 겹치지 않으므로 `GPT-5.5`로 살려 둔다."""
+    if model in ("", "default"):
+        return "기본"
+    m = model
+    if tool and m.lower().startswith(tool.lower() + "-"):
+        m = m[len(tool) + 1:]
+    m = _re.sub(r"-\d{8}$", "", m)                    # 날짜 꼬리표
+    m = _re.sub(r"-(\d+)-(\d+)$", r" \1.\2", m)       # -4-6 → 4.6
+    m = _re.sub(r"^gpt", "GPT", m)
+    return m[:1].upper() + m[1:]
+
+
+def _cli_model_label(prov: str) -> str:
+    """이 CLI 도구가 실제로 쓸 모델. 앱에서 고른 값이 'default'면(=지정 불가) 도구
+    자신의 설정을 읽어 온다 — Codex는 ~/.codex/config.toml에 적힌 모델로 돈다."""
+    model = _wm_now if prov == _wp_now else (llm.PROVIDERS[prov]["models"] or [""])[0]
+    if model in ("", "default"):
+        model = llm.cli_configured_model(prov) or model
+    return _short_model(model, _CLI_SHORT.get(prov, ""))
+
+
+_avail_cli_short = [f"{_CLI_SHORT.get(p, llm.PROVIDERS[p]['label'])} {_cli_model_label(p)}"
                     for p in llm.CLI_PROVIDERS if llm.has_key(p)]
-_status_spacer, col_s1, col_s2, col_s3, col_s4 = st.columns([2.8, 1.1, 1.1, 1.1, 1.1])
+# CLI 칸은 모델명까지 들어가 길다 — 왼쪽 여백을 줄여 폭을 준다. 값 글자 크기는 네 칸을
+# 한꺼번에 줄여 라벨·값 간격과 줄 높이가 서로 어긋나지 않게 한다 (2026-08-17).
+st.markdown("""<style>
+.st-key-statusrow [data-testid="stMetricValue"] { font-size: 1.15rem; }
+</style>""", unsafe_allow_html=True)
+_status_row = st.container(key="statusrow")
+_status_spacer, col_s1, col_s2, col_s3, col_s4 = _status_row.columns([1.2, 2.6, 1.05, 1.05, 1.05])
 # CLI 구독을 우선(왼쪽)에, API 키를 다음에 배치
-col_s1.metric(t("AI 구독(CLI)"), ", ".join(_avail_cli_short) if _avail_cli_short else t("✕ 없음"))
+col_s1.metric(t("AI 구독(CLI)"),
+              ", ".join(_avail_cli_short) if _avail_cli_short else t("✕ 없음"))
 col_s2.metric(t("AI API 키"), tf("%d개", len(_avail_api_providers)) if _avail_api_providers else t("✕ 없음"))
 col_s3.metric(t("위키 생성기"), t("생성 중") if wg_ok else t("대기"))
 col_s4.metric(t("Wiki 완성"), sum(1 for _ in WIKI_DIR.rglob("*.md")))
@@ -1009,6 +1046,225 @@ def _dismiss_split_nosplit(stem: str) -> None:
         st.session_state["split2_nosplit"] = [item for item in pending if item != stem]
 
 
+def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = None) -> None:
+    """장 목록을 보여주고 고치는 화면 (2026-08-17).
+
+    분할 탭에서는 full=True로 전체 기능을, 요약·번역 탭에서는 full=False로 제목 고치기만
+    쓴다 — 잘못된 제목은 대개 요약을 돌리려다 눈에 띄기 때문에, 그 자리에서 바로 고칠
+    수 있어야 한다.
+    """
+    if not cfg.CHAPTERS_DIR.exists():
+        return
+    books = [d.name for d in sorted(cfg.CHAPTERS_DIR.iterdir())
+             if d.is_dir() and cmap.chapter_files(DEFAULT_WS, d.name)]
+    if only_book:
+        books = [b for b in books if b == only_book]
+    else:
+        # **지금 처리 중인 책만.** 대기 큐 전체를 훑으면 예전에 넣어 둔 책까지 수십 권이
+        # 딸려 오고, 다 지나간 책의 "수상한 분할"을 붙잡게 된다(2026-08-18 지적).
+        # 이번 실행에서 나눈 책만 대상으로 한다.
+        _live = {_nfc(b) for b in st.session_state.get("_review_books", [])}
+        books = [b for b in books if _nfc(b) in _live]
+    if not books:
+        return
+    if full:
+        st.markdown("### 📑 " + t("장 구분 확인"))
+        st.caption(t("방금 나눈 책의 장 목록입니다. 요약·번역으로 넘기기 전에 "
+                     "제목을 고치거나 장을 합치고 나눌 수 있습니다."))
+    if len(books) == 1:
+        book = books[0]
+        if full:
+            st.markdown(f"**📚 {book}**")
+    else:
+        label = {b: ("✅ " if cmap.is_confirmed(DEFAULT_WS, b) else "🔎 ") + b for b in books}
+        book = st.selectbox(t("책 고르기"), books, key=f"{key}_book",
+                            format_func=lambda b: label.get(b, b))
+    if not book:
+        return
+    files = cmap.chapter_files(DEFAULT_WS, book)
+    if full:
+        for finding in cmap.review_findings(DEFAULT_WS, book):
+            st.warning("⚠️ " + finding)
+    ranges = cmap.part_ranges(DEFAULT_WS, book)
+    rows, prev_part = [], ""
+    for cf in files:
+        body = cf.read_text(encoding="utf-8", errors="ignore")
+        try:
+            n = int(cf.stem[:2])
+        except ValueError:
+            n = 0
+        part = cmap.part_of(ranges, n) if n > 0 else ""
+        rows.append({
+            "순번": cf.stem[:2],
+            "부": part if part != prev_part else "",   # 같은 부는 첫 장에만 적는다
+            "제목": cmap.chapter_title(cf),
+            "분량": f"{len(body):,}자",
+            "시작 부분": _re.sub(r"\s+", " ", body[:80]).strip(),
+            "앞 장에 합치기": False,
+        })
+        prev_part = part
+    cols = ["순번", "부", "제목", "분량", "시작 부분"] + (["앞 장에 합치기"] if full else [])
+    edited = st.data_editor(
+        pd.DataFrame(rows)[cols], key=f"{key}_editor_{book}",
+        use_container_width=True, hide_index=True, num_rows="fixed",
+        column_config={
+            "순번": st.column_config.TextColumn(disabled=True, width="small"),
+            "부": st.column_config.TextColumn(
+                t("부(部)"), width="small",
+                help=t("이 장부터 시작하는 부의 이름. 같은 부가 이어지면 비워 두세요")),
+            "제목": st.column_config.TextColumn(t("제목 (고칠 수 있음)"), width="large"),
+            "분량": st.column_config.TextColumn(disabled=True, width="small"),
+            "시작 부분": st.column_config.TextColumn(disabled=True, width="large"),
+            "앞 장에 합치기": st.column_config.CheckboxColumn(
+                t("앞 장에 합치기"), help=t("이 장을 지우고 본문을 바로 앞 장 뒤에 붙입니다")),
+        },
+    )
+    b1, b2, b3 = st.columns([1.4, 1.4, 1.2]) if full else (st.columns([1.4, 1.4, 1.2]))
+    if b1.button(t("변경 적용"), icon=":material/save:", key=f"{key}_apply",
+                 use_container_width=True, type="primary"):
+        recs = edited.to_dict("records")
+        changed = 0
+        for i, row in enumerate(recs):
+            new_title = str(row.get("제목", "")).strip()
+            if new_title and new_title != rows[i]["제목"]:
+                cmap.rename_chapter(DEFAULT_WS, book, i, new_title)
+                changed += 1
+        # 부: 값이 적힌 줄에서 새 부가 시작한다
+        new_ranges = []
+        for i, row in enumerate(recs):
+            part = str(row.get("부", "")).strip()
+            if part:
+                try:
+                    new_ranges.append({"start": int(rows[i]["순번"]), "title": part})
+                except ValueError:
+                    pass
+        if new_ranges != ranges:
+            cmap.set_parts(DEFAULT_WS, book, new_ranges)
+            changed += 1
+        if full:
+            for i in sorted([i for i, r in enumerate(recs) if r.get("앞 장에 합치기")], reverse=True):
+                if cmap.merge_up(DEFAULT_WS, book, i):
+                    changed += 1
+        st.success(tf("%d건 반영했습니다.", changed) if changed else t("바뀐 내용이 없습니다."))
+        st.rerun()
+    if b2.button(t("이대로 확정"), icon=":material/check_circle:", key=f"{key}_confirm",
+                 use_container_width=True):
+        cmap.confirm(DEFAULT_WS, book)
+        st.success(tf("%s — 장 구분을 확정했습니다.", book))
+        st.rerun()
+    if b3.button(t("폴더 열기"), icon=":material/folder_open:", key=f"{key}_open",
+                 use_container_width=True):
+        open_path(chapters_dir(DEFAULT_WS, book))
+    if not full:
+        return
+
+    # ── 📖 PDF 차례에서 가져오기 (2026-08-17) ────────────────────
+    # 앞부분 40~55쪽을 통째로 AI에 던지는 대신, 사람이 차례 쪽을 짚어 주고 그 쪽만
+    # 읽힌다. 결과는 아래 "목차 붙여넣기" 칸에 채워져 그대로 이어진다.
+    _pdf_p = cfg.PDF_DIR / f"{book}.pdf"
+    with st.expander("📖 " + t("PDF 차례에서 가져오기 — 차례 쪽을 짚어 주세요")):
+        if not _pdf_p.exists():
+            st.info(t("이 책의 원본 PDF를 찾지 못했습니다.") + f"  ({_pdf_p})")
+        else:
+            _src_txt = ""
+            for _c in (cfg.TXT_ARCHIVE_DIR / f"{book}.txt", cfg.TXT_DIR / f"{book}.txt"):
+                if _c.exists():
+                    _src_txt = _c.read_text(encoding="utf-8", errors="ignore")
+                    break
+            _sugg = toc_svc.toc_page_candidates(_src_txt) if _src_txt else []
+            _n_show = st.slider(t("앞에서 몇 쪽까지 볼까요"), 8, 40, 24, key=f"{key}_pgn_{book}")
+            _sel_key = f"{key}_pgsel_{book}"
+            _opts = list(range(1, _n_show + 1))
+            if _sel_key not in st.session_state:
+                st.session_state[_sel_key] = [i + 1 for i in _sugg[:2] if i + 1 in _opts]
+            else:   # 보는 범위를 줄이면 범위 밖 선택은 떨어뜨린다 (위젯 오류 방지)
+                st.session_state[_sel_key] = [p for p in st.session_state[_sel_key] if p in _opts]
+            _picked = st.multiselect(
+                t("차례가 있는 쪽 (1-기반)"), _opts, key=_sel_key,
+                help=t("보통 한두 쪽입니다. 차례가 여러 쪽에 걸쳐 있으면 모두 고르세요"))
+            if _sugg:
+                st.caption("💡 " + tf("텍스트에서 '차례'를 찾은 쪽: %s",
+                                      ", ".join(str(i + 1) for i in _sugg)))
+            try:
+                _thumbs = toc_svc.page_previews(_pdf_p, list(range(_n_show)))
+            except Exception as _e_th:
+                _thumbs = []
+                st.warning(t("미리보기를 만들지 못했습니다.") + f" ({type(_e_th).__name__})")
+            if _thumbs:
+                for _r0 in range(0, len(_thumbs), 6):
+                    _tc = st.columns(6)
+                    for _ci, (_pi, _png) in enumerate(_thumbs[_r0:_r0 + 6]):
+                        with _tc[_ci]:
+                            st.image(_png, use_container_width=True)
+                            _mark = "✅" if (_pi + 1) in _picked else ("💡" if _pi in _sugg else "")
+                            st.caption(f"{_mark} {_pi + 1}" + t("쪽"))
+            _rc1, _rc2 = st.columns(2)
+            _idxs = [p - 1 for p in sorted(_picked)]
+            if _rc1.button(t("텍스트로 읽기"), icon=":material/description:",
+                           key=f"{key}_readtxt_{book}", use_container_width=True,
+                           disabled=not _idxs or not _src_txt):
+                st.session_state[f"{key}_toc_{book}"] = toc_svc.toc_page_text(_pdf_p, _src_txt, _idxs)
+                st.rerun()
+            if _rc2.button(t("AI로 이미지 판독"), icon=":material/visibility:", type="primary",
+                           key=f"{key}_readai_{book}", use_container_width=True, disabled=not _idxs):
+                with st.spinner(t("차례를 읽는 중…")):
+                    _titles_ai, _msg_ai = toc_svc.read_toc_pages_ai(_pdf_p, _idxs)
+                if _titles_ai:
+                    st.session_state[f"{key}_toc_{book}"] = "\n".join(_titles_ai)
+                    st.success(_msg_ai)
+                    st.rerun()
+                else:
+                    st.error(_msg_ai)
+            st.caption(t("스캔본이라 글자가 깨져 있으면 «AI로 이미지 판독»을 쓰세요. "
+                         "읽어낸 목차는 아래 «목차 붙여넣기» 칸에 채워집니다."))
+
+    with st.expander("📋 " + t("목차 붙여넣기 — 장을 한 번에 다시 나눕니다")):
+        st.caption(t("책 앞의 차례를 그대로 붙여넣으세요. 쪽번호·점선은 알아서 뗍니다. "
+                     "제목을 본문에서 찾아 그 자리에서 자릅니다."))
+        toc_raw = st.text_area(t("차례"), key=f"{key}_toc_{book}", height=180,
+                               placeholder="제1장 유럽에서의 정의 이념의 붕괴 … 23\n제2장 연구의 의의 … 37")
+        toc_entries = cmap.parse_toc_entries(toc_raw)
+        _n_pg = sum(1 for _t, _p in toc_entries if _p)
+        if toc_entries:
+            st.caption(tf("제목 %d개를 읽었습니다:", len(toc_entries))
+                       + " " + " · ".join(x for x, _ in toc_entries[:8])
+                       + (" …" if len(toc_entries) > 8 else "")
+                       + (f"  ·  {t('쪽번호가 있는 항목')} {_n_pg}" if _n_pg else ""))
+        # 쪽번호가 있으면 보정값(앵커)을 스스로 구해 제목을 못 찾은 장까지 자리를 잡는다.
+        # 자동 추정이 어긋나면 여기서 손으로 지정한다.
+        _man_off = None
+        if _n_pg >= 2:
+            _use_man = st.checkbox(t("쪽 보정값을 직접 지정"), key=f"{key}_manoff_on_{book}",
+                                   help=t("차례의 쪽번호와 PDF 쪽이 얼마나 어긋나는지. "
+                                          "보통은 비워 두면 앱이 알아서 맞춥니다"))
+            if _use_man:
+                _man_off = st.number_input(t("보정값 (PDF 쪽 − 차례 쪽)"), -200, 200, 0,
+                                           key=f"{key}_manoff_{book}")
+        if st.button(t("이 목차로 다시 나누기"), icon=":material/format_list_numbered:",
+                     key=f"{key}_tocgo_{book}", disabled=len(toc_entries) < 2):
+            ok_t, msg_t = cmap.apply_toc(DEFAULT_WS, book, toc_entries, manual_offset=_man_off)
+            (st.success if ok_t else st.error)(msg_t)
+            if ok_t:
+                st.rerun()
+
+    with st.expander("✂️ " + t("여기서 나누기 — 두 장이 한 덩어리로 붙었을 때")):
+        sp_idx = st.selectbox(
+            t("나눌 장"), list(range(len(files))), key=f"{key}_spch_{book}",
+            format_func=lambda i: f"{files[i].stem[:2]}. {cmap.chapter_title(files[i])}")
+        cands = cmap.split_candidates(DEFAULT_WS, book, sp_idx)
+        if not cands:
+            st.info(t("이 장에서는 새 장이 시작될 만한 줄을 찾지 못했습니다."))
+        else:
+            pick = st.selectbox(t("새 장이 시작되는 줄"), cands, key=f"{key}_spline_{book}",
+                                format_func=lambda c: f"{c[0]:>7,}자 · {c[1][:60]}")
+            sp_title = st.text_input(t("새 장 제목"), value=pick[1][:50], key=f"{key}_sptitle_{book}")
+            if st.button(t("이 줄에서 나누기"), icon=":material/content_cut:", key=f"{key}_spgo_{book}"):
+                if cmap.split_chapter(DEFAULT_WS, book, sp_idx, pick[0], sp_title):
+                    st.success(t("장을 나눴습니다.")); st.rerun()
+                else:
+                    st.error(t("나누지 못했습니다 — 다른 줄을 골라 보세요."))
+
+
 def _queue_book_chapters_for_next_stage(ws_name: str, stem: str) -> list[str]:
     chapter_rels = _chapter_rel_paths(ws_name, stem)
     if not chapter_rels:
@@ -1381,8 +1637,14 @@ def _checklist_keys(items: list[dict], prefix: str) -> list[str]:
     return keys
 
 
-def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool = False) -> list:
+def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool = False,
+               renamable: bool = False) -> list:
     """체크박스 파일 목록. items=[{"key":str,"label":str,"meta":str,"obj":any,"group":str?}]
+
+    renamable=True면 각 줄에 ✏️ 단추가 붙어 **목록 안에서 바로** 장 제목을 고칠 수 있다.
+    잘못된 제목은 대개 요약을 돌리려다 눈에 띄므로, 다른 화면으로 옮겨가지 않고 그
+    자리에서 고치는 편이 낫다(2026-08-17). 항목에 "rename": (책 stem, 장 번호)를 담아야
+    동작한다.
     "group"이 있으면 같은 값이 연속될 때마다 책 이름 소제목을 붙이고, 그 옆에
     책 전체를 한 번에 선택/해제하는 체크박스를 함께 둔다(선택 단위 자체는 항목별
     그대로 — 위키탭처럼 책 단위로 고를 수 있게, 2026-07-25).
@@ -1429,20 +1691,42 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
             k = _keys[idx]
             # 그룹(책)이 있는 목록이면 항목 행을 들여써서 책 제목 아래 하위
             # 트리처럼 보이게 한다 — 그룹 헤더와 나란한 평평한 목록으로 안 보이도록.
+            _rn_here = renamable and it.get("rename") is not None
+            _rn_w = [0.07] if renamable else []
             if _has_groups:
-                cols = st.columns([0.04, 0.05, 0.78, 0.13]) if viewable else st.columns([0.04, 0.05, 0.91])
+                _spec = [0.04, 0.05, 0.78 - sum(_rn_w)] + _rn_w + ([0.13] if viewable else [])
+                if not viewable:
+                    _spec = [0.04, 0.05, 0.91 - sum(_rn_w)] + _rn_w
+                cols = st.columns(_spec)
                 c1, c2 = cols[1], cols[2]
-                _view_col = cols[3] if viewable else None
             else:
-                cols = st.columns([0.05, 0.82, 0.13]) if viewable else st.columns([0.05, 0.95])
+                _spec = [0.05, (0.82 if viewable else 0.95) - sum(_rn_w)] + _rn_w + ([0.13] if viewable else [])
+                cols = st.columns(_spec)
                 c1, c2 = cols[0], cols[1]
-                _view_col = cols[2] if viewable else None
+            _rn_col = cols[-2] if (renamable and viewable) else (cols[-1] if renamable else None)
+            _view_col = cols[-1] if viewable else None
             chk = c1.checkbox(" ", key=k, label_visibility="collapsed")
             _label_prefix = "↳ " if _has_groups else ""
-            c2.markdown(
-                f"{_label_prefix}**{it['label']}** &nbsp;<small style='color:#9ca3af'>{it['meta']}</small>",
-                unsafe_allow_html=True,
-            )
+            _editing = _rn_here and st.session_state.get(f"{prefix}_rn_open") == k
+            if _editing:
+                _rn_book, _rn_idx = it["rename"]
+                _rn_val = c2.text_input(t("장 제목"), value=it.get("title", it["label"]),
+                                        key=f"{prefix}_rn_val_{idx}", label_visibility="collapsed")
+                if _rn_col.button("", icon=":material/check:", key=f"{prefix}_rn_ok_{idx}",
+                                  help=t("제목 저장")):
+                    if _rn_val.strip():
+                        cmap.rename_chapter(DEFAULT_WS, _rn_book, _rn_idx, _rn_val.strip())
+                    st.session_state.pop(f"{prefix}_rn_open", None)
+                    st.rerun()
+            else:
+                c2.markdown(
+                    f"{_label_prefix}**{it['label']}** &nbsp;<small style='color:#9ca3af'>{it['meta']}</small>",
+                    unsafe_allow_html=True,
+                )
+                if _rn_here and _rn_col.button("", icon=":material/edit:", key=f"{prefix}_rn_{idx}",
+                                               help=t("장 제목 고치기")):
+                    st.session_state[f"{prefix}_rn_open"] = k
+                    st.rerun()
             if viewable:
                 target = _view_target_from_item(it)
                 safe_key = _re.sub(r"[^a-zA-Z0-9가-힣_-]+", "_", str(it["key"]))[:80]
@@ -1565,6 +1849,11 @@ if _active_view in {"1_txt", "all_run"}:
                 st.error(f"❌ 저장 실패: {_uf_new.name} — {_e1}")
         st.session_state["_ocr_queued"] = sorted(_already_queued1)
         if _added1:
+            # 이번에 실제로 올린 파일 이름 — "이미 처리된 파일" 확인은 이것들만 대상으로
+            # 한다. 대기 폴더에 남은 옛 잔재까지 물으면 예전 책이 계속 쌓여 보인다
+            # (2026-08-18 사용자 지적).
+            st.session_state["_ocr_uploaded"] = sorted(
+                set(st.session_state.get("_ocr_uploaded", [])) | set(_added1))
             st.success(tf("📥 처리 대기 목록에 추가됨: %s", ", ".join(_added1)))
             st.rerun()  # 대기 목록 갱신 (세션스테이트로 중복 저장 방지됨)
 
@@ -1642,9 +1931,24 @@ if _active_view in {"1_txt", "all_run"}:
          if f.is_file() and f.suffix.lower() in {".pdf", ".docx", ".hwp", ".hwpx", ".txt", ".md"}]
         if UPLOAD_TMP.exists() else []
     )
+    # 변환이 끝난 뒤 남은 원본은 대기 폴더에 그대로 있다. 그것까지 "다시 처리할까요?"로
+    # 물으면 예전에 처리한 책이 계속 쌓여 보인다(2026-08-17 사용자 지적). **새로 넣은
+    # 파일일 때만** 묻는다 — 이미 만들어진 TXT보다 원본이 나중 것이면 원고가 바뀐 것이다.
+    _txt_mtime1 = {}
+    if cfg.TXT_DIR.exists():
+        for _p1 in cfg.TXT_DIR.rglob("*.txt"):
+            _k1 = _nfc(_p1.stem)
+            _txt_mtime1[_k1] = max(_txt_mtime1.get(_k1, 0), _p1.stat().st_mtime)
+
+    def _is_newer_upload1(f: Path) -> bool:
+        prev = _txt_mtime1.get(_nfc(f.stem))
+        return prev is None or f.stat().st_mtime > prev + 60
+
+    _uploaded_now1 = set(st.session_state.get("_ocr_uploaded", []))
     _dup_unconfirmed1 = sorted(
         [f for f in _all_uploaded1
-         if _nfc(f.stem) in _converted_stems1
+         if f.name in _uploaded_now1                      # 이번에 올린 파일만 묻는다
+         and _nfc(f.stem) in _converted_stems1 and _is_newer_upload1(f)
          and f.name not in _dup_confirmed1 and f.name not in _dup_dismissed1],
         key=lambda f: f.stat().st_mtime, reverse=True,
     )
@@ -1804,6 +2108,9 @@ if _active_view == "2_split":
             queue_add("tab4_ready", _new)
         _archive_split_source(_stem)
         _track_flow_book(_stem)
+        # 방금 나눈 책은 «장 구분 확인» 목록에 바로 뜨게 한다
+        st.session_state["_review_books"] = sorted(
+            set(st.session_state.get("_review_books", [])) | {_nfc(_stem)})
         # 커버리지 미달 경고는 로그가 아니라 화면에 붙인다 — 본문 일부가 빠진 채로
         # 번역·요약·EPUB까지 진행되던 사고 방지 (2026-08-17)
         _cov_warn = LAST_SPLIT_WARNING.pop(_stem, "")
@@ -1919,6 +2226,13 @@ if _active_view == "2_split":
                      if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
         _meta2 = f"{_txt2.stat().st_size//1024}KB" + ("" if _stem2 in _q2_stems_set else " ·미등록")
         _already2 = bool(_ch_txts2) and _stem2 not in _split_dup_confirmed2
+        # 분할이 끝난 뒤에도 TXT가 1_txt/에 남아 있으면 계속 "다시 분할할까요?"가 뜬다.
+        # **TXT가 챕터보다 새 것일 때만** 묻는다 — 그때가 원고가 다시 들어온 경우다
+        # (2026-08-17 사용자 지적).
+        _txt_newer2 = _txt2.stat().st_mtime > max(f.stat().st_mtime for f in _ch_txts2) + 60 \
+                      if _ch_txts2 else True
+        if _already2 and not _txt_newer2:
+            continue                      # 분할 뒤 남은 잔재 — 조용히 제외
         if _already2 and _stem2 not in _split_dup_dismissed2:
             _split_dup_unconfirmed2.append({"stem": _stem2, "meta": _meta2})
             continue
@@ -2046,6 +2360,9 @@ if _active_view == "2_split":
                     queue_add("tab3_ready" if _route_translate(_o2["stem"]) else "tab4_ready", _new_chs2)
                     _archive_split_source(_o2["stem"])
                     _short_done2 += 1
+                    st.session_state["_review_books"] = sorted(
+                        set(st.session_state.get("_review_books", [])) | {_nfc(_o2["stem"])})
+
             if _short_done2:
                 st.success(tf("%d권을 챕터로 분할했습니다.", _short_done2))
             st.rerun()
@@ -2121,6 +2438,9 @@ if _active_view == "2_split":
                         else:
                             queue_add("tab4_ready", _new_chs2b)
                         _archive_split_source(_ns2)
+                    st.session_state["_review_books"] = sorted(
+                        set(st.session_state.get("_review_books", [])) | {_nfc(_ns2)})
+
                     st.session_state["split2_nosplit"] = [x for x in _nosplit2 if x != _ns2]
                     st.rerun()
                 else:
@@ -2135,6 +2455,10 @@ if _active_view == "2_split":
                 st.session_state["split2_nosplit"] = [x for x in _nosplit2 if x != _ns2]
                 st.success(tf("%s 삭제 완료", _ns2))
                 st.rerun()
+
+    # ── 장 구분 확인 (2026-08-17) ────────────────────────────────
+    # 분할이 조용히 틀린 채로 요약·번역·EPUB까지 진행되던 사고를 막는 자리다.
+    _chapter_review_panel("rv2", full=True)
 
     # 수동 추가 expander
     with st.expander(t("➕ 수동으로 추가 (기존 책에서 선택)")):
@@ -2501,12 +2825,17 @@ if _active_view == "4_summary":
             else:
                 _ko4 = _cf4.with_name(_cf4.stem + "_ko.txt")
                 _tag4 = "🌐ko" if _ko4.exists() else "📄원문"
+                # 목록 안에서 바로 제목을 고칠 수 있게 (책, 그 책에서 몇 번째 장) 을 얹는다
+                _bfiles4 = cmap.chapter_files(DEFAULT_WS, _bstem4)
+                _bidx4 = next((i for i, f in enumerate(_bfiles4) if f == _cf4), None)
                 _sum_pend4.append({
                     "key": _rel4,
                     "label": _cf4.name,
+                    "title": cmap.chapter_title(_cf4),
                     "meta": f"{_tag4} · {_cf4.stat().st_size//1024}KB",
                     "obj": (_cf4, _bstem4),
                     "group": _bstem4,
+                    "rename": (_bstem4, _bidx4) if _bidx4 is not None else None,
                 })
         for _rel4f in _q4_failed_rels:
             _cf4f = cfg.BASE_DIR / _rel4f
@@ -2536,7 +2865,7 @@ if _active_view == "4_summary":
         st.divider()
         st.markdown(tf("#### 요약 대기 (%d개) / 완료 %d개", len(_sum_pend4), _sum_done4))
         if _sum_pend4:
-            _sel4 = _checklist(_sum_pend4, "summ4", height=280, viewable=True)
+            _sel4 = _checklist(_sum_pend4, "summ4", height=280, viewable=True, renamable=True)
             _b4c1, _b4c2 = st.columns(2)
             _rs4 = _b4c1.button(tf("시작 (%d개)", len(_sel4)), icon=":material/play_arrow:", key="summ4_start",
                                   use_container_width=True, type="primary", disabled=len(_sel4)==0)
@@ -3279,6 +3608,7 @@ if _active_view == "settings":
         if _claude_installed:
             _new_enabled = st.toggle("Claude", value=_claude_enabled, key="set_use_claude_cli",
                                      help=f"설치됨: {llm.claude_cli_path()} · Claude 구독 로그인 시 켜세요")
+            st.caption(f"모델: `{_cli_model_label('claude_cli')}`")
             if _new_enabled != _claude_enabled:
                 llm.set_claude_cli_enabled(_new_enabled)
                 st.rerun()
@@ -3291,6 +3621,10 @@ if _active_view == "settings":
         if _codex_installed:
             _new_codex_enabled = st.toggle("Codex", value=_codex_enabled, key="set_use_codex_cli",
                                            help=f"설치됨: {llm.codex_cli_path()} · ChatGPT 로그인 시 켜세요")
+            st.caption(f"모델: `{_cli_model_label('codex_cli')}`"
+                       + ("  · " + t("Codex 설정(~/.codex/config.toml)을 따릅니다")
+                          if llm.codex_cli_model() else
+                          "  · " + t("ChatGPT 구독은 모델 지정이 안 됩니다")))
             if _new_codex_enabled != _codex_enabled:
                 llm.set_codex_cli_enabled(_new_codex_enabled)
                 st.rerun()

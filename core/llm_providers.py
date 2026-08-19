@@ -277,6 +277,44 @@ def codex_cli_path() -> str | None:
     return None
 
 
+def codex_cli_model() -> str:
+    """Codex CLI가 실제로 쓸 모델 이름 (~/.codex/config.toml의 최상위 `model`).
+
+    ChatGPT 구독 계정은 우리가 `-m`으로 모델을 지정할 수 없어(400 오류) 모델 목록이
+    "default" 하나뿐이다. 그렇다고 화면에 "기본"이라고만 적으면 정작 어떤 모델로
+    도는지 알 수 없다 — Codex 자신의 설정을 읽어 보여준다 (2026-08-17)."""
+    try:
+        cfg_path = Path.home() / ".codex" / "config.toml"
+        for line in cfg_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            s = line.strip()
+            if s.startswith("["):          # 섹션 시작 = 최상위 설정 끝
+                break
+            m = re.match(r'^model\s*=\s*["\']([^"\']+)["\']', s)
+            if m:
+                return m.group(1).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def claude_cli_model() -> str:
+    """Claude CLI가 쓸 모델 (~/.claude/settings.json의 `model`). 없으면 빈 문자열."""
+    try:
+        d = json.loads((Path.home() / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        return str(d.get("model") or "").strip()
+    except Exception:
+        return ""
+
+
+def cli_configured_model(provider: str) -> str:
+    """CLI 도구 자신이 설정해 둔 모델. 앱 설정보다 이쪽이 실제로 도는 모델이다."""
+    if provider == "codex_cli":
+        return codex_cli_model()
+    if provider == "claude_cli":
+        return claude_cli_model()
+    return ""
+
+
 def codex_cli_available() -> bool:
     return bool(get_pref("use_codex_cli", False)) and bool(codex_cli_path())
 
