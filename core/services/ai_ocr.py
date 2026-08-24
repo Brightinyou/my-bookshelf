@@ -74,6 +74,12 @@ DEFAULT_WORKERS = 3
 # 타임아웃·부분 실패 위험이 커지고, 되돌릴 때 버리는 분량도 커진다.
 DEFAULT_PAGES_PER_CALL = 4
 
+# codex를 단발 호출로 만드는 비활성 목록. 이 세 개면 충분하다는 것을 실측했다
+# (shell_tool·unified_exec = 셸/명령 실행, view_image = 이미지 재조회 루프).
+_LEAN_FLAGS = ["--disable", "shell_tool",
+               "--disable", "unified_exec",
+               "--disable", "view_image"]
+
 BEGIN, END = "<<<BEGIN>>>", "<<<END>>>"
 PAGE_MARK = "<<<PAGE %d>>>"
 _PAGE_RE = re.compile(r"<<<\s*PAGE\s*(\d+)\s*>>>")
@@ -238,7 +244,17 @@ def _read_codex_cli(model: str, imgs: list[Path], timeout: int) -> str:
     work = Path(tempfile.mkdtemp(prefix="ocr_cwd_"))
     out_file = work / "out.txt"
     args = [cli, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
-            "-C", str(work), "-o", str(out_file)]
+            "-C", str(work), "-o", str(out_file),
+            # ★★에이전트를 '단발 호출'로 만드는 설정 (2026-08-24 실측으로 확정).
+            # codex는 기본적으로 도구를 들고 여러 턴을 돈다 — 이미지가 컨텍스트에
+            # 눌러앉은 채 매 턴 재전송되므로 비용이 폭증한다(최대 39턴·249만 토큰).
+            # OCR엔 도구가 하나도 필요 없다. 이미지는 -i로 이미 붙어 있다.
+            #   도구 전면 차단 + 추론 최소  →  턴 1 · 도구 0 · 입력 17,341 · 추론 14
+            #   (같은 조건 기존: 턴 중앙 5 · 도구 최대 29 · 입력 중앙 132,771)
+            # ⚠️ reasoning_effort는 "minimal"이 아니라 "low"여야 한다 —
+            #    minimal은 web_search 도구와 함께 못 쓴다며 API가 400으로 거절한다.
+            "-c", 'model_reasoning_effort="low"',
+            *_LEAN_FLAGS]
     for f in imgs:
         args += ["-i", str(f)]
     if model not in ("default", ""):
@@ -322,9 +338,13 @@ _IN_TOK, _OUT_TOK = 2200, 1300
 
 
 # 구독형 CLI는 돈이 안 나갈 뿐 **주간 사용 한도**를 쓴다 — 이게 실질 비용이다.
-# 실측(2026-08-24, codex 구독): 300dpi로 41쪽 처리에 주간 한도의 10% 소진
-# → 주당 약 410쪽. 373쪽짜리 책 한 권이 한 주치를 거의 다 먹는다.
-CLI_PAGES_PER_WEEK = 410
+#
+# 예전 설정(도구 열림·300dpi)에서는 41쪽에 주간 한도 10%가 날아갔다(주당 410쪽).
+# 원인은 쪽 내용이 아니라 **에이전트 루프**였다 — 쪽당 입력 중앙 132,771 · 평균
+# 497,870 토큰. 도구를 끄고 추론을 낮춰 단발 호출로 만든 뒤 **쪽당 6,647**로
+# 떨어졌다(75배). 주간 한도를 204M 토큰으로 역산하면 주당 3만 쪽 규모지만,
+# 표본이 크지 않고 쪽마다 분량이 다르므로 **넉넉히 낮춰 잡는다.**
+CLI_PAGES_PER_WEEK = 15000
 
 
 def cost_notice(provider: str, pages: int) -> str:
