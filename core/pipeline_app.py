@@ -1257,9 +1257,15 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
                  use_container_width=True, type="primary"):
         recs = edited.to_dict("records")
         changed = 0
+        adjusted: list[tuple[str, str]] = []
         for i, row in enumerate(recs):
             new_title = str(row.get("제목", "")).strip()
             if new_title and new_title != rows[i]["제목"]:
+                # 파일 이름에 못 쓰는 글자가 있으면 앱이 바꿔서 저장한다 — 무엇이
+                # 어떻게 바뀌었는지 **말해 주지 않으면 사라진 줄 안다** (2026-08-25).
+                safe = cmap._safe(new_title)
+                if safe != new_title:
+                    adjusted.append((new_title, safe))
                 cmap.rename_chapter(DEFAULT_WS, book, i, new_title)
                 changed += 1
         # 부: 값이 적힌 줄에서 새 부가 시작한다
@@ -1278,8 +1284,12 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
             for i in sorted([i for i, r in enumerate(recs) if r.get("앞 장에 합치기")], reverse=True):
                 if cmap.merge_up(DEFAULT_WS, book, i):
                     changed += 1
+        if adjusted:
+            st.info("ℹ️ " + t("파일 이름에 쓸 수 없는 글자(`: / \\ * ? \" < > |`)를 «-»로 바꿔 저장했습니다:")
+                    + "\n\n" + "\n\n".join(f"- 「{a}」 → **「{b}」**" for a, b in adjusted))
         st.success(tf("%d건 반영했습니다.", changed) if changed else t("바뀐 내용이 없습니다."))
-        st.rerun()
+        if not adjusted:
+            st.rerun()
     if b2.button(t("이대로 확정"), icon=":material/check_circle:", key=f"{key}_confirm",
                  use_container_width=True):
         cmap.confirm(DEFAULT_WS, book)

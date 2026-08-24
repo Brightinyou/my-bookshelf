@@ -50,8 +50,42 @@ def chapter_title(path: Path) -> str:
     return re.sub(r"^\d{2}_", "", path.stem)
 
 
+# 파일 이름에 쓸 수 없는 글자. 콜론이 가장 흔하다 — 한국 학술서 제목은 대개
+# `주제: 부제` 꼴이라 거의 모든 장 제목에 들어 있다.
+_ILLEGAL = re.compile(r'[/\\:*?"<>|]')
+_SPACES = re.compile(r"\s{2,}")
+
+# 제목이 쓸 수 있는 UTF-8 바이트. 파일 이름 한도(255바이트)에서 순번 `NN_`(3)과
+# 가장 긴 접미사 `_bilingual.txt`(14), 그리고 여유를 뺀 값이다.
+# ★옛 값은 **50자**였는데 너무 짧았다 — 한글 52자짜리 제목(130바이트)이 잘려
+# `…지역 가치로서 ‘` 로 끝나 연구자가 넣은 낱말이 사라졌다(2026-08-25).
+MAX_TITLE_BYTES = 180
+
+
+def _cut_bytes(s: str, limit: int) -> str:
+    """UTF-8 바이트로 잘라 낸다 — **낱말 한복판에서 자르지 않는다.**
+
+    글자 수로 재면 한글(3바이트)과 영문(1바이트)이 뒤섞인 제목에서 한도를 못 맞춘다."""
+    if len(s.encode("utf-8")) <= limit:
+        return s
+    cut = s.encode("utf-8")[:limit].decode("utf-8", "ignore")
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > limit // 3 else cut).rstrip()
+
+
 def _safe(title: str) -> str:
-    return re.sub(r'[/\\:*?"<>|]', " ", title).strip()[:50].strip(" .,:-") or "제목없음"
+    """제목을 파일 이름으로 쓸 수 있게 다듬는다.
+
+    ★**쓸 수 없는 글자는 지우지 않고 `-`로 바꾼다**(연구자 요청, 2026-08-25).
+    예전에는 공백으로 바꿔서 `과제와 전망: 인간과`가 `과제와 전망  인간과`가 됐다 —
+    부제가 붙은 자리인지 알 수 없게 되고 공백만 뭉친다. `-`로 두면 원래 제목의
+    구조가 남는다: `과제와 전망 - 인간과`."""
+    # ★바꾼 자리에만 여백을 준다. `-`로만 바꾸면 `전망-인간과`처럼 붙고, 그렇다고
+    # 하이픈 전체를 손보면 **원래 제목에 있던 하이픈까지 망가진다**
+    # (`co-evolution` → `co - evolution`).
+    t = _ILLEGAL.sub(" - ", title)
+    t = _SPACES.sub(" ", t).strip()
+    return _cut_bytes(t, MAX_TITLE_BYTES).strip(" .,:-") or "제목없음"
 
 
 def _drop_derived(ch_path: Path) -> None:
