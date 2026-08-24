@@ -2281,9 +2281,12 @@ if _active_view in {"1_txt", "all_run"}:
                 _st_tq = ai_ocr.status(_pdf_tq)
                 if _running_tq:
                     _done_tq, _tot_tq = _st_tq.get("done", 0), max(1, _st_tq.get("total", 1))
+                    # 한 쪽이 3~5분 걸리는 일이 있어 경과 초를 같이 보여준다 —
+                    # 없으면 멈춘 것처럼 보인다 (2026-08-24 사용자 지적)
+                    _el_tq = int(time.time() - _st_tq.get("page_started", time.time()))
                     st.progress(_done_tq / _tot_tq,
-                                text=tf("%d / %d쪽 · 현재 %d쪽", _done_tq, _tot_tq,
-                                        _st_tq.get("page", 0)))
+                                text=tf("%d / %d쪽 완료 · 지금 %d쪽 판독 중 (%d초째)",
+                                        _done_tq, _tot_tq, _st_tq.get("page", 0), _el_tq))
                     time.sleep(3)
                     st.rerun()
                 elif _st_tq.get("error"):
@@ -2294,9 +2297,15 @@ if _active_view in {"1_txt", "all_run"}:
                 if _rep_tq:
                     _warn_tq = [r for r in _rep_tq if r.status == "warn"]
                     _fail_tq = [r for r in _rep_tq if r.status == "failed"]
-                    st.markdown(tf("**판독 결과** — 정상 %d쪽 · ⚠️ 확인 필요 %d쪽 · 실패 %d쪽",
-                                   sum(1 for r in _rep_tq if r.status == "ok"),
-                                   len(_warn_tq), len(_fail_tq)))
+                    _unv_tq = [r for r in _rep_tq if r.status == "unverified"]
+                    st.markdown(tf(
+                        "**판독 결과** — 정상 %d쪽 · 대조 불가 %d쪽 · ⚠️ 확인 필요 %d쪽 · 실패 %d쪽",
+                        sum(1 for r in _rep_tq if r.status == "ok"),
+                        len(_unv_tq), len(_warn_tq), len(_fail_tq)))
+                    if _unv_tq:
+                        st.caption(tf("대조 불가 %d쪽은 원본 레이어가 너무 깨져 견줄 수가 없던 "
+                                      "쪽입니다(차례·판권 등). AI 판독을 그대로 채택했습니다.",
+                                      len(_unv_tq)))
                     if _warn_tq or _fail_tq:
                         st.warning(t("아래 쪽은 원본과 어긋나 환각이 섞였을 수 있습니다. "
                                      "본문은 그대로 두었으니 직접 확인하세요."))

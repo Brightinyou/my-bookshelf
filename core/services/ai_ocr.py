@@ -71,7 +71,7 @@ PROMPT = f"""이 이미지는 한국어 책의 한 쪽을 스캔한 것이다. �
 @dataclass
 class PageResult:
     page: int                 # 1-기준 PDF 쪽번호
-    status: str               # ok | warn | failed | skipped
+    status: str               # ok | unverified | warn | failed | reading
     chars: int = 0
     base_chars: int = 0
     similarity: float = 0.0
@@ -130,11 +130,22 @@ def similarity(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, na, nb).ratio()
 
 
+# 원본 레이어가 이만큼 깨져 있으면 유사도 대조 자체가 의미 없다(1,000자당).
+# 실측: 대조 불가였던 쪽 17~20 / 정상 대조된 쪽 1~11.
+UNREADABLE_BASE_GARBLE = 15.0
+# 다만 유사도가 이보다도 낮으면 '원본이 깨져서'가 아니라 **아예 다른 내용**이다.
+# 실측: 원본이 깨진 정상 판독 0.22·0.53 / 엉뚱한 쪽·지어낸 문장 0.01~0.06.
+ALIGNMENT_FLOOR = 0.15
+
+
 def verify(ai_text: str, base_text: str) -> tuple[str, float, str]:
     """(status, similarity, note). 걸려도 버리지 않고 표시만 한다."""
     base_len = len(_KEEP.sub("", base_text))
     ai_len = len(_KEEP.sub("", ai_text))
     if not ai_text.strip():
+        # 원본도 비어 있으면 그냥 빈 쪽(간지·백지)이다 — 경고할 일이 아니다 (2026-08-24)
+        if base_len < 20:
+            return "ok", 0.0, "빈 쪽"
         return "warn", 0.0, "판독 결과가 비어 있습니다"
     if base_len < MIN_BASE_CHARS:
         return "ok", 0.0, "원본 쪽이 짧아 대조를 건너뜀"
@@ -142,6 +153,14 @@ def verify(ai_text: str, base_text: str) -> tuple[str, float, str]:
     sim = similarity(ai_text, base_text)
     ratio = ai_len / base_len
     if sim < MIN_SIMILARITY:
+        # 유사도가 낮다고 무조건 AI 잘못이 아니다 — 원본 레이어가 박살난 쪽(차례·판권
+        # 등)에서는 **제대로 읽을수록 원본과 멀어진다**. 실측: 『기술신학』 7쪽 원본이
+        # `* 겨냬뎌 / 1 _ 가술신확개븐`이라 유사도 0.22였는데 AI 판독은 정확했다.
+        # 그래서 둘 중 어느 쪽이 더 한국어다운지 견줘 본다 (2026-08-24).
+        from services.textquality import garble_rate
+        if sim >= ALIGNMENT_FLOOR and garble_rate(base_text) >= UNREADABLE_BASE_GARBLE:
+            return ("unverified", sim,
+                    f"원본 레이어가 심하게 깨져 대조 불가(유사도 {sim:.2f}) — AI 판독을 채택했습니다")
         return "warn", sim, f"원본과 유사도 {sim:.2f} (임계 {MIN_SIMILARITY}) — 환각·쪽 어긋남 의심"
     if ratio < MIN_LENGTH_RATIO:
         return "warn", sim, f"분량이 원본의 {ratio:.0%} — 요약했거나 일부를 빠뜨렸을 수 있습니다"
@@ -204,7 +223,7 @@ def _read_claude_cli(model: str, png: Path, timeout: int) -> str:
     return _extract(r.stdout or "")
 
 
-def read_page(provider: str, model: str, png: Path, timeout: int = 300) -> str:
+def read_page(provider: str, model: str, png: Path, timeout: int = 600) -> str:
     if provider == "codex_cli":
         return _read_codex_cli(model, png, timeout)
     if provider == "claude_cli":
@@ -247,7 +266,7 @@ def work_dir(out_txt: Path) -> Path:
 
 def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
           pages: list[int] | None = None, dpi: int = 300,
-          progress=None, should_stop=None, timeout: int = 300) -> list[PageResult]:
+          progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
     """PDF를 쪽마다 다시 읽어 out_txt로 합친다.
 
     pages는 1-기준 쪽번호 목록(None이면 전체). 이미 읽은 쪽은 건너뛰므로 중단해도
@@ -280,6 +299,10 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
         if page_file.exists() and results.get(page) and results[page].status != "failed":
             continue                                   # 이어하기
 
+        # 쪽을 **시작할 때** 알린다 — 끝날 때만 알리면 한 쪽이 3분 걸리는 동안 화면이
+        # 직전 쪽에 멈춰 있어 작업이 죽은 것처럼 보인다 (2026-08-24 사용자 지적).
+        if progress:
+            progress(n - 1, len(targets), PageResult(page, "reading"))
         base = base_page_text(pdf_path, page - 1)
         try:
             png = render_page(pdf_path, page - 1, png_dir, dpi)
@@ -361,7 +384,7 @@ def request_stop(pdf_path) -> None:
 
 def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
                      pages: list[int] | None = None, dpi: int = 300,
-                     timeout: int = 300) -> None:
+                     timeout: int = 600) -> None:
     """이미 돌고 있으면 아무 일도 하지 않는다."""
     import threading
     key = run_key(pdf_path)
@@ -373,7 +396,9 @@ def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = 
     RUNS[key] = state
 
     def _progress(done, total, res):
-        state.update(done=done, total=total, page=res.page, last=res.status)
+        state.update(done=done, total=total, page=res.page, last=res.status,
+                     page_started=time.time() if res.status == "reading" else
+                     state.get("page_started", time.time()))
 
     def _worker():
         try:
