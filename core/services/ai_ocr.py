@@ -32,6 +32,7 @@
 import difflib
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -61,11 +62,22 @@ DEFAULT_DPI = 150
 JPEG_QUALITY = 85
 # 쪽끼리는 서로 독립이라 동시에 돌릴 수 있다. 실측 4동시 = 벽시계 2.4배 단축
 # (배경에 다른 작업이 돌던 상태에서 잰 값이라 실제로는 더 낫다).
-DEFAULT_WORKERS = 4
+DEFAULT_WORKERS = 3
+# ★한 호출에 여러 쪽을 넣는 이유 — 비용의 82%가 쪽 내용이 아니라 **호출 오버헤드**다.
+# 실측(codex 세션 로그, 2026-08-24): 한 쪽 판독의 입력 18,006토큰 중 14,720이
+# codex 자신의 세션 프리앰블(매 호출 고정)이고, 우리 이미지+프롬프트는 3,286뿐이다.
+# 쪽마다 새로 켜면 그 14,720을 쪽수만큼 되문다. 4쪽씩 묶으면 쪽당 6,966으로 2.6배,
+# 8쪽이면 5,126으로 3.5배 줄어든다. 번역(kospace)이 한 호출에 줄바꿈 200개를
+# 처리해 오버헤드를 분산시키는 것과 같은 이치다.
+# 4로 잡은 근거: 8 이상은 이득이 완만해지는 데 비해 한 호출이 길어져
+# 타임아웃·부분 실패 위험이 커지고, 되돌릴 때 버리는 분량도 커진다.
+DEFAULT_PAGES_PER_CALL = 4
 
 BEGIN, END = "<<<BEGIN>>>", "<<<END>>>"
+PAGE_MARK = "<<<PAGE %d>>>"
+_PAGE_RE = re.compile(r"<<<\s*PAGE\s*(\d+)\s*>>>")
 
-PROMPT = f"""이 이미지는 한국어 책의 한 쪽을 스캔한 것이다. 보이는 글자를 **그대로 옮겨 적어라**.
+PROMPT = f"""이 이미지들은 한국어 책의 낱쪽을 순서대로 스캔한 것이다. 보이는 글자를 **그대로 옮겨 적어라**.
 
 지켜야 할 것:
 - 이미지에 실제로 있는 글자만 적는다. 문맥으로 추측해서 채우지 마라.
@@ -77,9 +89,14 @@ PROMPT = f"""이 이미지는 한국어 책의 한 쪽을 스캔한 것이다. �
 - 요약하지 마라. 설명·해설·감상을 덧붙이지 마라.
 - 이미지에 글자가 없으면 아무것도 적지 않는다.
 
-출력 형식: 아래 두 표시 사이에 옮겨 적은 본문만 넣어라. 다른 말은 하지 마라.
+- 쪽을 건너뛰거나 순서를 바꾸지 마라. 준 이미지 수만큼 그대로 내라.
+
+출력 형식: 이미지마다 아래 표시를 앞에 붙이고 그 쪽 본문만 적어라. 다른 말은 하지 마라.
 {BEGIN}
-(여기에 본문)
+<<<PAGE 1>>>
+(첫째 이미지 본문)
+<<<PAGE 2>>>
+(둘째 이미지 본문)
 {END}"""
 
 
@@ -205,40 +222,52 @@ def _extract(raw: str) -> str:
     return s.strip()
 
 
-def _read_codex_cli(model: str, png: Path, timeout: int) -> str:
+def _read_codex_cli(model: str, imgs: list[Path], timeout: int) -> str:
     cli = llm.codex_cli_path()
     if not cli:
         raise RuntimeError("codex CLI를 찾지 못했습니다")
-    out_file = Path(tempfile.gettempdir()) / f"ocr_{png.stem}.txt"
-    args = [cli, "exec", "--skip-git-repo-check",
-            "--dangerously-bypass-approvals-and-sandbox", "-o", str(out_file),
-            "-i", str(png)]
+    # ★★도구를 열어 주면 안 된다. `--dangerously-bypass-approvals-and-sandbox`로
+    # 돌렸더니 codex가 이미지를 읽다 말고 **옆에 있는 원본 TXT를 find·rg·sed로
+    # 뒤져 커닝**했다(2026-08-24 세션 로그 실측: 한 호출에 exec_command 29회 ·
+    # 추론 30회 · 39턴 · 입력 2,491,018토큰).
+    #   ① 비용: 매 턴 이미지를 통째로 재전송해 쪽당 토큰이 10배 넘게 튄다.
+    #   ② ★검증 무력화: 원본을 보고 베끼면 유사도가 당연히 통과한다 —
+    #      환각을 잡으려고 만든 대조가 통째로 무의미해진다.
+    # 이미지만 보고 답하게 샌드박스를 켜고, 작업 폴더도 빈 임시 폴더로 격리한다.
+    work = Path(tempfile.mkdtemp(prefix="ocr_cwd_"))
+    out_file = work / "out.txt"
+    args = [cli, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
+            "-C", str(work), "-o", str(out_file)]
+    for f in imgs:
+        args += ["-i", str(f)]
     if model not in ("default", ""):
         args += ["-m", model]
     args.append("-")
     try:
         r = subprocess.run(
             args, capture_output=True, text=True, timeout=timeout,
-            cwd=tempfile.gettempdir(), encoding="utf-8", errors="replace",
+            cwd=str(work), encoding="utf-8", errors="replace",
             input=PROMPT, env=llm._cli_env(), **llm._no_window_kwargs())
         if r.returncode != 0:
             raise RuntimeError(f"codex CLI exit {r.returncode}: {(r.stderr or '')[:200]}")
         raw = out_file.read_text(encoding="utf-8") if out_file.exists() else (r.stdout or "")
-        return _extract(raw)
+        return raw
     finally:
-        out_file.unlink(missing_ok=True)
+        shutil.rmtree(work, ignore_errors=True)
 
 
-def _read_claude_cli(model: str, png: Path, timeout: int) -> str:
+def _read_claude_cli(model: str, imgs: list[Path], timeout: int) -> str:
     cli = llm.claude_cli_path()
     if not cli:
         raise RuntimeError("claude CLI를 찾지 못했습니다")
-    prompt = f'이미지 파일 "{png}" 을 Read 도구로 읽어라.\n\n{PROMPT}'
+    # 같은 이유로 Read만 허용하고, 이미지는 이미 격리 폴더에 있다(_render_isolated)
+    listed = "\n".join(f'{i}. "{f}"' for i, f in enumerate(imgs, 1))
+    prompt = f'다음 이미지 파일들을 순서대로 Read 도구로 읽어라.\n{listed}\n\n{PROMPT}'
     r = subprocess.run(
         [cli, "-p", prompt, "--model", model or "default", "--output-format", "text",
          "--allowedTools", "Read",
          "--system-prompt", "You transcribe scanned pages verbatim. Never guess."],
-        capture_output=True, text=True, timeout=timeout, cwd=str(png.parent),
+        capture_output=True, text=True, timeout=timeout, cwd=str(imgs[0].parent),
         encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
         env=llm._cli_env(), **llm._no_window_kwargs())
     if r.returncode != 0:
@@ -246,13 +275,37 @@ def _read_claude_cli(model: str, png: Path, timeout: int) -> str:
     return _extract(r.stdout or "")
 
 
-def read_page(provider: str, model: str, png: Path, timeout: int = 600) -> str:
+def _split_pages(raw: str, count: int) -> list[str]:
+    """한 응답에서 쪽별 본문을 갈라낸다. 표시가 없거나 수가 안 맞으면 빈 칸을 채워
+    돌려준다 — **넘겨짚어 이어 붙이지 않는다.** 잘못 붙인 본문은 검증도 못 잡는다."""
+    body = _extract(raw)
+    marks = list(_PAGE_RE.finditer(body))
+    if not marks:
+        return [body] + [""] * (count - 1) if count == 1 else [""] * count
+    out = [""] * count
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(body)
+        idx = int(m.group(1)) - 1
+        if 0 <= idx < count:
+            out[idx] = body[m.end():end].strip()
+    return out
+
+
+def read_pages(provider: str, model: str, imgs: list[Path], timeout: int = 600) -> list[str]:
+    """이미지 여러 장을 한 번에 판독해 쪽별 본문 목록으로 돌려준다."""
     if provider == "codex_cli":
-        return _read_codex_cli(model, png, timeout)
-    if provider == "claude_cli":
-        return _read_claude_cli(model, png, timeout)
-    raise RuntimeError(
-        f"'{provider}'로는 아직 쪽 판독을 하지 않습니다 — 구독형 CLI(codex_cli·claude_cli)를 쓰세요")
+        raw = _read_codex_cli(model, imgs, timeout)
+    elif provider == "claude_cli":
+        raw = _read_claude_cli(model, imgs, timeout)
+    else:
+        raise RuntimeError(f"'{provider}'로는 아직 쪽 판독을 하지 않습니다 — "
+                           "구독형 CLI(codex_cli·claude_cli)를 쓰세요")
+    return _split_pages(raw, len(imgs))
+
+
+def read_page(provider: str, model: str, png: Path, timeout: int = 600) -> str:
+    """한 쪽만 읽는 옛 인터페이스 — 테스트·단발 확인용."""
+    return read_pages(provider, model, [png], timeout)[0]
 
 
 # ── 비용 안내 ────────────────────────────────────────────────
@@ -301,7 +354,8 @@ def work_dir(out_txt: Path) -> Path:
 
 def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
           pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
-          workers: int = DEFAULT_WORKERS, progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
+          workers: int = DEFAULT_WORKERS, pages_per_call: int = DEFAULT_PAGES_PER_CALL,
+          progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
     """PDF를 쪽마다 다시 읽어 out_txt로 합친다.
 
     pages는 1-기준 쪽번호 목록(None이면 전체). 이미 읽은 쪽은 건너뛰므로 중단해도
@@ -311,7 +365,10 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
     targets = sorted(pages) if pages else list(range(1, total_pages + 1))
     wd = work_dir(out_txt)
     wd.mkdir(parents=True, exist_ok=True)
-    png_dir = wd / "_png"
+    # ★이미지를 책 폴더 옆에 두면 안 된다 — read-only 샌드박스라도 읽기는 되므로
+    # codex가 같은 폴더의 원본 TXT를 찾아 커닝할 수 있다(_read_codex_cli 주석 참고).
+    # 판독에 필요한 건 이미지뿐이니 아예 격리된 임시 폴더에 렌더한다.
+    png_dir = Path(tempfile.mkdtemp(prefix="ocr_img_"))
 
     log = wd / "_report.json"
     results: dict[int, PageResult] = {}
@@ -330,55 +387,72 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
             if not ((wd / f"p{pg:04d}.txt").exists()
                     and results.get(pg) and results[pg].status != "failed")]
 
-    def _one(page: int) -> PageResult:
-        """한 쪽 판독 — 워커에서 돈다. 쪽끼리 공유 상태가 없어 그대로 병렬로 돌 수 있다."""
-        base = base_page_text(pdf_path, page - 1)
-        img = None
-        try:
-            img = render_page(pdf_path, page - 1, png_dir, dpi)
-            text = read_page(provider, model, img, timeout)
-            status, sim, note = verify(text, base)
-            (wd / f"p{page:04d}.txt").write_text(text, encoding="utf-8")
-            return PageResult(page, status, len(text), len(base), round(sim, 3), note)
-        except Exception as e:
-            return PageResult(page, "failed", 0, len(base), 0.0,
-                              f"{type(e).__name__}: {str(e)[:160]}")
-        finally:
-            if img is not None:
-                img.unlink(missing_ok=True)
+    def _one(batch: list[int]) -> list[PageResult]:
+        """한 묶음(여러 쪽)을 한 번의 호출로 판독한다 — 워커에서 돈다.
 
+        묶어서 부르되 **검증은 쪽마다 따로** 한다. 묶음 안에서 쪽이 밀리거나 섞이면
+        그 쪽의 유사도가 무너지므로 기존 검증이 그대로 잡아낸다."""
+        bases = {pg: base_page_text(pdf_path, pg - 1) for pg in batch}
+        imgs: list[Path] = []
+        try:
+            imgs = [render_page(pdf_path, pg - 1, png_dir, dpi) for pg in batch]
+            texts = read_pages(provider, model, imgs, timeout)
+        except Exception as e:
+            note = f"{type(e).__name__}: {str(e)[:160]}"
+            return [PageResult(pg, "failed", 0, len(bases[pg]), 0.0, note) for pg in batch]
+        finally:
+            for f in imgs:
+                f.unlink(missing_ok=True)
+
+        out = []
+        for pg, text in zip(batch, texts):
+            base = bases[pg]
+            if not text.strip() and base.strip():
+                # 묶음 응답에서 이 쪽만 비었다 — 표시를 놓쳤거나 건너뛴 것이다.
+                # 옆 쪽 본문을 끌어다 메우면 절대 안 된다(검증도 못 잡는다).
+                out.append(PageResult(pg, "failed", 0, len(base), 0.0,
+                                      "묶음 응답에 이 쪽이 없습니다 — 다시 시도하세요"))
+                continue
+            status, sim, note = verify(text, base)
+            (wd / f"p{pg:04d}.txt").write_text(text, encoding="utf-8")
+            out.append(PageResult(pg, status, len(text), len(base), round(sim, 3), note))
+        return out
+
+    per_call = max(1, pages_per_call)
+    batches = [todo[i:i + per_call] for i in range(0, len(todo), per_call)]
     done, stopped = len(targets) - len(todo), False
-    pending = list(todo)
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futures: dict = {}
 
         def _submit_next():
             # 처음부터 전부 제출하지 않는다 — 중단 요청이 와도 큐를 비울 수가 없어진다.
             # 하나 끝날 때마다 하나씩 채워 항상 workers개만 떠 있게 한다.
-            if pending and not stopped:
-                pg = pending.pop(0)
-                futures[pool.submit(_one, pg)] = pg
+            if batches and not stopped:
+                b = batches.pop(0)
+                futures[pool.submit(_one, b)] = b
                 if progress:
-                    # 쪽을 **시작할 때**도 알린다 — 끝날 때만 알리면 한 쪽이 몇 분
-                    # 걸리는 동안 화면이 멈춰 보인다 (2026-08-24 사용자 지적).
-                    progress(done, len(targets), PageResult(pg, "reading"))
+                    # 묶음을 **시작할 때**도 알린다 — 끝날 때만 알리면 몇 분 동안
+                    # 화면이 멈춰 보인다 (2026-08-24 사용자 지적).
+                    progress(done, len(targets), PageResult(b[0], "reading"))
 
         for _ in range(max(1, workers)):
             _submit_next()
         while futures:
             fut = next(as_completed(list(futures)))
-            page = futures.pop(fut)
-            results[page] = fut.result()
-            done += 1
+            batch = futures.pop(fut)
+            for res in fut.result():
+                results[res.page] = res
+                done += 1
+                if progress:
+                    progress(done, len(targets), res)
             _flush()
-            if progress:
-                progress(done, len(targets), results[page])
             if should_stop and should_stop() and not stopped:
                 stopped = True
                 append_log(f"AI 재OCR 중단 요청 — {pdf_path.name} "
                            f"({done}/{len(targets)}쪽까지 하고 멈춤)")
             _submit_next()
 
+    shutil.rmtree(png_dir, ignore_errors=True)
     assemble(pdf_path, out_txt, total_pages)
     ok = sum(1 for r in results.values() if r.status == "ok")
     warn = sum(1 for r in results.values() if r.status == "warn")
@@ -444,7 +518,9 @@ def request_stop(pdf_path) -> None:
 
 def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
                      pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
-                     workers: int = DEFAULT_WORKERS, timeout: int = 600) -> None:
+                     workers: int = DEFAULT_WORKERS,
+                     pages_per_call: int = DEFAULT_PAGES_PER_CALL,
+                     timeout: int = 600) -> None:
     """이미 돌고 있으면 아무 일도 하지 않는다."""
     import threading
     key = run_key(pdf_path)
@@ -462,7 +538,7 @@ def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = 
 
     def _worker():
         try:
-            reocr(pdf_path, out_txt, provider, model, pages, dpi,
+            reocr(pdf_path, out_txt, provider, model, pages, dpi, workers, pages_per_call,
                   progress=_progress, should_stop=lambda: state["stop"], timeout=timeout)
         except Exception as e:
             state["error"] = f"{type(e).__name__}: {str(e)[:200]}"
