@@ -358,6 +358,29 @@ def lexicon_verdict(corpus: str, a: str, b: str) -> str:
     return "?"
 
 
+_DIGITS = re.compile(r"\d+")
+
+
+def _is_footnote_marker_noise(adopted: str, judge: str) -> bool:
+    """각주 번호 자리인가 — **로컬 Vision은 위 첨자를 못 읽는다.**
+
+    실측(74~76쪽): 심판이 짚은 자리의 절반 이상이 이 모양이었다.
+        `것이다.92` ↔ `것이다.?` · `사용한다.94` ↔ `사용한다.*` · `연산”89의` ↔ `연산 9의`
+    번호를 빼고 나면 같은 말이므로 알릴 값어치가 없다. 사람이 봐야 할 자리를
+    이런 것으로 채우면 목록 자체를 안 보게 된다."""
+    # ★_TRIVIAL이 아니라 _KEEP을 쓴다 — Vision이 위 첨자 자리에 뱉는 `?`·`*`는
+    # 문장부호 목록에 없어서 _TRIVIAL로는 안 지워진다.
+    a = _KEEP.sub("", adopted)
+    b = _KEEP.sub("", judge)
+    na = sum(len(m) for m in _DIGITS.findall(a))
+    nb = sum(len(m) for m in _DIGITS.findall(b))
+    if not na or nb >= na:
+        # 채택본에 번호가 없거나, 심판도 같은 만큼 읽었다 —
+        # `제3장을`↔`제8장을`처럼 **번호 자체가 다른 것은 알려야 한다.**
+        return False
+    return _DIGITS.sub("", a) == _DIGITS.sub("", b)
+
+
 def filter_notes(notes: list[dict], corpus: str) -> list[dict]:
     """심판이 짚은 자리에서 **심판 자신의 오독을 걷어낸다.**
 
@@ -367,11 +390,11 @@ def filter_notes(notes: list[dict], corpus: str) -> list[dict]:
         Vision 오독 = 글자 모양 **착오** — `김민한`·`시용동`·`역선적으로` (뜻이 안 통한다)
     그래서 책 어휘로 걸러진다. 실측(33쪽): **11곳 → 6곳, 진짜 오독 유실 0건.**
     남은 자리는 `결국↔결코`처럼 **둘 다 말이 되는** 자리 — 사람이 봐야 할 곳이다."""
-    if not corpus:
-        return notes
     kept = []
     for d in notes:
         wa, wb = str(d.get("a", "")).strip(), str(d.get("b", "")).strip()
+        if _is_footnote_marker_noise(wa, wb):
+            continue                      # 위 첨자를 못 읽은 것뿐이다
         if lexicon_verdict(corpus, wa, wb) == "A":
             continue                      # 채택본이 책의 어휘 — 심판이 틀렸다
         kept.append(d)

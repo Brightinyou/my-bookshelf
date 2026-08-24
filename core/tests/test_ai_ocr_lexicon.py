@@ -58,9 +58,27 @@ class FilterNotesTest(unittest.TestCase):
         kept = ai_ocr.filter_notes(notes, CORPUS)
         self.assertEqual([d["a"] for d in kept], ["결국"])
 
-    def test_사전이_비면_그대로_둔다(self):
+    def test_사전이_비면_어휘로는_안_버린다(self):
         notes = [{"before": "", "a": "가", "b": "나"}]
         self.assertEqual(ai_ocr.filter_notes(notes, ""), notes)
+
+    def test_각주_번호_자리는_사전_없이도_버린다(self):
+        """로컬 Vision은 위 첨자를 못 읽는다 — 번호를 빼면 같은 말이다."""
+        notes = [{"before": "", "a": "것이다.92", "b": "것이다.?"},
+                 {"before": "", "a": "사용한다.94", "b": "사용한다.*"},
+                 {"before": "", "a": "연산”89의", "b": "연산 9의"},
+                 {"before": "", "a": "증가하고", "b": "중가하고"}]   # ★진짜 자리
+        kept = ai_ocr.filter_notes(notes, "")
+        self.assertEqual([d["a"] for d in kept], ["증가하고"])
+
+    def test_번호가_없으면_각주_규칙을_쓰지_않는다(self):
+        """숫자가 걸리지 않은 자리를 이 규칙으로 지우면 진짜 오독을 잃는다."""
+        self.assertFalse(ai_ocr._is_footnote_marker_noise("열두", "연두"))
+        self.assertFalse(ai_ocr._is_footnote_marker_noise("결국", "결코"))
+
+    def test_숫자가_실제로_다르면_남긴다(self):
+        """`제3장`↔`제8장`처럼 번호 자체가 다른 것은 알려야 한다."""
+        self.assertFalse(ai_ocr._is_footnote_marker_noise("제3장을", "제8장을"))
 
 
 if __name__ == "__main__":
