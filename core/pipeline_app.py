@@ -1174,11 +1174,27 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
     if only_book:
         books = [b for b in books if b == only_book]
     else:
-        # **지금 처리 중인 책만.** 대기 큐 전체를 훑으면 예전에 넣어 둔 책까지 수십 권이
-        # 딸려 오고, 다 지나간 책의 "수상한 분할"을 붙잡게 된다(2026-08-18 지적).
-        # 이번 실행에서 나눈 책만 대상으로 한다.
+        # 기본은 **이번 실행에서 나눈 책만.** 대기 큐 전체를 훑으면 예전에 넣어 둔 책까지
+        # 수십 권이 딸려 오고, 다 지나간 책의 "수상한 분할"을 붙잡게 된다(2026-08-18).
         _live = {_nfc(b) for b in st.session_state.get("_review_books", [])}
-        books = [b for b in books if _nfc(b) in _live]
+        _fresh = [b for b in books if _nfc(b) in _live]
+        # ★그런데 그 제한 때문에 **확인이 일회성**이 됐다 — 앱을 껐다 켜면 확인 화면이
+        # 통째로 사라져서, 어제 나눈 책을 오늘 확인할 방법이 없었다. 그래서 연구자가
+        # 확인하려고 멀쩡한 책을 **다시 분할하는** 일이 반복됐다(2026-08-25).
+        # 아직 «이대로 확정»하지 않은 책은 언제든 꺼내 볼 수 있게 한다 — 확정한 책은
+        # 안 뜨므로 목록이 수십 권으로 불어나지 않는다.
+        _unconfirmed = [b for b in books
+                        if _nfc(b) not in _live and not cmap.is_confirmed(DEFAULT_WS, b)]
+        if full and _unconfirmed:
+            with st.expander("📑 " + tf("확인하지 않은 책 %d권 — 장 구분 확인하기",
+                                        len(_unconfirmed))):
+                _pick = st.selectbox(t("책 고르기"), ["—"] + _unconfirmed,
+                                     key=f"{key}_pickold")
+                if _pick and _pick != "—":
+                    st.session_state["_review_books"] = sorted(
+                        set(st.session_state.get("_review_books", [])) | {_nfc(_pick)})
+                    st.rerun()
+        books = _fresh
     if not books:
         return
     if full:
