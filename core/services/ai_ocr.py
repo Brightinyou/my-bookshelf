@@ -39,7 +39,7 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import llm_providers as llm
@@ -76,6 +76,10 @@ DEFAULT_WORKERS = 3
 # 전부 턴 1이지만 12쪽에서 **평균 유사도가 0.925 → 0.811로 떨어졌다** — 한 번에
 # 너무 많이 주면 쪽마다의 충실도가 흔들린다. 8쪽이 절약과 품질이 만나는 자리다.
 DEFAULT_PAGES_PER_CALL = 8
+# 같은 쪽을 몇 번 읽어 견줄 것인가. 2면 어긋나는 자리가 드러난다 — 쪽당 4,802토큰
+# 이라 두 번 읽어도 9,604로, 도구를 열어 두던 옛 방식(497,870)의 1/52이다.
+# 1로 두면 대조를 건너뛴다(빠르지만 낱말 바꿔치기를 못 잡는다).
+DEFAULT_PASSES = 2
 
 # codex를 단발 호출로 만드는 비활성 목록. 이 세 개면 충분하다는 것을 실측했다
 # (shell_tool·unified_exec = 셸/명령 실행, view_image = 이미지 재조회 루프).
@@ -118,11 +122,13 @@ PROMPT = f"""이 이미지들은 한국어 책의 낱쪽을 순서대로 스캔�
 @dataclass
 class PageResult:
     page: int                 # 1-기준 PDF 쪽번호
-    status: str               # ok | unverified | warn | failed | reading
+    status: str               # ok | check | unverified | warn | failed | reading
     chars: int = 0
     base_chars: int = 0
     similarity: float = 0.0
     note: str = ""
+    # 2회 판독이 어긋난 자리 — [{"before":…, "a":…, "b":…}] (아래 reconcile 참고)
+    disagreements: list = field(default_factory=list)
 
 
 # ── 렌더링·기준선 ────────────────────────────────────────────
@@ -222,6 +228,48 @@ def verify(ai_text: str, base_text: str) -> tuple[str, float, str]:
     if ratio > MAX_LENGTH_RATIO:
         return "warn", sim, f"분량이 원본의 {ratio:.0%} — 없는 내용을 덧붙였을 수 있습니다"
     return "ok", sim, ""
+
+
+# ── 2회 판독 대조 ────────────────────────────────────────────
+# 같은 쪽을 두 번 읽으면 **모델이 확신하는 자리는 같게, 헷갈리는 자리는 다르게**
+# 나온다. 실측(2026-08-24): 같은 쪽을 설정을 바꿔 가며 여러 번 읽었더니 오독 위치가
+# 매번 옮겨 다녔다(`벽돌이`→`변혁이`→`변들이`). 한 번 읽어서는 못 믿는다는 뜻이고,
+# 동시에 **두 번 읽으면 그 자리가 드러난다**는 뜻이다.
+#
+# 기존 유사도 검증이 못 잡던 구멍을 메운다 — 낱말 하나가 바뀌어도 쪽 전체 유사도는
+# 0.99대라 통과했다(30쪽 `망원경`→`바벨탑`이 ok 판정으로 지나갔다).
+
+# 문장부호·공백만 다른 것은 굳이 알릴 값어치가 없다
+_TRIVIAL = re.compile(r"[\s.,·:;()\[\]{}“”‘’\"'`~\-—–]+")
+
+
+def _words(text: str) -> list[str]:
+    return text.split()
+
+
+def _is_trivial(a: str, b: str) -> bool:
+    return _TRIVIAL.sub("", a) == _TRIVIAL.sub("", b)
+
+
+def reconcile(texts: list[str], context: int = 18) -> tuple[str, list[dict]]:
+    """여러 번 읽은 결과를 견줘 (채택본, 어긋난 자리 목록)을 낸다.
+
+    **어느 쪽이 맞는지는 알 수 없다.** 그래서 첫 판독을 그대로 채택하고 어긋난
+    자리만 기록한다 — 본문을 건드리지 않아야 사람이 원문과 대조할 수 있다."""
+    texts = [t for t in texts if t and t.strip()]
+    if len(texts) < 2:
+        return (texts[0] if texts else ""), []
+    a, b = _words(texts[0]), _words(texts[1])
+    diffs: list[dict] = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        if tag == "equal":
+            continue
+        wa, wb = " ".join(a[i1:i2]), " ".join(b[j1:j2])
+        if _is_trivial(wa, wb):
+            continue
+        diffs.append({"before": " ".join(a[max(0, i1 - 4):i1])[-context:],
+                      "a": wa[:60], "b": wb[:60]})
+    return texts[0], diffs
 
 
 # ── 공급자 호출 ──────────────────────────────────────────────
@@ -385,7 +433,7 @@ def work_dir(out_txt: Path) -> Path:
 def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
           pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
           workers: int = DEFAULT_WORKERS, pages_per_call: int = DEFAULT_PAGES_PER_CALL,
-          progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
+          passes: int = DEFAULT_PASSES, progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
     """PDF를 쪽마다 다시 읽어 out_txt로 합친다.
 
     pages는 1-기준 쪽번호 목록(None이면 전체). 이미 읽은 쪽은 건너뛰므로 중단해도
@@ -436,7 +484,8 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
         imgs: list[Path] = []
         try:
             imgs = [render_page(pdf_path, pg - 1, png_dir, dpi) for pg in batch]
-            texts = read_pages(provider, model, imgs, timeout)
+            # 같은 묶음을 passes번 읽는다. 어긋나는 자리가 곧 모델이 헷갈린 자리다
+            runs = [read_pages(provider, model, imgs, timeout) for _ in range(max(1, passes))]
         except Exception as e:
             note = f"{type(e).__name__}: {str(e)[:160]}"
             return [PageResult(pg, "failed", 0, len(bases[pg]), 0.0, note) for pg in batch]
@@ -444,8 +493,12 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
             for f in imgs:
                 f.unlink(missing_ok=True)
 
+        picked = [reconcile([r[i] for r in runs]) for i in range(len(batch))]
+        texts = [t for t, _ in picked]
+        diffs_by_page = [d for _, d in picked]
+
         out = []
-        for pg, text in zip(batch, texts):
+        for pg, text, diffs in zip(batch, texts, diffs_by_page):
             base = bases[pg]
             if not text.strip() and base.strip():
                 # 묶음 응답에서 이 쪽만 비었다 — 표시를 놓쳤거나 건너뛴 것이다.
@@ -455,7 +508,15 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
                 continue
             status, sim, note = verify(text, base)
             (wd / f"p{pg:04d}.txt").write_text(text, encoding="utf-8")
-            out.append(PageResult(pg, status, len(text), len(base), round(sim, 3), note))
+            if diffs and status == "ok":
+                # 유사도는 통과했지만 두 판독이 어긋났다 — 낱말 바꿔치기는 유사도로
+                # 안 걸리므로(30쪽 `망원경`→`바벨탑`이 0.988로 통과) 여기서 잡는다
+                status = "check"
+                note = f"두 판독이 {len(diffs)}곳에서 어긋납니다 — 원문과 대조하세요"
+            elif diffs:
+                note = (note + f" · 두 판독 {len(diffs)}곳 불일치").strip(" ·")
+            out.append(PageResult(pg, status, len(text), len(base), round(sim, 3),
+                                  note, diffs))
         return out
 
     clear_run_state(out_txt)                      # 지난 실행의 중단 표시를 지운다
@@ -647,7 +708,7 @@ def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = 
                      pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
                      workers: int = DEFAULT_WORKERS,
                      pages_per_call: int = DEFAULT_PAGES_PER_CALL,
-                     timeout: int = 600) -> None:
+                     passes: int = DEFAULT_PASSES, timeout: int = 600) -> None:
     """이미 돌고 있으면 아무 일도 하지 않는다.
 
     진행 상황·중단 신호는 전부 작업 폴더의 파일로 오간다(위 HEARTBEAT_NAME 주석
@@ -660,7 +721,7 @@ def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = 
     def _worker():
         try:
             reocr(pdf_path, out_txt, provider, model, pages, dpi, workers, pages_per_call,
-                  timeout=timeout)
+                  passes, timeout=timeout)
         except Exception as e:
             msg = f"{type(e).__name__}: {str(e)[:200]}"
             append_log(f"ERROR: AI 재OCR 실패 — {Path(pdf_path).name}: {msg}")

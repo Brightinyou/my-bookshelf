@@ -2251,10 +2251,15 @@ if _active_view in {"1_txt", "all_run"}:
                     _pages_tq = None
                 _cnt_tq = len(_pages_tq) if _pages_tq else _npages_tq
                 _c2_tq.metric(t("판독할 쪽"), f"{_cnt_tq:,} / {_npages_tq:,}")
-                st.caption(tf("동시 %d쪽씩 처리합니다 — %d쪽이면 대략 %d분.",
-                              ai_ocr.DEFAULT_WORKERS, _cnt_tq,
-                              max(1, _cnt_tq * 40 // ai_ocr.DEFAULT_WORKERS // 60)))
-                _cost_tq = ai_ocr.cost_notice(_prov_tq, _cnt_tq)
+                st.caption(tf(
+                    "한 번에 %d쪽씩 · 동시 %d갈래 · **같은 쪽을 %d번 읽어 견줍니다** "
+                    "— %d쪽이면 대략 %d분.",
+                    ai_ocr.DEFAULT_PAGES_PER_CALL, ai_ocr.DEFAULT_WORKERS,
+                    ai_ocr.DEFAULT_PASSES, _cnt_tq,
+                    max(1, _cnt_tq * 13 * ai_ocr.DEFAULT_PASSES
+                        // ai_ocr.DEFAULT_WORKERS // 60)))
+                # 두 번 읽으면 한도도 두 배 쓴다 — 안내에 반영한다
+                _cost_tq = ai_ocr.cost_notice(_prov_tq, _cnt_tq * ai_ocr.DEFAULT_PASSES)
                 if _cost_tq.startswith("⚠️"):
                     st.warning(_cost_tq)
                     _ok_cost = st.checkbox(
@@ -2307,10 +2312,21 @@ if _active_view in {"1_txt", "all_run"}:
                     _warn_tq = [r for r in _rep_tq if r.status == "warn"]
                     _fail_tq = [r for r in _rep_tq if r.status == "failed"]
                     _unv_tq = [r for r in _rep_tq if r.status == "unverified"]
+                    _chk_tq = [r for r in _rep_tq if r.status == "check"]
                     st.markdown(tf(
-                        "**판독 결과** — 정상 %d쪽 · 대조 불가 %d쪽 · ⚠️ 확인 필요 %d쪽 · 실패 %d쪽",
-                        sum(1 for r in _rep_tq if r.status == "ok"),
+                        "**판독 결과** — 정상 %d쪽 · 🔎 두 판독 불일치 %d쪽 · 대조 불가 %d쪽 "
+                        "· ⚠️ 확인 필요 %d쪽 · 실패 %d쪽",
+                        sum(1 for r in _rep_tq if r.status == "ok"), len(_chk_tq),
                         len(_unv_tq), len(_warn_tq), len(_fail_tq)))
+                    if _chk_tq:
+                        st.info(t("🔎 같은 쪽을 두 번 읽어 견준 결과입니다. 아래 자리에서 "
+                                  "판독이 갈렸으니 원문과 대조하세요 — 낱말 하나가 바뀌는 "
+                                  "오독은 쪽 전체 유사도로는 걸리지 않습니다."))
+                        _rows_chk = [{t("쪽"): r.page, t("앞말"): d["before"],
+                                      t("1차 판독"): d["a"], t("2차 판독"): d["b"]}
+                                     for r in _chk_tq for d in r.disagreements]
+                        st.dataframe(pd.DataFrame(_rows_chk), use_container_width=True,
+                                     hide_index=True, height=_df_height(len(_rows_chk)))
                     if _unv_tq:
                         st.caption(tf("대조 불가 %d쪽은 원본 레이어가 너무 깨져 견줄 수가 없던 "
                                       "쪽입니다(차례·판권 등). AI 판독을 그대로 채택했습니다.",
