@@ -1065,49 +1065,51 @@ def _book_source_text(book: str) -> str:
 
 
 def _render_toc_side_by_side(key: str, book: str) -> None:
-    """원본 PDF의 **차례 쪽을 장 목록 옆에 띄운다** (2026-08-25 연구자 요청).
+    """원본 PDF의 **차례 쪽을 미리보기 창으로 띄운다** (2026-08-25 연구자 요청).
 
-    ★장 구분이 맞는지는 **차례와 견주어야만** 알 수 있다. 지금까지 차례 이미지는
-    "PDF 차례에서 가져오기" 안에 접혀 있어서, 확인하려면 화면을 오가야 했다.
-    확인은 나란히 놓고 하는 일이다."""
+    ★장 구분이 맞는지는 **차례와 견주어야만** 알 수 있다. 그래서 버튼을 눌러야 열리게
+    두지 않고 **확인 화면에 들어오면 저절로 연다** — 눌러야 하는 것은 안 누르게 된다.
+
+    ★앱 창 안 미리보기는 없앴다. 작고 확대가 안 돼 한 줄씩 견주기에 쓸모가 없었고,
+    두 가지 보기 방식을 나란히 두면 고르는 일만 늘어난다.
+
+    ★**같은 쪽을 두 번 열지 않는다.** Streamlit은 조작할 때마다 화면을 다시 그리므로,
+    그대로 두면 클릭 한 번에 창이 하나씩 늘어난다. 책과 고른 쪽이 바뀔 때만 연다."""
     _pdf = cfg.PDF_DIR / f"{book}.pdf"
     if not _pdf.exists():
         return
     _sugg = toc_svc.toc_page_candidates(_book_source_text(book)) or []
     _skey = f"{key}_tocpg_{book}"
-    _default = [i + 1 for i in _sugg[:2]] or [3, 4]
-    with st.expander("📖 " + t("차례와 견주기") + (
+    _default = [p for p in ([i + 1 for i in _sugg[:2]] or [3, 4]) if p <= 40]
+    with st.expander("📖 " + t("차례 쪽 고르기") + (
             tf(" — 차례로 보이는 쪽: %s", ", ".join(str(i + 1) for i in _sugg)) if _sugg else ""),
-            expanded=bool(_sugg)):
-        _pages = st.multiselect(t("볼 쪽 (1-기반)"), list(range(1, 41)),
-                                default=[p for p in _default if p <= 40], key=_skey)
-        if not _pages:
-            st.caption(t("차례가 있는 쪽을 고르면 여기에 띄웁니다."))
+            expanded=False):
+        st.caption(t("자동으로 짚은 쪽이 차례가 아니면 여기서 고쳐 주세요 — 고치면 창이 다시 열립니다."))
+        _pages = st.multiselect(t("차례가 있는 쪽 (1-기반)"), list(range(1, 41)),
+                                default=_default, key=_skey)
+        # 창을 닫았을 때 되살릴 길 — 접힌 칸 안에 둔다(본 화면에는 버튼을 두지 않는다).
+        if st.button(t("차례 창 다시 열기"), icon=":material/refresh:",
+                     key=f"{key}_tocre_{book}"):
+            st.session_state.pop(f"{key}_tocopened_{book}", None)
+            st.rerun()
+    if not _pages:
+        st.info(t("📖 차례 쪽을 고르면 미리보기 창으로 띄워 드립니다 — 위 «차례 쪽 고르기»를 펴 보세요."))
+        return
+
+    _seen = f"{key}_tocopened_{book}"
+    _want = tuple(_pages)
+    if st.session_state.get(_seen) != _want:
+        _out = toc_svc.pages_pdf(_pdf, [p - 1 for p in _pages])
+        if _out:
+            open_pdf_view(_out)          # 기기마다 다른 앱이 뜨지 않게 미리보기로 고정
+            st.session_state[_seen] = _want
+        else:
+            st.warning(t("차례 PDF를 만들지 못했습니다 — 쪽 번호를 확인해 주세요."))
             return
-        # ★**별도 창으로 여는 것이 본 길이다.** 앱 창 안의 이미지는 작고 확대가 안 돼
-        # 장 목록과 한 줄씩 견주기 어렵다. 고른 쪽만 PDF로 뽑아 OS 기본 뷰어로 열면
-        # 창을 나란히 놓고 볼 수 있다 (2026-08-25 연구자 요청).
-        _w1, _w2 = st.columns([1, 1])
-        if _w1.button("🪟 " + t("별도 창으로 열기"), key=f"{key}_tocwin_{book}",
-                      use_container_width=True, type="primary",
-                      help=t("고른 쪽만 뽑아 PDF 뷰어로 엽니다 — 앱 창과 나란히 놓고 보세요")):
-            _out = toc_svc.pages_pdf(_pdf, [p - 1 for p in _pages])
-            if _out:
-                # ★기본 앱에 맡기면 기기마다 다른 PDF 앱이 뜬다 — 미리보기로 고정한다.
-                _with = open_pdf_view(_out)
-                st.caption(tf("%s(으)로 열었습니다: %s", _with, _out.name))
-            else:
-                st.warning(t("차례 PDF를 만들지 못했습니다."))
-        _inline = _w2.toggle(t("앱 창 안에도 보기"), key=f"{key}_tocinl_{book}", value=False)
-        if not _inline:
-            return
-        try:
-            _imgs = toc_svc.page_previews(_pdf, [p - 1 for p in _pages], scale=1.1)
-        except Exception as _e:
-            st.caption(t("차례 이미지를 만들지 못했습니다.") + f" ({_e})")
-            return
-        for _i, _b in _imgs:
-            st.image(_b, caption=tf("%d쪽", _i + 1), use_container_width=True)
+    st.info("📖 " + tf("**차례 %s쪽을 미리보기 창으로 열었습니다.** "
+                       "그 창을 이 앱 창 옆에 나란히 놓고, 아래 장 목록과 **한 줄씩 견주어 보세요** — "
+                       "빠진 장이나 잘못 붙은 장이 보이면 맨 아래 채팅창에 그대로 말씀하시면 됩니다.",
+                       "·".join(str(p) for p in _pages)))
 
 
 def _render_chapter_chat(key: str, book: str) -> None:
