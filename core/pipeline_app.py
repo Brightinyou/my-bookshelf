@@ -32,6 +32,7 @@ from version import APP_VERSION
 # ── 처리 로직 서비스 (2026-07-03 pipeline_app.py에서 분리) ──
 # UI 코드가 기존 이름 그대로 쓰도록 명시적으로 재노출한다.
 from services import ai_ocr
+from services import chapter_chat as chat_svc
 from services import chapter_map as cmap
 from services import textquality
 from services import toc as toc_svc
@@ -1055,6 +1056,93 @@ def _dismiss_split_nosplit(stem: str) -> None:
         st.session_state["split2_nosplit"] = [item for item in pending if item != stem]
 
 
+def _book_source_text(book: str) -> str:
+    """이 책의 변환 TXT. **활성 사본을 먼저** 본다(보관본은 옛것일 수 있다)."""
+    for c in (cfg.TXT_DIR / f"{book}.txt", cfg.TXT_ARCHIVE_DIR / f"{book}.txt"):
+        if c.exists():
+            return c.read_text(encoding="utf-8", errors="ignore")
+    return ""
+
+
+def _render_toc_side_by_side(key: str, book: str) -> None:
+    """원본 PDF의 **차례 쪽을 장 목록 옆에 띄운다** (2026-08-25 연구자 요청).
+
+    ★장 구분이 맞는지는 **차례와 견주어야만** 알 수 있다. 지금까지 차례 이미지는
+    "PDF 차례에서 가져오기" 안에 접혀 있어서, 확인하려면 화면을 오가야 했다.
+    확인은 나란히 놓고 하는 일이다."""
+    _pdf = cfg.PDF_DIR / f"{book}.pdf"
+    if not _pdf.exists():
+        return
+    _sugg = toc_svc.toc_page_candidates(_book_source_text(book)) or []
+    _skey = f"{key}_tocpg_{book}"
+    _default = [i + 1 for i in _sugg[:2]] or [3, 4]
+    with st.expander("📖 " + t("차례와 견주기") + (
+            tf(" — 차례로 보이는 쪽: %s", ", ".join(str(i + 1) for i in _sugg)) if _sugg else ""),
+            expanded=bool(_sugg)):
+        _pages = st.multiselect(t("볼 쪽 (1-기반)"), list(range(1, 41)),
+                                default=[p for p in _default if p <= 40], key=_skey)
+        if not _pages:
+            st.caption(t("차례가 있는 쪽을 고르면 여기에 띄웁니다."))
+            return
+        try:
+            _imgs = toc_svc.page_previews(_pdf, [p - 1 for p in _pages], scale=1.1)
+        except Exception as _e:
+            st.caption(t("차례 이미지를 만들지 못했습니다.") + f" ({_e})")
+            return
+        for _i, _b in _imgs:
+            st.image(_b, caption=tf("%d쪽", _i + 1), use_container_width=True)
+
+
+def _render_chapter_chat(key: str, book: str) -> None:
+    """말로 장 구분 고치기 — 접수는 말로, **판단과 실행은 앱이** (2026-08-25).
+
+    ★모델은 의도만 고르고 아무것도 실행하지 않는다. 앱이 장 분량·후보 줄을 실제로
+    확인해 **제안**을 만들고, 사람이 누를 때 비로소 반영된다
+    (services/chapter_chat 머리말 참고)."""
+    st.markdown("##### 💬 " + t("고칠 곳을 말로 알려 주세요"))
+    st.caption(t("예: “마지막 장이 분할이 안 된 것 같아” · “5장을 4장에 붙여줘” · "
+                 "“2장 제목을 ‘서론’으로” · “‘정든 인공지능과’ 앞에서 나눠줘”"))
+    _pkey = f"{key}_chat_prop_{book}"
+    _msg = st.chat_input(t("무엇이 잘못됐나요?"), key=f"{key}_chat_in_{book}")
+    if _msg:
+        _titles = [cmap.chapter_title(f) for f in cmap.chapter_files(DEFAULT_WS, book)]
+        _prov, _model = llm.wiki_provider_model()
+        with st.spinner(t("확인하는 중…")):
+            _it = chat_svc.interpret(_msg, _titles, _prov, _model)
+            _prop = chat_svc.plan(DEFAULT_WS, book, _it)
+        st.session_state[_pkey] = {"said": _msg, "action": _prop.action, "ok": _prop.ok,
+                                   "message": _prop.message, "evidence": _prop.evidence,
+                                   "params": _prop.params, "source": _it.source}
+    _saved = st.session_state.get(_pkey)
+    if not _saved:
+        return
+    with st.container(border=True):
+        st.caption("🗣️ " + _saved["said"])
+        (st.info if _saved["ok"] else st.warning)(_saved["message"])
+        for _e in _saved["evidence"]:
+            st.markdown("- " + _e)
+        if _saved["ok"] and _saved["action"] == "resplit":
+            st.caption(t("‘다시 나누기’는 아래 목록에서 이 책을 다시 처리하세요."))
+        elif _saved["ok"]:
+            _c1, _c2 = st.columns(2)
+            if _c1.button(t("이대로 실행"), icon=":material/play_arrow:",
+                          key=f"{key}_chat_go_{book}", use_container_width=True, type="primary"):
+                _p = chat_svc.Proposal(action=_saved["action"], ok=True,
+                                       message=_saved["message"], params=_saved["params"])
+                _ok, _note = chat_svc.apply(DEFAULT_WS, book, _p)
+                st.session_state.pop(_pkey, None)
+                (st.success if _ok else st.error)(_note)
+                st.rerun()
+            if _c2.button(t("취소"), icon=":material/close:",
+                          key=f"{key}_chat_no_{book}", use_container_width=True):
+                st.session_state.pop(_pkey, None)
+                st.rerun()
+        else:
+            if st.button(t("닫기"), icon=":material/close:", key=f"{key}_chat_cl_{book}"):
+                st.session_state.pop(_pkey, None)
+                st.rerun()
+
+
 def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = None) -> None:
     """장 목록을 보여주고 고치는 화면 (2026-08-17).
 
@@ -1094,6 +1182,7 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
     if full:
         for finding in cmap.review_findings(DEFAULT_WS, book):
             st.warning("⚠️ " + finding)
+        _render_toc_side_by_side(key, book)
     ranges = cmap.part_ranges(DEFAULT_WS, book)
     rows, prev_part = [], ""
     for cf in files:
@@ -1166,6 +1255,10 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
         open_path(chapters_dir(DEFAULT_WS, book))
     if not full:
         return
+
+    st.divider()
+    _render_chapter_chat(key, book)
+    st.divider()
 
     # ── 📖 PDF 차례에서 가져오기 (2026-08-17) ────────────────────
     # 앞부분 40~55쪽을 통째로 AI에 던지는 대신, 사람이 차례 쪽을 짚어 주고 그 쪽만
