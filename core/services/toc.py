@@ -231,7 +231,7 @@ def _visual_toc_codex_cli(model: str, pngs: list[Path], prompt: str) -> str:
             args, capture_output=True, text=True, timeout=600,
             cwd=tempfile.gettempdir(), encoding="utf-8", errors="replace",
             input=prompt + "\n\n분석 과정 설명 없이 반드시 유효한 JSON 객체 하나만 출력하라.",
-            **llm._no_window_kwargs(),
+            env=llm._cli_env(), **llm._no_window_kwargs(),
         )
         if r.returncode != 0:
             raise RuntimeError(f"codex CLI exit {r.returncode}: {(r.stderr or '')[:300]}")
@@ -256,7 +256,7 @@ def _visual_toc_claude_cli(model: str, scan_pdf: Path, prompt: str) -> str:
          "--system-prompt", "Output only one valid JSON object."],
         capture_output=True, text=True, timeout=600, cwd=str(scan_pdf.parent),
         encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
-        **llm._no_window_kwargs(),
+        env=llm._cli_env(), **llm._no_window_kwargs(),
     )
     if r.returncode != 0:
         raise RuntimeError(f"claude CLI exit {r.returncode}: {(r.stderr or '')[:200]}")

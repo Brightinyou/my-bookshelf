@@ -337,11 +337,18 @@ def merge_up(ws_name: str, stem: str, idx: int) -> bool:
     return True
 
 
-def split_candidates(ws_name: str, stem: str, idx: int, limit: int = 40) -> list[tuple[int, str]]:
-    """이 장 안에서 '새 장이 시작될 만한 줄' 후보 [(문자위치, 줄)]."""
+def split_candidates(ws_name: str, stem: str, idx: int, limit: int = 40,
+                     query: str = "") -> tuple[list[tuple[int, str]], int]:
+    """이 장 안에서 '새 장이 시작될 만한 줄' 후보 ([(문자위치, 줄)], 후보 총수).
+
+    후보는 보통 수백~수천 줄이라 다 보여줄 수 없어 **문서 전체에 고르게** 솎아
+    낸다. 그런데 솎아 내면 정작 필요한 한 줄이 빠진다 — 『기술신학』에서 10장
+    첫 줄(`정든 인공지능과`)이 후보 1,025개 중 493번째였는데 limit을 400까지
+    올려도 표집에서 계속 빠졌다(2026-08-24). 그래서 **검색어**를 받는다:
+    검색어가 있으면 솎아 내지 않고 그 말이 든 줄만 앞에서부터 보여 준다."""
     files = chapter_files(ws_name, stem)
     if not (0 <= idx < len(files)):
-        return []
+        return [], 0
     text = files[idx].read_text(encoding="utf-8", errors="ignore")
     out: list[tuple[int, str]] = []
     pos = 0
@@ -350,10 +357,14 @@ def split_candidates(ws_name: str, stem: str, idx: int, limit: int = 40) -> list
         if pos > 200 and 2 <= len(s) <= 60 and not re.search(r"[.?!。,]$", s):
             out.append((pos, s))
         pos += len(raw)
-    if len(out) > limit:                      # 문서 전체에 고르게
-        step = len(out) / limit
+    q = re.sub(r"\s+", "", (query or "")).lower()
+    if q:                                     # 검색 — 표집하지 않는다
+        out = [(p, s) for p, s in out if q in re.sub(r"\s+", "", s).lower()]
+    total = len(out)
+    if total > limit:                         # 문서 전체에 고르게
+        step = total / limit
         out = [out[int(i * step)] for i in range(limit)]
-    return out
+    return out, total
 
 
 def split_chapter(ws_name: str, stem: str, idx: int, at: int, new_title: str = "") -> bool:

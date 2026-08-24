@@ -31,7 +31,9 @@ from version import APP_VERSION
 
 # ── 처리 로직 서비스 (2026-07-03 pipeline_app.py에서 분리) ──
 # UI 코드가 기존 이름 그대로 쓰도록 명시적으로 재노출한다.
+from services import ai_ocr
 from services import chapter_map as cmap
+from services import textquality
 from services import toc as toc_svc
 from services import wiki as wiki_svc
 from services.common import (
@@ -818,7 +820,8 @@ _NEXT_TAB = {"2_split": "split2", "3_translate": "tr3", "4_summary": "summ4", "5
 def _set_stage_completion(title: str, message: str, next_stage: str | None = None,
                           open_target: Path | None = None, kind: str = "success",
                           question: str | None = None, next_items: list | None = None,
-                          open_label: str | None = None, open_action=None) -> None:
+                          open_label: str | None = None, open_action=None,
+                          choices: list | None = None) -> None:
     st.session_state["_stage_completion"] = {
         "title": title,
         "message": message,
@@ -833,6 +836,9 @@ def _set_stage_completion(title: str, message: str, next_stage: str | None = Non
         # (예: 방금 만든 DOCX 파일 바로 열기, Obsidian 노트 바로 열기, 2026-07-25)
         "open_label": open_label,
         "open_action": open_action,
+        # 다음 단계로 넘기는 것 말고 다른 선택지를 물어야 할 때 쓴다 —
+        # [{"label":…, "icon":…, "action": 콜러블, "primary": bool}, …] (2026-08-24)
+        "choices": choices,
     }
 
 
@@ -972,6 +978,23 @@ def _render_stage_completion_notice() -> None:
         _q = payload.get("question")
         _nb = payload.get("next_stage")
         _nt = payload.get("next_tab")
+        _choices = payload.get("choices")
+        if _q and _choices:
+            # 다음 단계가 아니라 '지금 해야 할 다른 일'을 묻는 경우 (예: 불량 본문 재OCR)
+            st.markdown(f"### {_q}")
+            _cols = st.columns(len(_choices))
+            for _col, _ch in zip(_cols, _choices):
+                if _col.button(_ch["label"], icon=_ch.get("icon"),
+                               key=f"stage_choice_{_ch['label'][:12]}",
+                               use_container_width=True,
+                               type="primary" if _ch.get("primary") else "secondary"):
+                    _clear_stage_completion()
+                    _ch["action"]()
+            if st.button(t("닫기"), icon=":material/close:", key="stage_close3",
+                         use_container_width=True):
+                _clear_stage_completion()
+                st.rerun()
+            return
         if _q and _nb and _nt:
             # 대화형: 질문 + [예, 바로 진행](다음 단계 자동 실행) / [직접 화면에서 선택](이동만)
             st.markdown(f"### {_q}")
@@ -1251,10 +1274,18 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
         sp_idx = st.selectbox(
             t("나눌 장"), list(range(len(files))), key=f"{key}_spch_{book}",
             format_func=lambda i: f"{files[i].stem[:2]}. {cmap.chapter_title(files[i])}")
-        cands = cmap.split_candidates(DEFAULT_WS, book, sp_idx)
+        sp_q = st.text_input(
+            t("줄 검색 (새 장 제목의 한 토막)"), key=f"{key}_spq_{book}",
+            placeholder=t("예: 인공지능 — 비워 두면 문서 전체에서 고르게 보여 줍니다"),
+            help=t("목록은 고르게 솎아 낸 것이라 원하는 줄이 빠질 수 있습니다. "
+                   "새 장 첫 줄에 있을 만한 말을 넣어 찾으세요."))
+        cands, sp_total = cmap.split_candidates(DEFAULT_WS, book, sp_idx, query=sp_q)
         if not cands:
             st.info(t("이 장에서는 새 장이 시작될 만한 줄을 찾지 못했습니다."))
         else:
+            if sp_total > len(cands):
+                st.caption(t("후보 {total}줄 중 {shown}줄만 보입니다 — 검색어를 좁혀 보세요.")
+                           .format(total=f"{sp_total:,}", shown=len(cands)))
             pick = st.selectbox(t("새 장이 시작되는 줄"), cands, key=f"{key}_spline_{book}",
                                 format_func=lambda c: f"{c[0]:>7,}자 · {c[1][:60]}")
             sp_title = st.text_input(t("새 장 제목"), value=pick[1][:50], key=f"{key}_sptitle_{book}")
@@ -1738,6 +1769,77 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
     return selected
 
 
+
+
+
+
+_TQ_CACHE: dict[tuple, object] = {}
+
+
+def _quality_of(path, text: str = ""):
+    """책 한 권의 진단 — 파일 수정 시각으로 캐시한다(리런마다 전문을 다시 훑지 않게)."""
+    p = Path(path)
+    try:
+        key = (str(p), p.stat().st_mtime_ns)
+    except OSError:
+        return textquality.Assessment()
+    if key not in _TQ_CACHE:
+        _TQ_CACHE[key] = (textquality.assess(unicodedata.normalize("NFC", text))
+                          if text else textquality.assess_file(p))
+    return _TQ_CACHE[key]
+
+def _df_height(rows: int, max_rows: int = 12) -> int:
+    """줄 수에 맞춘 st.dataframe 높이. 기본값은 줄이 몇이든 ~400px로 고정돼서
+    한두 줄짜리 표 아래가 통째로 빈칸이 된다 (2026-08-24)."""
+    return 38 + 36 * max(1, min(rows, max_rows))
+
+_AXIS_ICON = {"bad": "🔴", "suspect": "🟡", "ok": "🟢", "unknown": "⚪"}
+
+
+def _scan_text_quality(paths=None) -> list[dict]:
+    """변환된 본문 TXT를 진단해 표로 쓸 행 목록을 만든다 (2026-08-24).
+
+    paths=None이면 보관된 TXT를 전부 훑고, 목록을 주면 그것만 본다 — 변환 직후에는
+    방금 뽑은 책만 보여야 지난 책 수십 권이 딸려 오지 않는다."""
+    if paths is None:
+        seen, targets = set(), []
+        for d in (cfg.TXT_ARCHIVE_DIR, cfg.TXT_DIR):
+            if not d.exists():
+                continue
+            for f in sorted(d.rglob("*.txt")):
+                if _nfc(f.stem) in seen:
+                    continue
+                seen.add(_nfc(f.stem))
+                targets.append(f)
+    else:
+        targets = [Path(x) for x in paths if str(x).lower().endswith(".txt")]
+
+    rows = []
+    for f in targets:
+        a = textquality.assess_file(f)
+        rows.append({
+            "stem": _nfc(f.stem), "verdict": a.verdict, "badge": a.badge,
+            "pct": a.one_syllable_pct, "garble": a.garble_per_1k,
+            "word_loss": a.word_loss, "garble_v": a.garble, "summary": a.summary(),
+            "pdf": str(cfg.PDF_DIR / f"{f.stem}.pdf"), "txt": str(f),
+        })
+    rows.sort(key=lambda r: ({"bad": 0, "suspect": 1, "ok": 2}.get(r["verdict"], 3), r["pct"]))
+    return rows
+
+def _parse_page_range(text: str, max_page: int) -> list[int]:
+    """"200-210, 250" 같은 입력을 쪽 번호 목록으로. 범위 밖은 조용히 버린다."""
+    pages: set[int] = set()
+    for chunk in _re.split(r"[,\s]+", (text or "").strip()):
+        if not chunk:
+            continue
+        m = _re.fullmatch(r"(\d+)\s*[-~]\s*(\d+)", chunk)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            pages.update(range(min(a, b), max(a, b) + 1))
+        elif chunk.isdigit():
+            pages.add(int(chunk))
+    return sorted(p for p in pages if 1 <= p <= max_page)
+
 def _translate_engine_radio(label: str, key: str) -> str:
     _avail = [(eid, lbl) for eid, lbl, av, _ in translate_engine_options() if av]
     _ids = [eid for eid, _lbl in _avail]
@@ -2017,19 +2119,54 @@ if _active_view in {"1_txt", "all_run"}:
                     st.error(f"❌ {_uf1.name}: {_r1['error']}")
                 _prog1.progress(_i1 / len(_to_run1))
             if _done_txt_paths1:
+                # 방금 뽑은 본문을 곧바로 진단한다 — 불량 텍스트 레이어를 그대로 퍼 온 것이
+                # 요약·EPUB·위키를 다 태운 뒤에야 드러나던 사고를 여기서 끊는다 (2026-08-24).
+                st.session_state["tq_rows"] = _scan_text_quality(_done_txt_paths1)
+                st.session_state.pop("tq_dismissed", None)
+                _bad_now1 = [r for r in st.session_state["tq_rows"] if r["verdict"] == "bad"]
                 _msg1 = tf("%d개 파일 처리를 마쳤습니다. 다음 단계에서 장별 분할을 진행하세요.", len(_done_txt_paths1))
+                if _bad_now1:
+                    _msg1 = tf("%d개 파일 처리를 마쳤습니다.", len(_done_txt_paths1)) + "\n\n" + tf(
+                        "🔴 그중 **%d권**은 본문 품질이 불량합니다(한 글자 낱말 누락). "
+                        "장별 분할로 넘어가기 전에 아래 «본문 품질 검사»를 확인하세요: %s",
+                        len(_bad_now1), ", ".join(r["stem"] for r in _bad_now1))
                 if _notes1:
                     _msg1 += "\n\n" + t("⚠️ 일부 문서는 처리 중 특이사항이 있었습니다 (자동 보정됨):") \
                              + "\n\n" + "\n".join(f"- {x}" for x in _notes1)
                 if _ocr_needed1:
                     _msg1 += "\n\n" + tf("⚠️ 다음 %d개 문서는 이미지로만 되어 있어 OCR 사전 처리가 필요합니다: %s",
                                          len(_ocr_needed1), ", ".join(_ocr_needed1))
+                # 🔴 불량본이 있으면 다음 단계가 아니라 **재OCR**을 묻는다 —
+                # 분할·번역·요약·EPUB·위키가 전부 이 TXT에서 파생되므로, 불량인 채로
+                # 넘기면 나중에 되돌릴 때 파생물을 전부 다시 만들어야 한다 (2026-08-24).
+                if _bad_now1:
+                    def _yes_reocr1(_items=[_nfc(p.stem) for p in _done_txt_paths1]):
+                        st.session_state.pop("tq_dismissed", None)
+                        st.rerun()
+
+                    def _no_split1(_items=[_nfc(p.stem) for p in _done_txt_paths1]):
+                        st.session_state["tq_dismissed"] = True
+                        st.session_state["_autostart_tab"] = _NEXT_TAB.get("2_split")
+                        st.session_state["_autostart_items"] = _items
+                        _goto_view("2_split")
+
+                    _q1 = tf("🔴 %d권은 본문이 불량합니다. AI로 다시 읽을까요?", len(_bad_now1))
+                    _choices1 = [
+                        {"label": t("예, AI로 다시 읽기"), "icon": ":material/auto_fix_high:",
+                         "action": _yes_reocr1, "primary": True},
+                        {"label": t("아니요, 이대로 분할"), "icon": ":material/arrow_forward:",
+                         "action": _no_split1},
+                    ]
+                else:
+                    _q1, _choices1 = t("이어서 장별로 분할할까요?"), None
                 _set_stage_completion(
                     t("1-TXT변환 완료"),
                     _msg1,
                     next_stage="2_split",
                     open_target=_stage_folder("1_txt"),
-                    question=t("이어서 장별로 분할할까요?"),
+                    question=_q1,
+                    choices=_choices1,
+                    kind="warning" if _bad_now1 else "success",
                     next_items=[_nfc(p.stem) for p in _done_txt_paths1],
                 )
             elif _ocr_needed1:
@@ -2037,6 +2174,145 @@ if _active_view in {"1_txt", "all_run"}:
             st.rerun()
     else:
         st.info(t("대기 중인 파일 없음 — 위에서 PDF를 업로드하세요."))
+
+    st.divider()
+
+    # ── 🔬 본문 품질 검사 + AI 재OCR (2026-08-24) ─────────────────
+    # 접어 둔 채로 아래에 두면 아무도 안 본다. 변환이 끝나면 자동으로 진단해서
+    # 여기에 결과를 펼치고, 불량이면 "다시 읽을까요?" 하고 물어본 뒤에 실행한다.
+    _rows_tq = st.session_state.get("tq_rows")
+    st.markdown("#### 🔬 " + t("본문 품질 검사"))
+    if _rows_tq is None:
+        st.caption(t("두 가지를 따로 봅니다 — **낱말 유실**(수·것·될 같은 한 글자 낱말이 "
+                     "통째로 빠짐, 정상 7~25%)과 **문자 깨짐**(기合·디지!i처럼 글자가 뭉개짐). "
+                     "실측상 둘은 서로 무관해서 각자 기준으로 재고 나쁜 쪽을 따릅니다."))
+        if st.button(t("이미 변환해 둔 책도 검사하기"), icon=":material/science:", key="tq_scan"):
+            st.session_state["tq_rows"] = _scan_text_quality(None)
+            st.session_state.pop("tq_dismissed", None)
+            st.rerun()
+    else:
+        _bad_tq = [r for r in _rows_tq if r["verdict"] == "bad"]
+        _sus_tq = [r for r in _rows_tq if r["verdict"] == "suspect"]
+        _shown_tq = [r for r in _rows_tq if r["verdict"] != "unknown"]
+        st.markdown(tf("🔴 재OCR 필요 **%d권** · 🟡 확인 권장 %d권 · 🟢 정상 %d권",
+                       len(_bad_tq), len(_sus_tq),
+                       sum(1 for r in _rows_tq if r["verdict"] == "ok")))
+        if _shown_tq:
+            st.dataframe(
+                pd.DataFrame([{"": r["badge"], t("책"): r["stem"],
+                               t("낱말 유실"): _AXIS_ICON.get(r["word_loss"], "⚪")
+                                              + f' {r["pct"]:.2f}%',
+                               t("문자 깨짐"): _AXIS_ICON.get(r["garble_v"], "⚪")
+                                              + f' {r["garble"]:.1f}/천자',
+                               t("진단"): r["summary"]}
+                              for r in _shown_tq]),
+                use_container_width=True, hide_index=True,
+                height=_df_height(len(_shown_tq)))
+        if st.button(t("다시 검사"), icon=":material/refresh:", key="tq_rescan"):
+            st.session_state["tq_rows"] = _scan_text_quality(None)
+            st.session_state.pop("tq_dismissed", None)
+            st.rerun()
+
+        # ── 불량본이 있으면 물어본다 ──
+        if _bad_tq and not st.session_state.get("tq_dismissed"):
+            st.warning(t("이 책들은 원본 PDF에 구워져 있던 불량 OCR 레이어를 그대로 가져온 상태라 "
+                         "손볼 방법이 없습니다. 원본 이미지에서 **AI로 다시 읽어야** 합니다."))
+            _sel_tq = st.selectbox(
+                t("다시 읽을 책"), _bad_tq, key="tq_book",
+                format_func=lambda r: f'{r["badge"]} {r["stem"]}')
+            _pdf_tq = Path(_sel_tq["pdf"])
+            if not _pdf_tq.exists():
+                st.error(t("원본 PDF를 찾지 못했습니다 — 이미지에서 다시 읽을 수 없습니다.")
+                         + f"  ({_pdf_tq})")
+            else:
+                _npages_tq = ai_ocr.page_count(_pdf_tq)
+                _prov_opts = list(llm.CLI_PROVIDERS) + list(llm.API_PROVIDERS)
+                _prov_lbl = {"codex_cli": t("Codex CLI (구독 · 추가 과금 없음)"),
+                             "claude_cli": t("Claude CLI (구독 · 추가 과금 없음)")}
+                _prov_tq = st.radio(
+                    t("판독 공급자"), _prov_opts, horizontal=True, key="tq_prov",
+                    format_func=lambda p: _prov_lbl.get(p, f"{p} API"))
+                _cost_tq = ai_ocr.cost_notice(_prov_tq, _npages_tq)
+                if _cost_tq:
+                    st.warning(_cost_tq)
+                    _ok_cost = st.checkbox(
+                        t("비용이 발생하는 것을 이해했고 그대로 진행합니다"), key="tq_cost_ok")
+                else:
+                    _ok_cost = True
+                    st.success(t("구독형 CLI라 쪽수만큼 시간이 들 뿐 추가 과금은 없습니다."))
+
+                _c1_tq, _c2_tq = st.columns(2)
+                _mode_tq = _c1_tq.radio(
+                    t("범위"), ["sample", "all", "range"], key="tq_mode",
+                    format_func=lambda m: {"sample": t("시험 3쪽"), "all": t("전체"),
+                                           "range": t("쪽 지정")}[m])
+                if _mode_tq == "range":
+                    _rng_tq = _c2_tq.text_input(t("쪽 번호 (예: 200-210, 250)"), key="tq_range")
+                    _pages_tq = _parse_page_range(_rng_tq, _npages_tq)
+                elif _mode_tq == "sample":
+                    _mid_tq = max(1, _npages_tq // 2)
+                    _pages_tq = [_mid_tq, _mid_tq + 1, _mid_tq + 2]
+                else:
+                    _pages_tq = None
+                _cnt_tq = len(_pages_tq) if _pages_tq else _npages_tq
+                _c2_tq.metric(t("판독할 쪽"), f"{_cnt_tq:,} / {_npages_tq:,}")
+                st.caption(tf("쪽당 20~40초쯤 걸립니다 — %d쪽이면 대략 %d분.",
+                              _cnt_tq, max(1, _cnt_tq * 30 // 60)))
+
+                _running_tq = ai_ocr.is_running(_pdf_tq)
+                _out_tq = cfg.TXT_ARCHIVE_DIR / f"{_pdf_tq.stem}.txt"
+                _b1_tq, _b2_tq, _b3_tq = st.columns(3)
+                if _b1_tq.button(t("예, 다시 읽겠습니다"), icon=":material/play_arrow:",
+                                 key="tq_go", disabled=_running_tq or not _ok_cost,
+                                 type="primary"):
+                    _bak_tq = _out_tq.with_suffix(".txt.before_reocr")
+                    if _out_tq.exists() and not _bak_tq.exists():
+                        shutil.copy2(_out_tq, _bak_tq)      # 옛 본문은 반드시 남긴다
+                    ai_ocr.start_background(_pdf_tq, _out_tq, _prov_tq, "", _pages_tq)
+                    st.rerun()
+                if _b2_tq.button(t("중단"), icon=":material/stop:", key="tq_stop",
+                                 disabled=not _running_tq):
+                    ai_ocr.request_stop(_pdf_tq)
+                    st.info(t("현재 쪽을 마치고 멈춥니다. 다시 시작하면 이어서 합니다."))
+                if _b3_tq.button(t("아니요, 이대로 진행"), key="tq_skip", disabled=_running_tq):
+                    st.session_state["tq_dismissed"] = True
+                    st.rerun()
+
+                _st_tq = ai_ocr.status(_pdf_tq)
+                if _running_tq:
+                    _done_tq, _tot_tq = _st_tq.get("done", 0), max(1, _st_tq.get("total", 1))
+                    st.progress(_done_tq / _tot_tq,
+                                text=tf("%d / %d쪽 · 현재 %d쪽", _done_tq, _tot_tq,
+                                        _st_tq.get("page", 0)))
+                    time.sleep(3)
+                    st.rerun()
+                elif _st_tq.get("error"):
+                    st.error(_st_tq["error"])
+
+                # ── 검증 보고 ──
+                _rep_tq = ai_ocr.load_report(_out_tq)
+                if _rep_tq:
+                    _warn_tq = [r for r in _rep_tq if r.status == "warn"]
+                    _fail_tq = [r for r in _rep_tq if r.status == "failed"]
+                    st.markdown(tf("**판독 결과** — 정상 %d쪽 · ⚠️ 확인 필요 %d쪽 · 실패 %d쪽",
+                                   sum(1 for r in _rep_tq if r.status == "ok"),
+                                   len(_warn_tq), len(_fail_tq)))
+                    if _warn_tq or _fail_tq:
+                        st.warning(t("아래 쪽은 원본과 어긋나 환각이 섞였을 수 있습니다. "
+                                     "본문은 그대로 두었으니 직접 확인하세요."))
+                        st.dataframe(
+                            pd.DataFrame([{t("쪽"): r.page, t("상태"): r.status,
+                                           t("유사도"): r.similarity,
+                                           t("글자수"): f"{r.chars} / {r.base_chars}",
+                                           t("사유"): r.note}
+                                          for r in (_warn_tq + _fail_tq)]),
+                            use_container_width=True, hide_index=True)
+                    _new_tq = textquality.assess_file(_out_tq)
+                    st.info(f"{_new_tq.badge} " + t("재OCR 후 진단: ") + _new_tq.summary())
+                    st.caption(t("옛 본문은 `.before_reocr` 로 남겨 두었습니다. "
+                                 "결과가 좋으면 챕터 분할부터 다시 진행하세요."))
+        elif _bad_tq:
+            st.caption(t("불량본을 그대로 두고 진행하기로 했습니다. 「다시 검사」를 누르면 다시 물어봅니다."))
 
     st.divider()
 
@@ -2054,6 +2330,7 @@ if _active_view in {"1_txt", "all_run"}:
                     try: _ff1.unlink()
                     except Exception: pass
                     st.rerun()
+
 
     st.info(t("💡 다음 단계: **📂 챕터 분할**으로 이동하세요"))
 
@@ -2201,6 +2478,7 @@ if _active_view == "2_split":
     _q2_stems = queue_list("tab2_ready")
     _split_pend2: list[dict] = []
     _split_short2: list[dict] = []
+    _split_bad_quality2: list[str] = []
     _txt_root2 = cfg.TXT_DIR
 
     # 큐에 없어도 1_txt/에 있는 TXT 모두 포함
@@ -2239,13 +2517,32 @@ if _active_view == "2_split":
         if _already2:  # 건너뛰기로 이미 응답함 — 조용히 제외
             continue
         _src2 = _txt2.read_text(encoding="utf-8", errors="ignore")
-        _item2 = {"key": _stem2, "label": _stem2, "meta": _meta2,
+        # 불량 본문을 그대로 분할하면 아래 파생물(번역·요약·EPUB·위키)을 전부 다시
+        # 만들어야 한다 — 목록에서 바로 보이게 배지를 단다 (2026-08-24)
+        _q2 = _quality_of(_txt2, _src2)
+        _label2 = _stem2 if _q2.verdict in ("ok", "unknown") else f"{_q2.badge} {_stem2}"
+        _meta2q = _meta2 + (f" · {_q2.badge} " + t("본문 품질 확인 필요")
+                            if _q2.verdict == "bad" else "")
+        _item2 = {"key": _stem2, "label": _label2, "meta": _meta2q,
                   "obj": {"ws": DEFAULT_WS, "stem": _stem2}}
+        if _q2.verdict == "bad":
+            _split_bad_quality2.append(_stem2)
         if _is_small_document_for_whole_translation(_src2):
             _item2["text"] = _src2
             _split_short2.append(_item2)
         else:
             _split_pend2.append(_item2)
+
+    if _split_bad_quality2:
+        st.warning("🔴 " + tf(
+            "다음 %d권은 본문 품질이 불량합니다(한 글자 낱말 누락·글자 깨짐). 이대로 분할하면 "
+            "번역·요약·EPUB·위키까지 불량 본문으로 만들어집니다 — **1-텍스트 변환** 탭의 "
+            "«🔬 본문 품질 검사»에서 AI로 다시 읽는 편이 낫습니다: %s",
+            len(_split_bad_quality2), ", ".join(_split_bad_quality2)))
+        if st.button(t("1-텍스트 변환으로 이동"), icon=":material/auto_fix_high:",
+                     key="split2_goto_tq"):
+            st.session_state.pop("tq_dismissed", None)
+            _goto_view("1_txt")
 
     if _split_dup_unconfirmed2:
         st.warning(t(
