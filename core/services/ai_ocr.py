@@ -243,6 +243,33 @@ def verify(ai_text: str, base_text: str) -> tuple[str, float, str]:
     return "ok", sim, ""
 
 
+# 심판(로컬 판독)이 AI 판독을 이만큼 뒷받침하면 기준선이 깨진 것으로 본다.
+JUDGE_BACKS_AI = 0.85
+
+
+def judged_verdict(status: str, sim: float, note: str,
+                   ai_text: str, judge: str) -> tuple[str, str]:
+    """유사도가 낮아 경고가 붙은 쪽을 **심판에게 되물어** 가른다.
+
+    ★`garble_rate` 관문만으로는 부족했다. 이 책의 불량 텍스트 레이어는 글자가
+    깨진 게 아니라 **1음절 낱말이 통째로 빠진** 것이라(`할 수 있`=0회) 깨짐률이
+    낮게 나온다. 실측: 51·210·217·261·264·314쪽이 깨짐률 1.9~14.6으로 임계 15에
+    못 미쳐 `warn`으로 남았는데, **여섯 쪽 모두 AI가 옳았다**(AI↔Vision 0.936~0.977).
+
+    유사도 하나로는 "AI가 환각을 봤나, 기준선이 깨졌나"를 구분할 수 없다.
+    **심판은 그 둘을 공짜로 가른다** — 기준선과 무관한 제3의 판독이기 때문이다.
+    (2026-08-25)"""
+    if status != "warn" or not judge.strip() or not ai_text.strip():
+        return status, note
+    if "유사도" not in note:            # 분량 경고 등은 심판이 답할 문제가 아니다
+        return status, note
+    if similarity(ai_text, judge) >= JUDGE_BACKS_AI:
+        return ("unverified",
+                f"원본 레이어와 어긋나지만(유사도 {sim:.2f}) 로컬 판독과 일치 — "
+                "AI 판독을 채택했습니다")
+    return status, note
+
+
 # ── 2회 판독 대조 ────────────────────────────────────────────
 # 같은 쪽을 두 번 읽으면 **모델이 확신하는 자리는 같게, 헷갈리는 자리는 다르게**
 # 나온다. 실측(2026-08-24): 같은 쪽을 설정을 바꿔 가며 여러 번 읽었더니 오독 위치가
@@ -626,9 +653,25 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
         except Exception:
             pass
 
-    todo = [pg for pg in targets
-            if not ((wd / f"p{pg:04d}.txt").exists()
-                    and results.get(pg) and results[pg].status != "failed")]
+    def _already_read(pg: int) -> bool:
+        """이미 읽은 쪽인가 — 건너뛸지 판단한다.
+
+        ★**파일이 있다고 다 읽은 게 아니다.** 판독이 통째로 비면 0바이트 파일이
+        남는데, 그것이 `warn`으로 기록되면 `status != "failed"`를 통과해 **재실행
+        때마다 영원히 건너뛰어진다.** 실제로 59쪽이 그렇게 두 번의 전체 재실행을
+        빠져나갔다(2026-08-25). `status=failed` 캐시 버그와 같은 뿌리다.
+
+        다만 **진짜 빈 쪽은 다시 읽지 않는다** — 간지·백지는 `verify()`가 `ok`로
+        판정하며(10쪽), 그건 0바이트가 맞는 답이다."""
+        f = wd / f"p{pg:04d}.txt"
+        if not f.exists():
+            return False
+        r = results.get(pg)
+        if not r or r.status == "failed":
+            return False
+        return f.stat().st_size > 0 or r.status == "ok"
+
+    todo = [pg for pg in targets if not _already_read(pg)]
 
     def _one(batch: list[int]) -> list[PageResult]:
         """한 묶음(여러 쪽)을 한 번의 호출로 판독한다 — 워커에서 돈다.
@@ -669,6 +712,8 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
                                       "묶음 응답에 이 쪽이 없습니다 — 다시 시도하세요"))
                 continue
             status, sim, note = verify(text, base)
+            status, note = judged_verdict(status, sim, note, text,
+                                          judges[batch.index(pg)])
             (wd / f"p{pg:04d}.txt").write_text(text, encoding="utf-8")
             if diffs and status == "ok":
                 # 유사도는 통과했지만 두 판독이 어긋났다 — 낱말 바꿔치기는 유사도로
