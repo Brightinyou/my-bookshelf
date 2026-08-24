@@ -50,6 +50,18 @@ class SafeTitleTest(unittest.TestCase):
         got = _safe(t)
         self.assertFalse(got.endswith("낱"), got)
 
+    def test_작은따옴표는_그대로_쓸_수_있다(self):
+        """★파일 이름에 써도 되는 글자다 — 윈도우 `explorer /select,"…"`에서도
+        큰따옴표 안이라 안전하고, 옵시디언 URI는 인코딩되며, EPUB 제목은 escape된다."""
+        self.assertEqual(_safe("지역 가치로서 '정'"), "지역 가치로서 '정'")
+        for q in ("‘정’", "『기술신학』", "「각주」", "“정”"):
+            self.assertIn(q, _safe(f"제목 {q} 끝"))
+
+    def test_곧은_큰따옴표는_둥근_따옴표로_짝지어_바꾼다(self):
+        """`-`로 바꾸면 `- 정 -`이 되어 흉하다. 뜻이 남게 둥근 따옴표로 바꾼다."""
+        self.assertEqual(_safe('그는 "정"이라 불렀다'), "그는 “정”이라 불렀다")
+        self.assertEqual(_safe('"앞"과 "뒤"'), "“앞”과 “뒤”")
+
     def test_빈_제목은_기본값(self):
         self.assertEqual(_safe("   "), "제목없음")
         self.assertEqual(_safe(":::"), "제목없음")

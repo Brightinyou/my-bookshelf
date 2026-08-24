@@ -62,6 +62,18 @@ _SPACES = re.compile(r"\s{2,}")
 MAX_TITLE_BYTES = 180
 
 
+def _pair_quotes(title: str) -> str:
+    """곧은 큰따옴표를 여는/닫는 둥근 따옴표로 짝지어 바꾼다."""
+    out, opening = [], True
+    for ch in title:
+        if ch == '"':
+            out.append("\u201c" if opening else "\u201d")
+            opening = not opening
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _cut_bytes(s: str, limit: int) -> str:
     """UTF-8 바이트로 잘라 낸다 — **낱말 한복판에서 자르지 않는다.**
 
@@ -83,7 +95,12 @@ def _safe(title: str) -> str:
     # ★바꾼 자리에만 여백을 준다. `-`로만 바꾸면 `전망-인간과`처럼 붙고, 그렇다고
     # 하이픈 전체를 손보면 **원래 제목에 있던 하이픈까지 망가진다**
     # (`co-evolution` → `co - evolution`).
-    t = _ILLEGAL.sub(" - ", title)
+    # ★곧은 큰따옴표만은 `-`로 바꾸면 흉하다(`"정"` → `- 정 -`). 파일 이름에 쓸 수
+    # 있는 **둥근 따옴표로 짝지어** 바꾼다 — 뜻이 그대로 남는다. 곧은 작은따옴표(`'`)는
+    # 파일 이름에 써도 되므로 손대지 않는다(윈도우 `explorer /select,"…"`에서도
+    # 큰따옴표 안이라 안전하다).
+    t = _pair_quotes(title)
+    t = _ILLEGAL.sub(" - ", t)
     t = _SPACES.sub(" ", t).strip()
     return _cut_bytes(t, MAX_TITLE_BYTES).strip(" .,:-") or "제목없음"
 
