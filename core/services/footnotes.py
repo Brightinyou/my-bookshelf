@@ -12,8 +12,20 @@
     으로 이어진다 (`16 …` 줄바꿈 `17 …` 줄바꿈 `18 …`).
   · 그 둘은 **같은 쪽이나 바로 다음 쪽 안에서** 짝을 이룬다.
 
-세 단서가 다 맞을 때만 각주로 본다. 하나라도 어긋나면 **손대지 않는다** — 본문
-숫자를 잘못 각주로 바꾸면 되돌릴 수가 없다.
+**확신도로 가른다.** 줄 첫머리 숫자를 찾았다고 다 각주는 아니다 — 쪽번호와
+러닝헤더도 그 모양이다(실측 레비나스 110쪽 `110 대화의 철학과 세인 철학`).
+그래서 두 신호 중 **하나라도 있어야** 각주로 본다:
+
+    ① 본문에 그 번호가 참조로 박혀 있다              ← 가장 강한 신호
+    ② 번호가 이어지고(39·40·41) **마침표로 끝난다**  ← 둘을 함께 봐야 한다
+
+②에서 마침표를 함께 요구하는 이유: 러닝헤더도 쪽마다 번호가 2씩 늘어 연번처럼
+보인다(110·112·114). 그런데 **각주는 문장이거나 서지사항이라 마침표로 끝나고**
+러닝헤더는 그렇지 않다. 연번은 쪽 안에서만이 아니라 **책 전체를 쪽 순서로 훑어**
+잇는다 — 쪽마다 각주가 하나씩이면 쪽 안에서는 늘 '단독'이라 놓치기 때문이다.
+
+둘 다 없으면 떼어냈던 것을 **본문으로 되돌린다.** 잘못 떼면 되돌릴 수 없다.
+services/layout이 "이 쪽엔 각주가 없다"고 알려 주면 아예 찾지도 않는다.
 """
 
 import re
@@ -29,6 +41,10 @@ _REF_IN_TEXT = re.compile(r"(?<=[.,!?)\]”’\"'가-힣])(\d{1,3})(?=[\s.,)\]�
 
 # 각주 블록으로 인정할 최소 조건 — 한 줄짜리 우연을 걸러낸다
 MIN_NOTE_CHARS = 12
+# ★각주는 문장이거나 서지사항이라 **마침표로 끝난다**(사용자 관찰).
+# 러닝헤더는 안 그렇다 — `110 대화의 철학과 세인 철학`엔 마침표가 없다.
+# 닫는 따옴표·괄호·쪽수 뒤에 마침표가 오는 서지 형식도 함께 받는다.
+_ENDS_LIKE_NOTE = re.compile(r"[.。!?][\s”’\"')\]』」]*$")
 # 짝을 찾을 범위(쪽) — 각주가 다음 쪽으로 넘어가는 일이 흔하다
 PAIR_WINDOW = 1
 
@@ -92,12 +108,19 @@ def _split_notes(page: str) -> tuple[str, list[tuple[int, str]]]:
     return head, notes
 
 
-def convert(text: str) -> Result:
-    """쪽 구분(`\\f`)이 있는 본문을 Markdown으로. 각주는 `[^n]` / `[^n]: …`."""
+def convert(text: str, has_notes: list[bool] | None = None) -> Result:
+    """쪽 구분(`\\f`)이 있는 본문을 Markdown으로. 각주는 `[^n]` / `[^n]: …`.
+
+    has_notes를 주면(services/layout이 줄 간격으로 잰 결과) **각주가 없는 쪽에서는
+    아예 찾지 않는다.** 줄 첫머리 숫자는 쪽번호·러닝헤더에도 흔해서(`110 대화의
+    철학과 세인 철학`) 텍스트만 보고는 헷갈린다."""
     pages = text.split(PAGE_SEP)
     bodies: list[str] = []
     found: list[Note] = []
     for pi, page in enumerate(pages):
+        if has_notes is not None and pi < len(has_notes) and not has_notes[pi]:
+            bodies.append(page.rstrip())          # 각주 없는 쪽 — 손대지 않는다
+            continue
         head, notes = _split_notes(page)
         bodies.append(head)
         found += [Note(n, b, pi) for n, b in notes]
@@ -112,7 +135,37 @@ def convert(text: str) -> Result:
         used.add(key)
         keys[id(nt)] = key
 
-    linked, orphan = 0, []
+    # ★번호가 이어지면 그것만으로도 각주다운 신호다.
+    # 사용자 관찰: "연속되는 숫자들이 맨 앞에 있으면 각주일 가능성이 높고, 본문에
+    # 그 숫자가 있으면 더더욱. **앞서 각주로 확인한 번호의 다음 숫자가 각주로
+    # 이어져야 한다.**"
+    #
+    # 그래서 두 가지로 본다:
+    #   · 같은 쪽 안에서 이웃(39·40·41)
+    #   · ★**쪽을 넘어 이어지는 흐름** — 30쪽 39, 31쪽 40, 32쪽 41처럼 쪽마다
+    #     하나씩이면 쪽 안에서는 늘 '단독'이라 놓친다. 책 전체를 쪽 순서로 훑어야
+    #     비로소 연번인 줄 안다.
+    run_mates: set[tuple[int, int]] = set()      # (쪽, 번호)
+    by_page: dict[int, list[Note]] = {}
+    for nt in found:
+        by_page.setdefault(nt.page, []).append(nt)
+    for pi, group in by_page.items():
+        nums = sorted(n.num for n in group)
+        for i, v in enumerate(nums):
+            if ((i > 0 and v - nums[i - 1] <= 2)
+                    or (i + 1 < len(nums) and nums[i + 1] - v <= 2)):
+                run_mates.add((pi, v))
+
+    ordered = sorted(found, key=lambda n: (n.page, n.num))
+    prev: Note | None = None
+    for nt in ordered:
+        if prev is not None and 0 < nt.num - prev.num <= 2:
+            run_mates.add((nt.page, nt.num))
+            run_mates.add((prev.page, prev.num))   # 앞 것도 같이 확정된다
+        prev = nt
+
+    linked, orphan, rejected = 0, [], []
+    kept: list[Note] = []
     for nt in found:
         key = keys[id(nt)]
         # 같은 쪽부터 앞뒤 PAIR_WINDOW쪽까지 훑어 본문 참조를 찾는다
@@ -129,9 +182,21 @@ def convert(text: str) -> Result:
                 break
         if hit:
             linked += 1
-        else:
+            kept.append(nt)
+        elif (nt.page, nt.num) in run_mates and _ENDS_LIKE_NOTE.search(nt.text):
+            # 연번이고 **마침표로 끝난다** — 본문 참조는 못 찾았어도 각주로 본다.
+            # 마침표를 함께 요구하는 이유: 러닝헤더도 쪽마다 번호가 2씩 늘어
+            # 연번처럼 보인다(110·112·114). 그런데 러닝헤더는 마침표가 없다.
             orphan.append(nt.num)
+            kept.append(nt)
+        else:
+            # 홀로 뜬 숫자에 본문 참조도 없다 — 쪽번호·러닝헤더일 공산이 크다.
+            # 각주로 떼어낸 것을 **본문으로 되돌린다.** 잘못 떼면 되돌릴 수 없다.
+            rejected.append(nt)
+
+    for nt in rejected:
+        bodies[nt.page] = (bodies[nt.page].rstrip() + "\n\n" + f"{nt.num} {nt.text}").strip()
 
     md = ("\n\n".join(b.strip() for b in bodies if b.strip())
-          + ("\n\n" + "\n\n".join(f"[^{keys[id(n)]}]: {n.text}" for n in found) if found else ""))
-    return Result(md, found, linked, orphan)
+          + ("\n\n" + "\n\n".join(f"[^{keys[id(n)]}]: {n.text}" for n in kept) if kept else ""))
+    return Result(md, kept, linked, orphan)

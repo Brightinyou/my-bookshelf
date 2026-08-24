@@ -646,8 +646,16 @@ def assemble(pdf_path: Path, out_txt: Path, total_pages: int | None = None) -> P
     # 각주를 살린 Markdown도 함께 낸다 — TXT는 각주 번호가 본문에 맨숫자로 박혀
     # 나중에 인용할 때 사람이 매번 되짚어야 한다 (services/footnotes 머리말 참고).
     try:
-        from services import footnotes
-        res = footnotes.convert(body)
+        from services import footnotes, layout
+        # 각주가 있는 쪽인지 줄 간격으로 미리 재 둔다 — 쪽번호·러닝헤더를 각주로
+        # 오인하는 것을 막는다(services/layout 머리말 참고)
+        flags = []
+        for i in range(total_pages):
+            try:
+                flags.append(layout.analyze(pdf_path, i, _PDF_LOCK).has_notes)
+            except Exception:
+                flags.append(True)          # 못 재면 판단을 미루고 텍스트로만 본다
+        res = footnotes.convert(body, flags)
         if res.notes:
             out_txt.with_suffix(".md").write_text(res.markdown, encoding="utf-8")
             append_log(f"각주 {len(res.notes)}개 중 {res.linked}개를 본문과 이어 "

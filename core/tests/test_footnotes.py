@@ -54,3 +54,111 @@ class FootnoteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LayoutHintTest(unittest.TestCase):
+    """레이아웃 힌트 — 각주가 없다고 알려 준 쪽은 아예 안 본다.
+
+    줄 첫머리 숫자는 쪽번호·러닝헤더에도 흔하다(실측 레비나스 110쪽
+    `110 대화의 철학과 세인 철학`). 텍스트만 보고는 각주와 구별할 수 없다.
+    """
+
+    RUNNING_HEAD = "본문이 이어진다 어쩌고 저쩌고 계속된다\n\n110 대화의 철학과 세인 철학"
+
+    def test_각주없음_힌트를_주면_건드리지_않는다(self):
+        r = footnotes.convert(self.RUNNING_HEAD, has_notes=[False])
+        self.assertEqual(r.notes, [])
+        self.assertIn("110 대화의 철학과 세인 철학", r.markdown)
+
+    def test_힌트가_없어도_확신도로_걸러진다(self):
+        """힌트는 거들 뿐이다 — 본문 참조도 연번도 없으면 어차피 각주로 안 본다."""
+        r = footnotes.convert(self.RUNNING_HEAD)
+        self.assertEqual(len(r.notes), 0)
+        self.assertIn("110 대화의 철학과 세인 철학", r.markdown)
+
+    def test_힌트가_짧아도_망가지지_않는다(self):
+        """힌트 목록이 쪽 수보다 짧으면 나머지 쪽은 예전대로 텍스트로만 판단한다."""
+        two = (self.RUNNING_HEAD
+               + "\f보게 된다.39 이어진다\n\n39 벽돌이 만들어지는 기술 과정에서")
+        r = footnotes.convert(two, has_notes=[False])   # 둘째 쪽 힌트 없음
+        self.assertEqual(len(r.notes), 1)
+        self.assertIn("보게 된다.[^39]", r.markdown)
+
+
+class ConfidenceTest(unittest.TestCase):
+    """확신도 규칙 — 줄 첫머리 숫자를 찾았다고 다 각주는 아니다.
+
+    쪽번호와 러닝헤더가 똑같은 모양이다(실측 레비나스 110쪽
+    `110 대화의 철학과 세인 철학`). 본문 참조나 연번, 둘 중 하나는 있어야 한다.
+    """
+
+    def test_연번이고_본문참조도_있으면_각주(self):
+        t = ("보게 된다.39 그리고 이어진다.40 계속\n\n"
+             "39 벽돌이 만들어지는 기술 과정에서\n40 두 번째 각주 내용이 이어진다")
+        r = footnotes.convert(t)
+        self.assertEqual(len(r.notes), 2)
+        self.assertEqual(r.linked, 2)
+
+    def test_연번이고_마침표로_끝나면_본문참조가_없어도_각주(self):
+        """연번만으로는 부족하다 — 마침표까지 있어야 한다(러닝헤더와 가르는 조건)."""
+        t = ("본문이 이어진다 어쩌고\n\n"
+             "39 벽돌이 만들어지는 기술 과정에서 생각할 수 있어야 한다.\n"
+             "40 두 번째 각주 내용이 이어진다.")
+        r = footnotes.convert(t)
+        self.assertEqual(len(r.notes), 2)
+        self.assertEqual(r.orphan, [39, 40], "각주로는 보되 참조를 못 찾았다고 남긴다")
+
+    def test_연번이어도_마침표가_없으면_되돌린다(self):
+        t = ("본문이 이어진다 어쩌고\n\n"
+             "39 벽돌이 만들어지는 기술 과정에서\n40 두 번째 각주 내용이 이어진다")
+        r = footnotes.convert(t)
+        self.assertEqual(r.notes, [])
+
+    def test_단독이어도_본문참조가_있으면_각주(self):
+        t = "보게 된다.39 전통 신학에서는\n\n39 벽돌이 만들어지는 기술 과정에서"
+        r = footnotes.convert(t)
+        self.assertEqual(len(r.notes), 1)
+        self.assertIn("보게 된다.[^39]", r.markdown)
+
+    def test_단독인데_본문참조도_없으면_본문으로_되돌린다(self):
+        """러닝헤더를 각주로 떼어 가면 안 된다."""
+        t = "본문이 이어진다 어쩌고 저쩌고\n\n110 대화의 철학과 세인 철학"
+        r = footnotes.convert(t)
+        self.assertEqual(r.notes, [])
+        self.assertIn("110 대화의 철학과 세인 철학", r.markdown)
+        self.assertNotIn("[^110]", r.markdown)
+
+
+class SequenceAndPeriodTest(unittest.TestCase):
+    """연번은 책 전체로 잇고, 마침표로 러닝헤더와 가른다.
+
+    사용자 관찰 둘:
+      · "앞서 각주로 확인한 번호의 다음 숫자가 각주로 이어져야 한다"
+      · "보통 각주는 마침표로 끝난다 — 책 인용도, 문장도"
+    이 둘을 함께 봐야 한다. 러닝헤더도 쪽마다 번호가 2씩 늘어 연번처럼 보이지만
+    (110·112·114) 마침표가 없다.
+    """
+
+    def test_쪽마다_하나씩이어도_연번이면_잇는다(self):
+        """쪽 안에서는 늘 '단독'이라, 책 전체를 훑어야 연번인 줄 안다."""
+        t = ("본문 어쩌고\n\n39 첫 각주 내용이 여기 있다."
+             "\f본문 저쩌고\n\n40 두 번째 각주 내용이다."
+             "\f본문 그러하다\n\n41 세 번째 각주 내용이다.")
+        self.assertEqual(len(footnotes.convert(t).notes), 3)
+
+    def test_연번처럼_보여도_마침표가_없으면_러닝헤더다(self):
+        t = ("본문 어쩌고\n\n110 대화의 철학과 세인 철학"
+             "\f본문 저쩌고\n\n112 대화의 철학과 세인 철학")
+        r = footnotes.convert(t)
+        self.assertEqual(r.notes, [])
+        self.assertIn("110 대화의 철학과 세인 철학", r.markdown)
+
+    def test_서지사항도_마침표로_끝난다(self):
+        t = ("본문 어쩌고\n\n58 시몽동, 『기술적 대상들』, 71-73."
+             "\f본문 저쩌고\n\n59 황수영, “시몽동의 기술철학,” 86.")
+        self.assertEqual(len(footnotes.convert(t).notes), 2)
+
+    def test_본문참조가_있으면_마침표가_없어도_각주(self):
+        """본문 참조는 가장 강한 신호라 마침표 없이도 통과한다."""
+        t = "보게 된다.39 전통 신학에서는\n\n39 각주인데 마침표가 없다"
+        self.assertEqual(len(footnotes.convert(t).notes), 1)
