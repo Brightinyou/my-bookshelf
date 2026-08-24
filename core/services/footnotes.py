@@ -95,17 +95,116 @@ def _split_notes(page: str) -> tuple[str, list[tuple[int, str]]]:
     if not best:
         return page, []
 
-    head = "\n".join(lines[:best[0]]).rstrip()
+    head_lines = lines[:best[0]]
     notes: list[tuple[int, str]] = []
     for k, i in enumerate(best):
         end = best[k + 1] if k + 1 < len(best) else len(lines)
         m = _NOTE_LINE.match(lines[i].strip())
         body = " ".join(x.strip() for x in [m.group(2)] + lines[i + 1:end] if x.strip())
-        if len(body) >= MIN_NOTE_CHARS:
+        # ★길이만으로 자르면 **`위의 책, 12.`가 통째로 사라진다.** 한국 학술서에서
+        # 가장 흔한 각주 형식인데 11자라 임계(12자)에 걸렸다 — 실측 『기술신학』에서
+        # 68건이 Markdown에서 유실되고 있었다(2026-08-25). 짧아도 **연번 안에 있고
+        # 마침표로 끝나면** 각주다.
+        short_ok = len(best) >= 2 and bool(_ENDS_LIKE_NOTE.search(body))
+        if body and (len(body) >= MIN_NOTE_CHARS or short_ok):
             notes.append((int(m.group(1)), body))
+        else:
+            # ★각주로 못 본 줄은 **본문으로 되돌린다.** 어느 쪽도 아니면 글이 사라진다.
+            head_lines += lines[i:end]
+    head = "\n".join(head_lines).rstrip()
     if not notes:
         return page, []
     return head, notes
+
+
+# 문장이 끝난 모양 — 마침표·물음표·닫는 따옴표 따위로 맺혔는가.
+_SENTENCE_END = re.compile(r"""[.!?。…][\s"'”’)\]』」]*$|[”’"')\]』」]$""")
+# 붙일지 띄울지 가를 때 보는 한글 덩어리
+_HANGUL_TAIL = re.compile(r"[가-힣]+$")
+_HANGUL_HEAD = re.compile(r"^[가-힣]+")
+
+
+def ends_midsentence(text: str) -> bool:
+    """이 쪽이 **문장 도중에** 끝났는가."""
+    t = text.rstrip()
+    return bool(t) and not _SENTENCE_END.search(t)
+
+
+def join_across_break(left: str, right: str, lexicon: str = "") -> str:
+    """쪽 경계에서 끊긴 문장을 잇는다 — **붙일지 띄울지는 책 어휘로 가른다.**
+
+    ★한국어 책은 **어절 한복판에서도 줄이 바뀐다**(`…제본스의 역` / `설’인데`).
+    그래서 쪽 경계를 무조건 공백으로 이으면 낱말이 쪼개지고(`역 설`), 무조건 붙이면
+    어절이 뭉친다(`소위‘제본스의`). 둘 다 틀린다.
+
+    가르는 법: 왼쪽 끝 한글 덩어리와 오른쪽 첫 한글 덩어리를 **붙여 본 말이 이 책
+    어디에 실제로 나오면** 붙이고, 아니면 띄운다. 실측(『기술신학』 58/59쪽):
+        `역` + `설` → `역설`  책에 있음 → 붙인다 → `제본스의 역설’인데`  ✔
+    ★**판독이 틀렸을 때는 일부러 띄운다** — `역` + `철`(오독) → `역철`은 책에 없으니
+    `역 철’인데`가 되어 **눈에 띈다.** 확인을 도우려고 잇는 것이므로 이편이 낫다.
+
+    사전이 없으면 공백으로 잇는다(reflowlib.reflow와 같은 보수적 선택)."""
+    l, r = left.rstrip(), right.lstrip()
+    if not l or not r:
+        return l or r
+    mt, mh = _HANGUL_TAIL.search(l), _HANGUL_HEAD.search(r)
+    if lexicon and mt and mh:
+        merged = mt.group(0)[-4:] + mh.group(0)[:4]
+        if merged and merged in lexicon:
+            return l + r                      # 어절이 쪽에 걸쳐 쪼개졌다 — 붙인다
+    if l.endswith("-"):                       # 영문 하이픈 분철
+        return l[:-1] + r if r[:1].islower() else l + r
+    return l + " " + r
+
+
+def _first_para(page: str) -> tuple[str, str]:
+    """쪽을 (첫 문단, 나머지)로 가른다."""
+    parts = re.split(r"\n[ \t]*\n", page.lstrip(), maxsplit=1)
+    return (parts[0], parts[1] if len(parts) > 1 else "")
+
+
+def reflow_pages(text: str, has_notes: list[bool] | None = None,
+                 lexicon: str = "") -> str:
+    """쪽을 합칠 때 **각주가 문장을 끊지 않게** 다시 짠다 (2026-08-25 연구자 요청).
+
+    책은 쪽 아래에 각주를 두므로, 문장이 쪽을 넘어가면 판독 결과가 이렇게 된다:
+
+        …주목할 것은 소위 ‘제본스의 역        ← 문장이 중간에 끊긴다
+        35 Andy Clark, Natural-Born Cyborgs…
+        36 브린욜프슨 & 맥아피, 『제2의 기계시대』, 11.
+        37 위의 책, 12.\f설’인데, 영국의 경제학자…   ← 각주에 본문이 딱 붙는다
+
+    ★**문장이 완성되지 않으면 사람도 AI도 검증하지 못한다**(연구자 지적). 그래서
+    각주 위에서 끊긴 본문을 다음 쪽 첫 문단과 **먼저 잇고**, 각주 덩어리는 그 뒤로
+    내린다. 각주는 쪽 아래 붙임이지 문장 한복판의 삽입구가 아니다.
+
+    ★그리고 **각주 덩어리 뒤에는 반드시 빈 줄**을 둔다 — 그렇지 않으면 다음 본문이
+    서지사항에 이어 붙어 한 문단처럼 보인다(`37 위의 책, 12.설’인데,`).
+    """
+    pages = text.split(PAGE_SEP)
+    out: list[str] = []
+    # 앞 쪽이 첫 문단을 가져갔으면 이번 쪽은 '남은 부분'부터 본다.
+    # ★빈 문자열도 뜻이 있다 — 한 문단뿐이던 쪽은 통째로 넘어가 **아무것도 안 남는다**.
+    # 그래서 참·거짓이 아니라 '넘겨받았는가'를 따로 둔다(안 그러면 그 쪽이 두 번 실린다).
+    carry_rest, carried = "", False
+    for pi, raw in enumerate(pages):
+        page = carry_rest if carried else raw
+        carry_rest, carried = "", False
+        if has_notes is not None and pi < len(has_notes) and not has_notes[pi]:
+            out.append(page.strip())
+            continue
+        head, notes = _split_notes(page)
+        if not notes:
+            out.append(page.strip())
+            continue
+        block = "\n".join(f"{n} {b}" for n, b in notes)
+        if ends_midsentence(head) and pi + 1 < len(pages):
+            first, rest = _first_para(pages[pi + 1])
+            if first.strip():
+                head = join_across_break(head, first, lexicon)
+                carry_rest, carried = rest, True
+        out.append((head.strip() + "\n\n" + block).strip())
+    return PAGE_SEP.join(out)
 
 
 def convert(text: str, has_notes: list[bool] | None = None) -> Result:

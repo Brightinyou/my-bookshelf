@@ -791,20 +791,33 @@ def assemble(pdf_path: Path, out_txt: Path, total_pages: int | None = None) -> P
             parts.append(base_page_text(pdf_path, page - 1).strip())
     out_txt.parent.mkdir(parents=True, exist_ok=True)
     body = "\f".join(parts)
+
+    # 각주가 있는 쪽인지 줄 간격으로 재 둔다 — 쪽번호·러닝헤더를 각주로 오인하지
+    # 않게 한다(services/layout 머리말 참고). 아래 두 곳에서 함께 쓴다.
+    flags: list[bool] = []
+    for i in range(total_pages):
+        try:
+            from services import layout
+            flags.append(layout.analyze(pdf_path, i, _PDF_LOCK).has_notes)
+        except Exception:
+            flags.append(True)              # 못 재면 판단을 미루고 텍스트로만 본다
+
+    # ★쪽 아래 각주가 **문장을 끊어 놓는 것**을 바로잡는다 — 끊긴 본문을 다음 쪽 첫
+    # 문단과 먼저 잇고 각주는 그 뒤로 내린다. 문장이 완성되지 않으면 사람도 AI도
+    # 검증하지 못한다(2026-08-25 연구자 지적). 붙일지 띄울지는 책 자신의 어휘로
+    # 가른다(services/footnotes.join_across_break 참고).
+    try:
+        from services import footnotes as _fn
+        body = _fn.reflow_pages(body, flags, lexicon=body)
+    except Exception as e:
+        append_log(f"WARN: 각주·문장 재배치 실패 ({type(e).__name__}) {str(e)[:120]}")
+
     out_txt.write_text(body, encoding="utf-8")
     # 각주를 살린 Markdown도 함께 낸다 — TXT는 각주 번호가 본문에 맨숫자로 박혀
     # 나중에 인용할 때 사람이 매번 되짚어야 한다 (services/footnotes 머리말 참고).
     try:
-        from services import footnotes, layout
-        # 각주가 있는 쪽인지 줄 간격으로 미리 재 둔다 — 쪽번호·러닝헤더를 각주로
-        # 오인하는 것을 막는다(services/layout 머리말 참고)
-        flags = []
-        for i in range(total_pages):
-            try:
-                flags.append(layout.analyze(pdf_path, i, _PDF_LOCK).has_notes)
-            except Exception:
-                flags.append(True)          # 못 재면 판단을 미루고 텍스트로만 본다
-        res = footnotes.convert(body, flags)
+        from services import footnotes
+        res = footnotes.convert(body, flags)      # flags는 위에서 한 번만 잰다
         if res.notes:
             out_txt.with_suffix(".md").write_text(res.markdown, encoding="utf-8")
             append_log(f"각주 {len(res.notes)}개 중 {res.linked}개를 본문과 이어 "
