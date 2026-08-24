@@ -43,6 +43,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import llm_providers as llm
+from services import localocr
 from services.common import append_log
 
 # 검증 임계 — 위 실측 보정값 참고
@@ -76,9 +77,8 @@ DEFAULT_WORKERS = 3
 # 전부 턴 1이지만 12쪽에서 **평균 유사도가 0.925 → 0.811로 떨어졌다** — 한 번에
 # 너무 많이 주면 쪽마다의 충실도가 흔들린다. 8쪽이 절약과 품질이 만나는 자리다.
 DEFAULT_PAGES_PER_CALL = 8
-# 같은 쪽을 몇 번 읽어 견줄 것인가. 2면 어긋나는 자리가 드러난다 — 쪽당 4,802토큰
-# 이라 두 번 읽어도 9,604로, 도구를 열어 두던 옛 방식(497,870)의 1/52이다.
-# 1로 두면 대조를 건너뛴다(빠르지만 낱말 바꿔치기를 못 잡는다).
+# LLM으로 같은 쪽을 몇 번 읽을 것인가. 2면 갈리는 자리가 드러나고, 그 자리는 로컬
+# Vision(심판)이 대개 갈라 준다. 1로 두면 대조를 아예 건너뛴다.
 DEFAULT_PASSES = 2
 
 # codex를 단발 호출로 만드는 비활성 목록. 이 세 개면 충분하다는 것을 실측했다
@@ -129,6 +129,9 @@ class PageResult:
     note: str = ""
     # 2회 판독이 어긋난 자리 — [{"before":…, "a":…, "b":…}] (아래 reconcile 참고)
     disagreements: list = field(default_factory=list)
+    # 채택본과 로컬 심판이 어긋난 자리 — 두 LLM이 같이 틀린 경우를 비추는 참고용.
+    # 시끄러워서 경고로는 안 올리고 접어 둔 목록으로만 낸다(judge_only_notes 참고).
+    judge_notes: list = field(default_factory=list)
 
 
 # ── 렌더링·기준선 ────────────────────────────────────────────
@@ -240,7 +243,8 @@ def verify(ai_text: str, base_text: str) -> tuple[str, float, str]:
 # 0.99대라 통과했다(30쪽 `망원경`→`바벨탑`이 ok 판정으로 지나갔다).
 
 # 문장부호·공백만 다른 것은 굳이 알릴 값어치가 없다
-_TRIVIAL = re.compile(r"[\s.,·:;()\[\]{}“”‘’\"'`~\-—–]+")
+_TRIVIAL = re.compile(r"[\s.,:;()\[\]{}“”‘’\"'`~\-—–"
+                      r"\u00b7\u2022\u2219\u318d\u30fb\uff65]+")   # 가운뎃점 변종 포함
 
 
 def _words(text: str) -> list[str]:
@@ -251,25 +255,77 @@ def _is_trivial(a: str, b: str) -> bool:
     return _TRIVIAL.sub("", a) == _TRIVIAL.sub("", b)
 
 
-def reconcile(texts: list[str], context: int = 18) -> tuple[str, list[dict]]:
-    """여러 번 읽은 결과를 견줘 (채택본, 어긋난 자리 목록)을 낸다.
+def reconcile(texts: list[str], judge: str = "", context: int = 18) -> tuple[str, list[dict]]:
+    """LLM 판독 둘을 견주고, 갈린 자리마다 심판(judge)에게 물어 가른다.
 
-    **어느 쪽이 맞는지는 알 수 없다.** 그래서 첫 판독을 그대로 채택하고 어긋난
-    자리만 기록한다 — 본문을 건드리지 않아야 사람이 원문과 대조할 수 있다."""
+    **어느 쪽이 맞는지는 대개 알 수 없다.** 그래서 첫 판독을 그대로 채택하고 어긋난
+    자리만 기록한다 — 본문을 건드리지 않아야 사람이 원문과 대조할 수 있다.
+
+    ★judge(로컬 Vision 판독)는 **동등한 판독자가 아니라 심판**이다. 실측(30쪽):
+    Vision을 셋째 판독자로 놓고 견주면 불일치가 15곳인데 그중 11곳이 Vision 잘못
+    이었다(`이원론적`→`의원론적`, `신학적`→`신화적`). 본문 정확도는 LLM이 낫다.
+    그런데 **LLM 둘이 갈린 자리에서는 Vision이 정확히 갈라 준다**:
+        내재하심으로 ↔ 기뻐하심으로  → Vision `내재하심`  → 1차 채택
+        통찰을       ↔ 물질을        → Vision `물질을`    → 2차 채택
+        베풂이       ↔ 벼룩이        → Vision `벽돌이`    → 둘 다 아님 → ⚠️
+    심판이 한쪽을 지지하면 조용히 그쪽을 쓰고, 못 가르면 사람에게 넘긴다.
+    이렇게 하면 Vision의 본문 오독은 아예 투표에 들어오지 않는다."""
     texts = [t for t in texts if t and t.strip()]
+    if not texts:
+        return "", []
     if len(texts) < 2:
-        return (texts[0] if texts else ""), []
+        return texts[0], []
     a, b = _words(texts[0]), _words(texts[1])
+    jn = _TRIVIAL.sub("", judge) if judge else ""
+    picked = list(a)
     diffs: list[dict] = []
+    offset, swapped = 0, False
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
         if tag == "equal":
             continue
         wa, wb = " ".join(a[i1:i2]), " ".join(b[j1:j2])
         if _is_trivial(wa, wb):
             continue
+        ka, kb = _TRIVIAL.sub("", wa), _TRIVIAL.sub("", wb)
+        if jn and ka and kb:
+            in_a, in_b = ka in jn, kb in jn
+            if in_a and not in_b:
+                continue                      # 심판이 1차를 지지 — 그대로 둔다
+            if in_b and not in_a:
+                picked[i1 + offset:i2 + offset] = b[j1:j2]
+                offset += (j2 - j1) - (i2 - i1)
+                swapped = True                # 길이가 같아도 바뀐 것은 바뀐 것이다
+                continue                      # 심판이 2차를 지지 — 갈아 끼운다
         diffs.append({"before": " ".join(a[max(0, i1 - 4):i1])[-context:],
-                      "a": wa[:60], "b": wb[:60]})
-    return texts[0], diffs
+                      "a": wa[:60], "b": wb[:60],
+                      "judge": "가르지 못함" if jn else ""})
+    return (" ".join(picked) if swapped else texts[0]), diffs
+
+
+def judge_only_notes(adopted: str, judge: str, context: int = 18) -> list[dict]:
+    """채택본과 심판이 어긋나는 자리 — **두 LLM 판독이 같이 틀린 경우**를 비춘다.
+
+    ★한계 인정: 두 번 다 같게 틀리면 대조로는 못 잡는다. 실측(30쪽)에서 두 판독이
+    모두 `기뻐하심으로`로 읽어(원문 `내재하심으로`) 조용히 통과했다. Vision은 그
+    자리를 맞혔으므로, 채택본과 Vision을 견주면 드러난다.
+
+    다만 **이건 경고로 쓰기엔 너무 시끄럽다** — Vision은 본문 정확도가 LLM보다
+    낮아서 실측 30쪽에서 15곳이 어긋났고 그중 11곳이 Vision 잘못이었다
+    (`이원론적`→`의원론적`). 그래서 `check` 상태로 올리지 않고 **접어 둔 참고
+    목록**으로만 남긴다. 정밀 대조가 필요한 쪽에서 사람이 펼쳐 보는 용도다."""
+    if not judge.strip() or not adopted.strip():
+        return []
+    a, b = _words(adopted), _words(judge)
+    out: list[dict] = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        if tag == "equal":
+            continue
+        wa, wb = " ".join(a[i1:i2]), " ".join(b[j1:j2])
+        if _is_trivial(wa, wb) or not wa.strip() or not wb.strip():
+            continue
+        out.append({"before": " ".join(a[max(0, i1 - 4):i1])[-context:],
+                    "a": wa[:60], "b": wb[:60]})
+    return out
 
 
 # ── 공급자 호출 ──────────────────────────────────────────────
@@ -433,7 +489,7 @@ def work_dir(out_txt: Path) -> Path:
 def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
           pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
           workers: int = DEFAULT_WORKERS, pages_per_call: int = DEFAULT_PAGES_PER_CALL,
-          passes: int = DEFAULT_PASSES, progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
+          passes: int = DEFAULT_PASSES, second_eye: bool = True, progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
     """PDF를 쪽마다 다시 읽어 out_txt로 합친다.
 
     pages는 1-기준 쪽번호 목록(None이면 전체). 이미 읽은 쪽은 건너뛰므로 중단해도
@@ -484,8 +540,12 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
         imgs: list[Path] = []
         try:
             imgs = [render_page(pdf_path, pg - 1, png_dir, dpi) for pg in batch]
-            # 같은 묶음을 passes번 읽는다. 어긋나는 자리가 곧 모델이 헷갈린 자리다
             runs = [read_pages(provider, model, imgs, timeout) for _ in range(max(1, passes))]
+            # ★둘째 눈 — 로컬 Apple Vision. 공짜·1초·결정적이고 **실패 양상이 달라**
+            # LLM을 한 번 더 부르는 것보다 낫다(services/localocr 머리말 참고).
+            # 없으면 조용히 건너뛴다.
+            judges = (localocr.read(imgs) if (second_eye and localocr.available())
+                      else ["" for _ in imgs])
         except Exception as e:
             note = f"{type(e).__name__}: {str(e)[:160]}"
             return [PageResult(pg, "failed", 0, len(bases[pg]), 0.0, note) for pg in batch]
@@ -493,7 +553,7 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
             for f in imgs:
                 f.unlink(missing_ok=True)
 
-        picked = [reconcile([r[i] for r in runs]) for i in range(len(batch))]
+        picked = [reconcile([r[i] for r in runs], judges[i]) for i in range(len(batch))]
         texts = [t for t, _ in picked]
         diffs_by_page = [d for _, d in picked]
 
@@ -516,7 +576,8 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
             elif diffs:
                 note = (note + f" · 두 판독 {len(diffs)}곳 불일치").strip(" ·")
             out.append(PageResult(pg, status, len(text), len(base), round(sim, 3),
-                                  note, diffs))
+                                  note, diffs,
+                                  judge_only_notes(text, judges[batch.index(pg)])))
         return out
 
     clear_run_state(out_txt)                      # 지난 실행의 중단 표시를 지운다
@@ -708,7 +769,8 @@ def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = 
                      pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
                      workers: int = DEFAULT_WORKERS,
                      pages_per_call: int = DEFAULT_PAGES_PER_CALL,
-                     passes: int = DEFAULT_PASSES, timeout: int = 600) -> None:
+                     passes: int = DEFAULT_PASSES, second_eye: bool = True,
+                     timeout: int = 600) -> None:
     """이미 돌고 있으면 아무 일도 하지 않는다.
 
     진행 상황·중단 신호는 전부 작업 폴더의 파일로 오간다(위 HEARTBEAT_NAME 주석
@@ -721,7 +783,7 @@ def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = 
     def _worker():
         try:
             reocr(pdf_path, out_txt, provider, model, pages, dpi, workers, pages_per_call,
-                  passes, timeout=timeout)
+                  passes, second_eye, timeout=timeout)
         except Exception as e:
             msg = f"{type(e).__name__}: {str(e)[:200]}"
             append_log(f"ERROR: AI 재OCR 실패 — {Path(pdf_path).name}: {msg}")

@@ -56,3 +56,41 @@ class ReconcileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JudgeTest(unittest.TestCase):
+    """로컬 Vision을 심판으로 쓰는 경로.
+
+    Vision은 **동등한 판독자가 아니다** — 본문 정확도는 LLM이 낫다(실측 30쪽에서
+    Vision을 셋째 판독자로 놓으면 불일치 15곳 중 11곳이 Vision 잘못이었다).
+    LLM 둘이 갈린 자리에서만 심판으로 쓰면 Vision의 오독은 투표에 들어오지 않는다.
+    """
+
+    A = "하나님의 내재하심으로 우리는 통찰을 인간과 베풂이 만들어지는"
+    B = "하나님의 기뻐하심으로 우리는 물질을 인간과 벼룩이 만들어지는"
+    J = "하나님의 내재하심으로 우리는 물질을 인간과 벽돌이 만들어지는"
+
+    def test_심판이_1차를_지지하면_조용히_넘어간다(self):
+        text, diffs = ai_ocr.reconcile([self.A, self.B], self.J)
+        self.assertIn("내재하심으로", text)
+        self.assertFalse(any("내재하심으로" in d["a"] for d in diffs))
+
+    def test_심판이_2차를_지지하면_갈아_끼운다(self):
+        text, _ = ai_ocr.reconcile([self.A, self.B], self.J)
+        self.assertIn("물질을", text, "심판이 지지한 쪽으로 본문이 바뀌어야 한다")
+        self.assertNotIn("통찰을", text)
+
+    def test_심판도_못_가르면_사람에게_넘긴다(self):
+        _, diffs = ai_ocr.reconcile([self.A, self.B], self.J)
+        self.assertEqual(len(diffs), 1)
+        self.assertIn("베풂이", diffs[0]["a"])
+        self.assertIn("벼룩이", diffs[0]["b"])
+
+    def test_심판이_없으면_전부_사람에게(self):
+        _, diffs = ai_ocr.reconcile([self.A, self.B])
+        self.assertEqual(len(diffs), 3)
+
+    def test_심판이_비어도_망가지지_않는다(self):
+        text, diffs = ai_ocr.reconcile([self.A, self.B], "")
+        self.assertEqual(text, self.A)
+        self.assertEqual(len(diffs), 3)

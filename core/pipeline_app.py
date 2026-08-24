@@ -2327,6 +2327,20 @@ if _active_view in {"1_txt", "all_run"}:
                                      for r in _chk_tq for d in r.disagreements]
                         st.dataframe(pd.DataFrame(_rows_chk), use_container_width=True,
                                      hide_index=True, height=_df_height(len(_rows_chk)))
+                    # 두 판독이 같이 틀린 경우까지 보려면 — 시끄러우므로 접어 둔다
+                    _jn_tq = [(r.page, d) for r in _rep_tq for d in (r.judge_notes or [])]
+                    if _jn_tq:
+                        with st.expander(tf("🔬 로컬 판독과 다른 자리 %d곳 — 정밀 대조용",
+                                            len(_jn_tq))):
+                            st.caption(t("두 번 다 같게 잘못 읽으면 대조로는 안 걸립니다. "
+                                         "로컬 OCR(Apple Vision)이 다르게 읽은 자리를 모았습니다 "
+                                         "— 로컬 쪽이 틀린 경우가 더 많으니 참고로만 보세요."))
+                            st.dataframe(
+                                pd.DataFrame([{t("쪽"): p, t("앞말"): d["before"],
+                                               t("채택본"): d["a"], t("로컬 판독"): d["b"]}
+                                              for p, d in _jn_tq[:400]]),
+                                use_container_width=True, hide_index=True,
+                                height=_df_height(min(len(_jn_tq), 12)))
                     if _unv_tq:
                         st.caption(tf("대조 불가 %d쪽은 원본 레이어가 너무 깨져 견줄 수가 없던 "
                                       "쪽입니다(차례·판권 등). AI 판독을 그대로 채택했습니다.",
