@@ -33,6 +33,7 @@ import difflib
 import json
 import re
 import shutil
+import os
 import subprocess
 import tempfile
 import threading
@@ -383,6 +384,16 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
         rows = [asdict(results[p]) for p in sorted(results)]
         log.write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
 
+    def _beat(done: int, page: int = 0):
+        """심장박동 — 다른 프로세스가 이걸 보고 '아직 도는 중'을 안다."""
+        try:
+            _hb_path(out_txt).write_text(json.dumps(
+                {"beat": time.time(), "pid": os.getpid(), "done": done,
+                 "total": len(targets), "page": page, "provider": provider,
+                 "page_started": time.time()}, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
     todo = [pg for pg in targets
             if not ((wd / f"p{pg:04d}.txt").exists()
                     and results.get(pg) and results[pg].status != "failed")]
@@ -418,6 +429,7 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
             out.append(PageResult(pg, status, len(text), len(base), round(sim, 3), note))
         return out
 
+    clear_run_state(out_txt)                      # 지난 실행의 중단 표시를 지운다
     per_call = max(1, pages_per_call)
     batches = [todo[i:i + per_call] for i in range(0, len(todo), per_call)]
     done, stopped = len(targets) - len(todo), False
@@ -430,6 +442,7 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
             if batches and not stopped:
                 b = batches.pop(0)
                 futures[pool.submit(_one, b)] = b
+                _beat(done, b[0])
                 if progress:
                     # 묶음을 **시작할 때**도 알린다 — 끝날 때만 알리면 몇 분 동안
                     # 화면이 멈춰 보인다 (2026-08-24 사용자 지적).
@@ -446,13 +459,15 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
                 if progress:
                     progress(done, len(targets), res)
             _flush()
-            if should_stop and should_stop() and not stopped:
+            _beat(done)
+            if not stopped and ((should_stop and should_stop()) or _stop_requested(out_txt)):
                 stopped = True
                 append_log(f"AI 재OCR 중단 요청 — {pdf_path.name} "
                            f"({done}/{len(targets)}쪽까지 하고 멈춤)")
             _submit_next()
 
     shutil.rmtree(png_dir, ignore_errors=True)
+    clear_run_state(out_txt)                      # 끝났음을 알린다(심장박동 제거)
     assemble(pdf_path, out_txt, total_pages)
     ok = sum(1 for r in results.values() if r.status == "ok")
     warn = sum(1 for r in results.values() if r.status == "warn")
@@ -493,27 +508,98 @@ def load_report(out_txt: Path) -> list[PageResult]:
 # 한 권이 몇 시간짜리 작업이라 화면을 붙잡고 있을 수 없다. 스레드로 돌리고 진행
 # 상황은 작업 폴더의 _report.json으로 남긴다(중단·재시작에도 살아남는다).
 
-RUNS: dict[str, dict] = {}
+# ★상태를 프로세스 메모리에만 두면 안 된다. 예전에는 RUNS 딕셔너리와 살아 있는
+# 스레드 객체로 판단했는데, **앱을 다시 깔거나(streamlit이 바뀐 모듈을 리로드)
+# 재시작하면 그 딕셔너리가 비면서 돌고 있는 작업을 중단할 수단이 사라졌다.**
+# 실제로 그렇게 됐다 — 사용자가 «중단»을 눌렀는데 버튼은 비활성이고 작업은
+# 계속 돌았다(2026-08-24). 게다가 자식 codex 프로세스는 부모가 죽어도 살아남는다.
+#
+# 그래서 **작업 폴더의 파일로** 주고받는다. 어느 프로세스에서 눌러도 통하고,
+# 앱이 죽었다 살아나도 이어진다.
+#   _running.json — 심장박동(갱신 시각·진행·PID). 오래되면 죽은 작업으로 본다.
+#   _stop         — 있으면 멈춘다.
+HEARTBEAT_NAME = "_running.json"
+STOP_NAME = "_stop"
+# 한 쪽이 몇 분씩 걸리므로 넉넉히 잡는다 — 이보다 오래 갱신이 없으면 죽은 것.
+STALE_AFTER = 900
 
 
-def run_key(pdf_path) -> str:
-    import unicodedata
-    return unicodedata.normalize("NFC", Path(pdf_path).stem)
+def _hb_path(out_txt) -> Path:
+    return work_dir(Path(out_txt)) / HEARTBEAT_NAME
 
 
-def is_running(pdf_path) -> bool:
-    st = RUNS.get(run_key(pdf_path))
-    return bool(st and st.get("thread") and st["thread"].is_alive())
+def _stop_path(out_txt) -> Path:
+    return work_dir(Path(out_txt)) / STOP_NAME
 
 
-def status(pdf_path) -> dict:
-    return RUNS.get(run_key(pdf_path), {})
+def status(out_txt) -> dict:
+    try:
+        return json.loads(_hb_path(out_txt).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
-def request_stop(pdf_path) -> None:
-    st = RUNS.get(run_key(pdf_path))
-    if st:
-        st["stop"] = True
+def is_running(out_txt) -> bool:
+    st = status(out_txt)
+    if not st:
+        return False
+    if time.time() - st.get("beat", 0) > STALE_AFTER:
+        return False                                  # 심장이 멎었다
+    pid = st.get("pid")
+    return _pid_alive(pid) if isinstance(pid, int) else True
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True                                   # 남의 프로세스지만 살아 있다
+
+
+def request_stop(out_txt) -> None:
+    """어느 프로세스에서 불러도 통한다 — 작업 폴더에 표시를 남긴다."""
+    try:
+        wd = work_dir(Path(out_txt))
+        wd.mkdir(parents=True, exist_ok=True)
+        (wd / STOP_NAME).write_text(str(time.time()), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _stop_requested(out_txt) -> bool:
+    return _stop_path(out_txt).exists()
+
+
+def clear_run_state(out_txt) -> None:
+    for f in (_hb_path(out_txt), _stop_path(out_txt)):
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def kill_orphans(out_txt) -> int:
+    """부모가 죽어 고아가 된 판독 프로세스를 정리한다.
+
+    자식 codex는 부모(스레드를 안고 있던 앱)가 죽어도 살아남는다 — 실측으로
+    확인했다. 이어하기 전에 한 번 훑어 준다."""
+    import subprocess as sp
+    marker = str(work_dir(Path(out_txt)).name)[:40]
+    killed = 0
+    try:
+        out = sp.run(["pgrep", "-f", "codex exec"], capture_output=True, text=True).stdout
+        for pid in [int(x) for x in out.split() if x.isdigit()]:
+            cmd = sp.run(["ps", "-o", "command=", "-p", str(pid)],
+                         capture_output=True, text=True).stdout
+            if marker in cmd or "ocr_p" in cmd:
+                os.kill(pid, 9)
+                killed += 1
+    except Exception:
+        pass
+    return killed
 
 
 def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
@@ -521,29 +607,29 @@ def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = 
                      workers: int = DEFAULT_WORKERS,
                      pages_per_call: int = DEFAULT_PAGES_PER_CALL,
                      timeout: int = 600) -> None:
-    """이미 돌고 있으면 아무 일도 하지 않는다."""
-    import threading
-    key = run_key(pdf_path)
-    if is_running(pdf_path):
-        return
-    state = {"stop": False, "done": 0, "total": len(pages) if pages else page_count(pdf_path),
-             "page": 0, "started": time.time(), "error": "", "provider": provider,
-             "out_txt": str(out_txt)}
-    RUNS[key] = state
+    """이미 돌고 있으면 아무 일도 하지 않는다.
 
-    def _progress(done, total, res):
-        state.update(done=done, total=total, page=res.page, last=res.status,
-                     page_started=time.time() if res.status == "reading" else
-                     state.get("page_started", time.time()))
+    진행 상황·중단 신호는 전부 작업 폴더의 파일로 오간다(위 HEARTBEAT_NAME 주석
+    참고). 스레드 객체를 붙들지 않으므로 앱이 리로드돼도 중단할 수 있다."""
+    if is_running(out_txt):
+        return
+    kill_orphans(out_txt)              # 지난번에 부모가 죽어 남은 판독 프로세스 정리
+    clear_run_state(out_txt)
 
     def _worker():
         try:
             reocr(pdf_path, out_txt, provider, model, pages, dpi, workers, pages_per_call,
-                  progress=_progress, should_stop=lambda: state["stop"], timeout=timeout)
+                  timeout=timeout)
         except Exception as e:
-            state["error"] = f"{type(e).__name__}: {str(e)[:200]}"
-            append_log(f"ERROR: AI 재OCR 실패 — {Path(pdf_path).name}: {state['error']}")
+            msg = f"{type(e).__name__}: {str(e)[:200]}"
+            append_log(f"ERROR: AI 재OCR 실패 — {Path(pdf_path).name}: {msg}")
+            try:
+                hb = status(out_txt) or {}
+                hb.update(error=msg, beat=time.time())
+                _hb_path(out_txt).write_text(json.dumps(hb, ensure_ascii=False),
+                                             encoding="utf-8")
+            except Exception:
+                pass
 
-    th = threading.Thread(target=_worker, daemon=True, name=f"reocr-{key[:20]}")
-    state["thread"] = th
-    th.start()
+    threading.Thread(target=_worker, daemon=True,
+                     name=f"reocr-{Path(out_txt).stem[:20]}").start()

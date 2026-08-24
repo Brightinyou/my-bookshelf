@@ -2263,8 +2263,10 @@ if _active_view in {"1_txt", "all_run"}:
                     st.info(_cost_tq)
                     _ok_cost = True
 
-                _running_tq = ai_ocr.is_running(_pdf_tq)
+                # 상태는 작업 폴더의 파일로 본다 — 앱이 리로드·재시작돼도 이어진다
+                # (프로세스 메모리에 뒀더니 «중단»이 먹통이 됐다, 2026-08-24)
                 _out_tq = cfg.TXT_ARCHIVE_DIR / f"{_pdf_tq.stem}.txt"
+                _running_tq = ai_ocr.is_running(_out_tq)
                 _b1_tq, _b2_tq, _b3_tq = st.columns(3)
                 if _b1_tq.button(t("예, 다시 읽겠습니다"), icon=":material/play_arrow:",
                                  key="tq_go", disabled=_running_tq or not _ok_cost,
@@ -2276,13 +2278,16 @@ if _active_view in {"1_txt", "all_run"}:
                     st.rerun()
                 if _b2_tq.button(t("중단"), icon=":material/stop:", key="tq_stop",
                                  disabled=not _running_tq):
-                    ai_ocr.request_stop(_pdf_tq)
-                    st.info(t("현재 쪽을 마치고 멈춥니다. 다시 시작하면 이어서 합니다."))
+                    ai_ocr.request_stop(_out_tq)
+                    _n_killed = ai_ocr.kill_orphans(_out_tq)
+                    st.info(t("판독 중이던 쪽을 끊고 멈춥니다. 다시 시작하면 이어서 합니다.")
+                            + (tf(" (진행 중이던 %d개 프로세스 종료)", _n_killed)
+                               if _n_killed else ""))
                 if _b3_tq.button(t("아니요, 이대로 진행"), key="tq_skip", disabled=_running_tq):
                     st.session_state["tq_dismissed"] = True
                     st.rerun()
 
-                _st_tq = ai_ocr.status(_pdf_tq)
+                _st_tq = ai_ocr.status(_out_tq)
                 if _running_tq:
                     _done_tq, _tot_tq = _st_tq.get("done", 0), max(1, _st_tq.get("total", 1))
                     # 한 쪽이 3~5분 걸리는 일이 있어 경과 초를 같이 보여준다 —
