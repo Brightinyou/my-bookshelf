@@ -85,6 +85,35 @@ def open_path(p: Path, reveal: bool = False):
         append_log(f"WARN: 파일 열기 실패 ({type(e).__name__}) {str(e)[:120]}")
 
 
+# 맥의 PDF 뷰어 — 번들 ID로 지정한다. 경로(`/System/Applications/Preview.app`)는
+# macOS 판이 바뀌면 옮겨 다니지만 번들 ID는 그대로다.
+_MAC_PDF_VIEWER = "com.apple.Preview"
+
+
+def open_pdf_view(p: Path) -> str:
+    """PDF를 **미리보기로** 연다. 어떤 앱으로 열었는지 돌려준다 (2026-08-25).
+
+    ★`open_path`처럼 기본 앱에 맡기면 **기기마다 다른 앱이 뜬다.** 실제로 이 기기는
+    PDF Expert가 기본이라 그것이 열렸다(연구자 지적). 차례를 견주는 창은 어느 맥에서든
+    같아야 하고, 미리보기는 macOS에 반드시 있으며 가볍다.
+
+    윈도우·리눅스에는 '반드시 있는 뷰어'가 없으므로 기본 앱에 맡긴다 — 거기서는
+    강제할 대상이 없다.
+
+    실패해도 예외를 던지지 않는다. 미리보기가 없거나 막혀 있으면 기본 앱으로 내려간다."""
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(["open", "-b", _MAC_PDF_VIEWER, str(p)],
+                               capture_output=True, text=True)
+            if r.returncode == 0:
+                return "미리보기"
+            append_log(f"WARN: 미리보기로 열지 못해 기본 앱으로 엽니다 ({(r.stderr or '').strip()[:80]})")
+        except Exception as e:
+            append_log(f"WARN: 미리보기 실행 실패 ({type(e).__name__}) {str(e)[:80]}")
+    open_path(p)
+    return "기본 앱"
+
+
 def notify(msg: str, title: str = "My Bookshelf"):
     return
 

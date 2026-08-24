@@ -40,7 +40,7 @@ from services import wiki as wiki_svc
 from services.common import (
     DEFAULT_WS, MD_SUB, PAUSE_DIR, PDF_SUB, TRANS_SUB, TXT_SUB,
     _PathAsUpload, _nfc, _save_json_atomic, append_log, is_paused,
-    load_pipeline_results, notify, open_path, pause_flag_path, read_log,
+    load_pipeline_results, notify, open_path, open_pdf_view, pause_flag_path, read_log,
     save_pipeline_results, set_paused,
 )
 from services.files import (
@@ -1093,8 +1093,9 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
                       help=t("고른 쪽만 뽑아 PDF 뷰어로 엽니다 — 앱 창과 나란히 놓고 보세요")):
             _out = toc_svc.pages_pdf(_pdf, [p - 1 for p in _pages])
             if _out:
-                open_path(_out)
-                st.caption(tf("열었습니다: %s", _out.name))
+                # ★기본 앱에 맡기면 기기마다 다른 PDF 앱이 뜬다 — 미리보기로 고정한다.
+                _with = open_pdf_view(_out)
+                st.caption(tf("%s(으)로 열었습니다: %s", _with, _out.name))
             else:
                 st.warning(t("차례 PDF를 만들지 못했습니다."))
         _inline = _w2.toggle(t("앱 창 안에도 보기"), key=f"{key}_tocinl_{book}", value=False)
