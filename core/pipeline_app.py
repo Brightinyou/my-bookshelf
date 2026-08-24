@@ -1084,6 +1084,22 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
         if not _pages:
             st.caption(t("차례가 있는 쪽을 고르면 여기에 띄웁니다."))
             return
+        # ★**별도 창으로 여는 것이 본 길이다.** 앱 창 안의 이미지는 작고 확대가 안 돼
+        # 장 목록과 한 줄씩 견주기 어렵다. 고른 쪽만 PDF로 뽑아 OS 기본 뷰어로 열면
+        # 창을 나란히 놓고 볼 수 있다 (2026-08-25 연구자 요청).
+        _w1, _w2 = st.columns([1, 1])
+        if _w1.button("🪟 " + t("별도 창으로 열기"), key=f"{key}_tocwin_{book}",
+                      use_container_width=True, type="primary",
+                      help=t("고른 쪽만 뽑아 PDF 뷰어로 엽니다 — 앱 창과 나란히 놓고 보세요")):
+            _out = toc_svc.pages_pdf(_pdf, [p - 1 for p in _pages])
+            if _out:
+                open_path(_out)
+                st.caption(tf("열었습니다: %s", _out.name))
+            else:
+                st.warning(t("차례 PDF를 만들지 못했습니다."))
+        _inline = _w2.toggle(t("앱 창 안에도 보기"), key=f"{key}_tocinl_{book}", value=False)
+        if not _inline:
+            return
         try:
             _imgs = toc_svc.page_previews(_pdf, [p - 1 for p in _pages], scale=1.1)
         except Exception as _e:
@@ -2352,7 +2368,15 @@ if _active_view in {"1_txt", "all_run"}:
 
                 # 상태는 작업 폴더의 파일로 본다 — 앱이 리로드·재시작돼도 이어진다
                 # (프로세스 메모리에 뒀더니 «중단»이 먹통이 됐다, 2026-08-24)
-                _out_tq = cfg.TXT_ARCHIVE_DIR / f"{_pdf_tq.stem}.txt"
+                # ★재OCR 결과는 **그 책의 TXT가 실제로 있는 자리**에 써야 한다.
+                # 보관 폴더로 못박아 두었더니, 『기술신학』 373쪽을 다시 읽어 1음절
+                # 비율을 0.01%→8.7%로 되살리고도 **다음 단계(장별 분할)가 읽는 활성
+                # 사본은 불량인 채 남아** 화면에 계속 🔴가 떴다 (2026-08-25).
+                # 우선순위는 services/files.find_txt와 같다 — 활성 → 보관.
+                _out_tq = next(
+                    (c for c in (cfg.TXT_DIR / f"{_pdf_tq.stem}.txt",
+                                 cfg.TXT_ARCHIVE_DIR / f"{_pdf_tq.stem}.txt") if c.exists()),
+                    cfg.TXT_ARCHIVE_DIR / f"{_pdf_tq.stem}.txt")
                 _running_tq = ai_ocr.is_running(_out_tq)
                 _b1_tq, _b2_tq, _b3_tq = st.columns(3)
                 if _b1_tq.button(t("예, 다시 읽겠습니다"), icon=":material/play_arrow:",

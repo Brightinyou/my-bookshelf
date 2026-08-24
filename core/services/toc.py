@@ -142,6 +142,43 @@ def _build_scan_pdf(pdf_path: Path, page_indices: list[int]) -> Path | None:
         return None
 
 
+def pages_pdf(pdf_path: Path, indices: list[int], label: str = "차례") -> Path | None:
+    """고른 쪽만 추린 PDF를 만들어 돌려준다 — **별도 창으로 견주기 위한 것** (2026-08-25).
+
+    장 구분이 맞는지는 차례와 견주어야 알 수 있는데, 앱 창 안에 이미지를 끼워 넣으면
+    작고 확대도 안 된다. 쪽만 뽑아 **OS 기본 뷰어로 열면** 진짜 별도 창이 뜨고,
+    확대·스크롤이 자유롭고, 앱 창과 나란히 놓을 수 있다.
+
+    ★**파일 이름이 곧 창 제목이 된다.** 책이 여러 권 열려 있어도 어느 책의 차례인지
+    바로 보이도록 책 이름을 넣는다. 이름을 고정해 두면 다시 눌러도 창이 늘어나지 않고
+    같은 파일을 덮어쓴다."""
+    try:
+        import pypdfium2 as pdfium
+    except Exception:
+        return None
+    try:
+        src = pdfium.PdfDocument(str(pdf_path))
+    except Exception as e:
+        append_log(f"WARN: 차례 PDF 열기 실패 ({type(e).__name__}) {str(e)[:120]}")
+        return None
+    try:
+        pages = sorted({i for i in indices if 0 <= i < len(src)})
+        if not pages:
+            return None
+        out = pdfium.PdfDocument.new()
+        out.import_pages(src, pages=pages)
+        safe = re.sub(r'[\\/:*?"<>|]', "_", pdf_path.stem)[:60]
+        dst = Path(tempfile.gettempdir()) / f"{safe}_{label}.pdf"
+        out.save(str(dst))
+        out.close()
+        return dst
+    except Exception as e:
+        append_log(f"WARN: 차례 PDF 추출 실패 ({type(e).__name__}) {str(e)[:120]}")
+        return None
+    finally:
+        src.close()
+
+
 def _visual_toc_gemini(model: str, key: str, scan_pdf: Path, prompt: str) -> str:
     from google import genai
     from google.genai import types
