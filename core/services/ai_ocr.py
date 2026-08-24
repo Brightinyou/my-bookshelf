@@ -72,7 +72,10 @@ DEFAULT_WORKERS = 3
 # 처리해 오버헤드를 분산시키는 것과 같은 이치다.
 # 4로 잡은 근거: 8 이상은 이득이 완만해지는 데 비해 한 호출이 길어져
 # 타임아웃·부분 실패 위험이 커지고, 되돌릴 때 버리는 분량도 커진다.
-DEFAULT_PAGES_PER_CALL = 4
+# 실측(추론 high·도구 차단·150dpi): 4쪽 6,696/쪽 · 8쪽 4,802/쪽 · 12쪽 4,184/쪽.
+# 전부 턴 1이지만 12쪽에서 **평균 유사도가 0.925 → 0.811로 떨어졌다** — 한 번에
+# 너무 많이 주면 쪽마다의 충실도가 흔들린다. 8쪽이 절약과 품질이 만나는 자리다.
+DEFAULT_PAGES_PER_CALL = 8
 
 # codex를 단발 호출로 만드는 비활성 목록. 이 세 개면 충분하다는 것을 실측했다
 # (shell_tool·unified_exec = 셸/명령 실행, view_image = 이미지 재조회 루프).
@@ -89,9 +92,14 @@ PROMPT = f"""이 이미지들은 한국어 책의 낱쪽을 순서대로 스캔�
 지켜야 할 것:
 - 이미지에 실제로 있는 글자만 적는다. 문맥으로 추측해서 채우지 마라.
 - 흐리거나 뭉개져 못 읽는 글자는 □ 하나로 적는다. 그럴듯한 글자로 메우지 마라.
-- 맞춤법·띄어쓰기·문장부호를 고치지 마라. 원문 그대로 적는다.
+- 맞춤법·문장부호를 고치지 마라. 원문 그대로 적는다.
+- ★**인쇄된 줄 끝에서 잘린 낱말은 이어 붙여라.** 종이 폭 때문에 갈라진 것일 뿐이다.
+  예: 줄 끝 "알" + 다음 줄 "파고의" → "알파고의" (["알 파고의"]처럼 띄우지 마라)
+  마찬가지로 한 낱말이 갈라져 사이에 공백이 생겼으면 붙여라("천문 학"→"천문학").
+- ★**줄바꿈은 문단이 바뀔 때만 한다.** 인쇄된 줄마다 바꾸지 마라. 한 문단은 한 줄로.
 - 각주 번호(위첨자 숫자)는 본문 해당 위치에 그대로 숫자로 적는다.
-- 각주 본문은 본문을 다 적은 뒤 줄을 바꿔 이어 적는다.
+- 각주 본문은 본문을 다 적은 뒤 줄을 바꿔, **줄 첫머리에 그 번호를 적고** 한 칸 띄운
+  뒤 내용을 적는다. 각주가 여럿이면 번호 오름차순으로 한 줄에 하나씩.
 - 쪽 위아래의 러닝헤더(저자명·장제목)와 쪽번호는 적지 않는다.
 - 요약하지 마라. 설명·해설·감상을 덧붙이지 마라.
 - 이미지에 글자가 없으면 아무것도 적지 않는다.
@@ -251,9 +259,10 @@ def _read_codex_cli(model: str, imgs: list[Path], timeout: int) -> str:
             # OCR엔 도구가 하나도 필요 없다. 이미지는 -i로 이미 붙어 있다.
             #   도구 전면 차단 + 추론 최소  →  턴 1 · 도구 0 · 입력 17,341 · 추론 14
             #   (같은 조건 기존: 턴 중앙 5 · 도구 최대 29 · 입력 중앙 132,771)
-            # ⚠️ reasoning_effort는 "minimal"이 아니라 "low"여야 한다 —
-            #    minimal은 web_search 도구와 함께 못 쓴다며 API가 400으로 거절한다.
-            "-c", 'model_reasoning_effort="low"',
+            # ⚠️ 추론 강도는 **낮추지 않는다**(config.toml 기본값 그대로 = high).
+            #    low로 낮춰 봤지만 토큰은 거의 안 줄고(17,786 vs 17,692) 판독만
+            #    흔들렸다. 비용을 줄인 것은 추론이 아니라 **도구 차단**이다.
+            #    참고: minimal은 아예 못 쓴다 — web_search와 함께 쓸 수 없다며 400.
             *_LEAN_FLAGS]
     for f in imgs:
         args += ["-i", str(f)]
@@ -510,7 +519,19 @@ def assemble(pdf_path: Path, out_txt: Path, total_pages: int | None = None) -> P
         else:
             parts.append(base_page_text(pdf_path, page - 1).strip())
     out_txt.parent.mkdir(parents=True, exist_ok=True)
-    out_txt.write_text("\f".join(parts), encoding="utf-8")
+    body = "\f".join(parts)
+    out_txt.write_text(body, encoding="utf-8")
+    # 각주를 살린 Markdown도 함께 낸다 — TXT는 각주 번호가 본문에 맨숫자로 박혀
+    # 나중에 인용할 때 사람이 매번 되짚어야 한다 (services/footnotes 머리말 참고).
+    try:
+        from services import footnotes
+        res = footnotes.convert(body)
+        if res.notes:
+            out_txt.with_suffix(".md").write_text(res.markdown, encoding="utf-8")
+            append_log(f"각주 {len(res.notes)}개 중 {res.linked}개를 본문과 이어 "
+                       f"Markdown으로 냈습니다 — {out_txt.with_suffix('.md').name}")
+    except Exception as e:
+        append_log(f"WARN: 각주 Markdown 생성 실패 ({type(e).__name__}) {str(e)[:120]}")
     return out_txt
 
 
