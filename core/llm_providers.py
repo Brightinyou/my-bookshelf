@@ -231,21 +231,76 @@ def _run_cli_safe(args: list, input_text: str, timeout: int = 600, cwd=None) -> 
         raise RuntimeError(f"CLI 시간 초과({timeout}초) — 멈춘 프로세스 트리를 강제 종료했습니다")
 
 
+
+# ── CLI 찾기 ──────────────────────────────────────────────────
+# npm 전역 설치가 플랫폼 네이티브 바이너리를 못 받으면(--ignore-scripts, --omit=optional,
+# 또는 ~/.npm 캐시 권한 문제) "설치 안 됨"만 출력하는 **셰방 없는 텍스트 스텁**이 남는다.
+# 실행 비트는 서 있어서 존재 검사·os.access를 통과하고, exec할 때 비로소
+# `OSError: [Errno 8] Exec format error`로 죽는다. 실제로 이것 때문에 재OCR
+# **316쪽이 통째로 실패**했다 (2026-08-25). 그래서 **쓰기 전에 알맹이를 본다.**
+_EXEC_MAGIC = (b"\xcf\xfa\xed\xfe",   # Mach-O 64 리틀엔디언
+               b"\xce\xfa\xed\xfe",   # Mach-O 32
+               b"\xca\xfe\xba\xbe",   # Mach-O 유니버설
+               b"\x7fELF",               # 리눅스
+               b"MZ")                     # 윈도우 PE
+
+
+def _usable_cli(path: Path) -> bool:
+    """exec으로 띄울 수 있는 프로그램인가 — 셰방 없는 텍스트 스텁을 걸러낸다."""
+    try:
+        if not path.is_file() or not os.access(path, os.X_OK):
+            return False
+        if path.suffix.lower() in (".cmd", ".bat", ".ps1"):
+            return True                      # 윈도우는 셸이 해석한다
+        head = path.open("rb").read(4)
+    except OSError:
+        return False
+    return head.startswith(b"#!") or any(head.startswith(m) for m in _EXEC_MAGIC)
+
+
+def _find_cli(name: str) -> str | None:
+    """CLI 실행 파일을 찾는다. **네이티브 설치를 npm 전역보다 먼저** 본다.
+
+    ★`shutil.which`에 앱의 PATH를 그대로 쓰면 안 된다 — Finder/launchd로 뜬 앱의
+    PATH에는 ~/.local/bin·/opt/homebrew/bin이 없다. 서브프로세스에 넘기는 것과
+    **같은 PATH**로 찾아야 앱과 터미널의 결과가 갈리지 않는다."""
+    home = Path.home()
+    cands = [home / ".local" / "bin" / name,          # 네이티브 설치(맥·리눅스)
+             home / ".local" / "bin" / f"{name}.exe",  # 네이티브 설치(윈도우)
+             Path("/opt/homebrew/bin") / name,
+             Path("/usr/local/bin") / name,
+             Path(os.environ.get("APPDATA", "")) / "npm" / f"{name}.cmd"]
+    found = shutil.which(name, path=_cli_env().get("PATH"))
+    if found:
+        cands.insert(0, Path(found))
+    broken: list[str] = []
+    for cand in cands:
+        if not cand.is_file():
+            continue
+        if _usable_cli(cand):
+            return str(cand)
+        broken.append(str(cand))
+    if broken:
+        _LAST_BROKEN_CLI[name] = broken[0]
+    return None
+
+
+_LAST_BROKEN_CLI: dict[str, str] = {}
+
+
+def broken_cli_hint(name: str) -> str:
+    """찾긴 했는데 못 쓰는 CLI가 있었다면 사람이 고칠 수 있는 말로 알려준다."""
+    bad = _LAST_BROKEN_CLI.get(name)
+    if not bad:
+        return ""
+    return (f"'{bad}'가 있지만 실행할 수 없는 껍데기입니다(네이티브 바이너리 누락). "
+            f"`npm uninstall -g @anthropic-ai/claude-code` 뒤 공식 설치 관리자로 다시 "
+            f"설치하거나, 이미 설치돼 있다면 ~/.local/bin을 PATH 앞에 두세요.")
+
+
 # ── Claude CLI (구독) ──
 def claude_cli_path() -> str | None:
-    p = shutil.which("claude")
-    if p:
-        return p
-    home = Path.home()
-    for cand in (
-        Path("/opt/homebrew/bin/claude"), Path("/usr/local/bin/claude"),
-        home / ".local" / "bin" / "claude",        # 네이티브 설치(맥·리눅스)
-        home / ".local" / "bin" / "claude.exe",    # 네이티브 설치(윈도우)
-        Path(os.environ.get("APPDATA", "")) / "npm" / "claude.cmd",  # npm 전역(윈도우)
-    ):
-        if cand.exists():
-            return str(cand)
-    return None
+    return _find_cli("claude")
 
 
 def claude_cli_available() -> bool:
@@ -262,19 +317,7 @@ def set_claude_cli_enabled(enabled: bool) -> None:
 
 # ── Codex CLI (OpenAI 구독) ──
 def codex_cli_path() -> str | None:
-    p = shutil.which("codex")
-    if p:
-        return p
-    home = Path.home()
-    for cand in (
-        Path("/opt/homebrew/bin/codex"), Path("/usr/local/bin/codex"),
-        home / ".local" / "bin" / "codex",
-        home / ".local" / "bin" / "codex.exe",
-        Path(os.environ.get("APPDATA", "")) / "npm" / "codex.cmd",
-    ):
-        if cand.exists():
-            return str(cand)
-    return None
+    return _find_cli("codex")
 
 
 def codex_cli_model() -> str:

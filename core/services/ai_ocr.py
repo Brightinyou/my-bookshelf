@@ -37,13 +37,14 @@ import os
 import subprocess
 import tempfile
 import threading
+import unicodedata
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import llm_providers as llm
-from services import localocr
+from services import imgclean, localocr
 from services.common import append_log
 
 # 검증 임계 — 위 실측 보정값 참고
@@ -80,6 +81,9 @@ DEFAULT_PAGES_PER_CALL = 8
 # LLM으로 같은 쪽을 몇 번 읽을 것인가. 2면 갈리는 자리가 드러나고, 그 자리는 로컬
 # Vision(심판)이 대개 갈라 준다. 1로 두면 대조를 아예 건너뛴다.
 DEFAULT_PASSES = 2
+
+# 판독 전에 밑줄을 걷어낼지. 깨끗한 쪽에서는 사실상 아무 일도 안 한다.
+CLEAN_UNDERLINES = True
 
 # codex를 단발 호출로 만드는 비활성 목록. 이 세 개면 충분하다는 것을 실측했다
 # (shell_tool·unified_exec = 셸/명령 실행, view_image = 이미지 재조회 루프).
@@ -152,7 +156,11 @@ def render_page(pdf_path: Path, index0: int, out_dir: Path, dpi: int = DEFAULT_D
     ★**스캔 원본이 144 DPI다.** 그 위로 올려 봐야 없는 정보가 생기지 않고 올려보낼
     바이트만 는다. 실측(『기술신학』 201쪽): 300dpi PNG 2.88MB와 150dpi JPEG
     0.23MB의 **판독 결과가 글자 하나까지 같았다**(일치도 1.000, 원본 대비 유사도
-    둘 다 0.929). 12배 작은 쪽을 쓴다 (2026-08-24)."""
+    둘 다 0.929). 12배 작은 쪽을 쓴다 (2026-08-24).
+
+    렌더 뒤 **밑줄을 걷어낸다**(services/imgclean). 독자가 그어 둔 밑줄이 글자에
+    붙어 판독을 망친다 — 실측 30쪽 오독 16 → 4. 밑줄 없는 쪽은 건드리지 않는다
+    (2026-08-25)."""
     import pypdfium2 as pdfium
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"p{index0 + 1:04d}.jpg"
@@ -163,6 +171,8 @@ def render_page(pdf_path: Path, index0: int, out_dir: Path, dpi: int = DEFAULT_D
                 str(out), quality=JPEG_QUALITY)
         finally:
             doc.close()
+    if CLEAN_UNDERLINES:
+        imgclean.clean_file(out)
     return out
 
 
@@ -300,6 +310,72 @@ def reconcile(texts: list[str], judge: str = "", context: int = 18) -> tuple[str
                       "a": wa[:60], "b": wb[:60],
                       "judge": "가르지 못함" if jn else ""})
     return (" ".join(picked) if swapped else texts[0]), diffs
+
+
+def book_lexicon(work_dir: Path, skip_pages: "set[int] | None" = None) -> str:
+    """이미 읽은 쪽들을 이어 붙인 것 = 이 책의 어휘 사전.
+
+    ★**확인할 쪽은 반드시 뺀다** — 자기 판독물로 자기를 확인하면 아무것도 못 잡는다.
+    지난 실행에서 남은 낡은 쪽 파일이 있을 수 있으므로 지금 읽는 쪽은 통째로 뺀다."""
+    skip = {f"p{n:04d}" for n in (skip_pages or ())}
+    parts = []
+    for f in sorted(work_dir.glob("p[0-9][0-9][0-9][0-9].txt")):
+        if f.stem in skip:
+            continue
+        try:
+            parts.append(unicodedata.normalize("NFC", f.read_text(encoding="utf-8")))
+        except OSError:
+            continue
+    return "\n".join(parts)
+
+
+def lexicon_verdict(corpus: str, a: str, b: str) -> str:
+    """책 어휘로 두 후보 중 하나를 버린다 — "A"(앞) · "B"(뒤) · "?"(못 가름).
+
+    ★**후보를 만드는 데 쓰면 안 되고 고르는 데만 쓴다.** 문맥으로 낱말을 지어내게
+    하면 실측된 그 오독(`망원경`→`바벨탑`, 벽돌·흙이라는 바벨탑 문맥이 멀쩡한
+    픽셀을 눌렀다)이 그대로 재현된다. 거르는 데만 쓰면 공짜 필터가 된다.
+
+    ★**낱말 통째가 먼저, 어간은 폴백.** 어간을 1음절까지 자르면 무력해진다 —
+    `긴밀한/김민한`을 `긴/김`으로 자르면 8회 대 42회로 둘 다 흔하다 (2026-08-25)."""
+    if not corpus or not a or not b:
+        return "?"
+    ca, cb = corpus.count(a), corpus.count(b)
+    if ca and not cb:
+        return "A"
+    if cb and not ca:
+        return "B"
+    i = 0
+    while i < min(len(a), len(b)) and a[i] == b[i]:
+        i += 1
+    sa, sb = a[:i + 1], b[:i + 1]
+    if len(sa) >= 2 and len(sb) >= 2:
+        ca, cb = corpus.count(sa), corpus.count(sb)
+        if ca and not cb:
+            return "A"
+        if cb and not ca:
+            return "B"
+    return "?"
+
+
+def filter_notes(notes: list[dict], corpus: str) -> list[dict]:
+    """심판이 짚은 자리에서 **심판 자신의 오독을 걷어낸다.**
+
+    로컬 Vision은 본문 정확도가 LLM보다 낮아 쪽당 열몇 곳을 짚는데, 그 대부분이
+    자기 오독이다. 그런데 **두 오독의 성질이 다르다**:
+        AI 오독     = 문맥이 만든 **대체** — `결국`·`전개에서`·`바벨탑` (뜻이 통한다)
+        Vision 오독 = 글자 모양 **착오** — `김민한`·`시용동`·`역선적으로` (뜻이 안 통한다)
+    그래서 책 어휘로 걸러진다. 실측(33쪽): **11곳 → 6곳, 진짜 오독 유실 0건.**
+    남은 자리는 `결국↔결코`처럼 **둘 다 말이 되는** 자리 — 사람이 봐야 할 곳이다."""
+    if not corpus:
+        return notes
+    kept = []
+    for d in notes:
+        wa, wb = str(d.get("a", "")).strip(), str(d.get("b", "")).strip()
+        if lexicon_verdict(corpus, wa, wb) == "A":
+            continue                      # 채택본이 책의 어휘 — 심판이 틀렸다
+        kept.append(d)
+    return kept
 
 
 def judge_only_notes(adopted: str, judge: str, context: int = 18) -> list[dict]:
@@ -556,6 +632,9 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
         picked = [reconcile([r[i] for r in runs], judges[i]) for i in range(len(batch))]
         texts = [t for t, _ in picked]
         diffs_by_page = [d for _, d in picked]
+        # 어휘 사전은 묶음마다 한 번만 만든다 — 쪽마다 만들면 O(n²) 파일 읽기가 된다.
+        # 이 묶음의 쪽들은 아직 안 쓰였으니 자연히 빠진다.
+        lexicon = book_lexicon(wd, skip_pages=set(batch))
 
         out = []
         for pg, text, diffs in zip(batch, texts, diffs_by_page):
@@ -577,7 +656,9 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
                 note = (note + f" · 두 판독 {len(diffs)}곳 불일치").strip(" ·")
             out.append(PageResult(pg, status, len(text), len(base), round(sim, 3),
                                   note, diffs,
-                                  judge_only_notes(text, judges[batch.index(pg)])))
+                                  filter_notes(
+                                      judge_only_notes(text, judges[batch.index(pg)]),
+                                      lexicon)))
         return out
 
     clear_run_state(out_txt)                      # 지난 실행의 중단 표시를 지운다
