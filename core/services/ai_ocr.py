@@ -34,7 +34,9 @@ import json
 import re
 import subprocess
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -47,6 +49,19 @@ MIN_LENGTH_RATIO = 0.5
 MAX_LENGTH_RATIO = 2.0
 # 원본 쪽이 이보다 짧으면(속표지·장 표제지) 유사도가 요동쳐 대조를 건너뛴다
 MIN_BASE_CHARS = 120
+
+# ★pypdfium2는 스레드 안전하지 않다. 워커 4개가 같은 PDF를 동시에 열면
+# "Data format error"로 **네 쪽 모두 실패**한다(2026-08-24 병렬화하다 실측).
+# 렌더링·텍스트추출은 0.1~0.3초라 직렬화해도 손해가 없고, 느린 쪽(CLI 호출)은
+# 그대로 병렬로 남는다.
+_PDF_LOCK = threading.Lock()
+
+# 원본 스캔이 144 DPI라 150이면 충분하다 — 실측으로 300dpi와 결과가 동일했다
+DEFAULT_DPI = 150
+JPEG_QUALITY = 85
+# 쪽끼리는 서로 독립이라 동시에 돌릴 수 있다. 실측 4동시 = 벽시계 2.4배 단축
+# (배경에 다른 작업이 돌던 상태에서 잰 값이라 실제로는 더 낫다).
+DEFAULT_WORKERS = 4
 
 BEGIN, END = "<<<BEGIN>>>", "<<<END>>>"
 
@@ -82,24 +97,31 @@ class PageResult:
 
 def page_count(pdf_path: Path) -> int:
     import pypdfium2 as pdfium
-    doc = pdfium.PdfDocument(str(pdf_path))
-    try:
-        return len(doc)
-    finally:
-        doc.close()
+    with _PDF_LOCK:
+        doc = pdfium.PdfDocument(str(pdf_path))
+        try:
+            return len(doc)
+        finally:
+            doc.close()
 
 
-def render_page(pdf_path: Path, index0: int, out_dir: Path, dpi: int = 300) -> Path:
-    """한 쪽을 PNG로 렌더링. 스캔 원본이 144dpi대라 300 위로 올려도 정보는 안 늘고
-    이미지 토큰만 늘어난다 — 그래서 기본값이 300이다."""
+def render_page(pdf_path: Path, index0: int, out_dir: Path, dpi: int = DEFAULT_DPI) -> Path:
+    """한 쪽을 JPEG로 렌더링.
+
+    ★**스캔 원본이 144 DPI다.** 그 위로 올려 봐야 없는 정보가 생기지 않고 올려보낼
+    바이트만 는다. 실측(『기술신학』 201쪽): 300dpi PNG 2.88MB와 150dpi JPEG
+    0.23MB의 **판독 결과가 글자 하나까지 같았다**(일치도 1.000, 원본 대비 유사도
+    둘 다 0.929). 12배 작은 쪽을 쓴다 (2026-08-24)."""
     import pypdfium2 as pdfium
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"p{index0 + 1:04d}.png"
-    doc = pdfium.PdfDocument(str(pdf_path))
-    try:
-        doc[index0].render(scale=dpi / 72).to_pil().convert("RGB").save(str(out))
-    finally:
-        doc.close()
+    out = out_dir / f"p{index0 + 1:04d}.jpg"
+    with _PDF_LOCK:
+        doc = pdfium.PdfDocument(str(pdf_path))
+        try:
+            doc[index0].render(scale=dpi / 72).to_pil().convert("RGB").save(
+                str(out), quality=JPEG_QUALITY)
+        finally:
+            doc.close()
     return out
 
 
@@ -107,13 +129,14 @@ def base_page_text(pdf_path: Path, index0: int) -> str:
     """대조용 기준선 = 그 쪽의 기존 텍스트 레이어. 불량이어도 '여러 글자 낱말'은
     대체로 맞아서 환각·쪽 어긋남을 잡는 데는 충분하다."""
     import pypdfium2 as pdfium
-    doc = pdfium.PdfDocument(str(pdf_path))
-    try:
-        return doc[index0].get_textpage().get_text_range() or ""
-    except Exception:
-        return ""
-    finally:
-        doc.close()
+    with _PDF_LOCK:
+        doc = pdfium.PdfDocument(str(pdf_path))
+        try:
+            return doc[index0].get_textpage().get_text_range() or ""
+        except Exception:
+            return ""
+        finally:
+            doc.close()
 
 
 # ── 검증 ─────────────────────────────────────────────────────
@@ -234,20 +257,32 @@ def read_page(provider: str, model: str, png: Path, timeout: int = 600) -> str:
 
 # ── 비용 안내 ────────────────────────────────────────────────
 
-# 쪽당 대략치: 300dpi 이미지 ≈ 4,800 입력토큰, 한국어 한 쪽 ≈ 1,300 출력토큰.
+# 쪽당 대략치: 150dpi 이미지 ≈ 2,200 입력토큰, 한국어 한 쪽 ≈ 1,300 출력토큰.
 # 공개 정가($/1M) 기준이며 실제 청구액과 다를 수 있다.
 _API_RATES = {
     "anthropic": (5.0, 25.0),
     "openai": (5.0, 25.0),
     "gemini": (2.0, 10.0),
 }
-_IN_TOK, _OUT_TOK = 4800, 1300
+_IN_TOK, _OUT_TOK = 2200, 1300
+
+
+# 구독형 CLI는 돈이 안 나갈 뿐 **주간 사용 한도**를 쓴다 — 이게 실질 비용이다.
+# 실측(2026-08-24, codex 구독): 300dpi로 41쪽 처리에 주간 한도의 10% 소진
+# → 주당 약 410쪽. 373쪽짜리 책 한 권이 한 주치를 거의 다 먹는다.
+CLI_PAGES_PER_WEEK = 410
 
 
 def cost_notice(provider: str, pages: int) -> str:
-    """API 공급자를 고를 때 띄울 경고. 구독형 CLI는 추가 과금이 없다."""
+    """공급자를 고를 때 띄울 안내. 구독은 돈이 아니라 **한도**를 쓴다."""
     if provider in llm.CLI_PROVIDERS:
-        return ""
+        pct = pages / CLI_PAGES_PER_WEEK * 100
+        if pct < 25:
+            return (f"ℹ️ 구독형 CLI는 추가 과금이 없지만 **주간 사용 한도**를 씁니다 — "
+                    f"{pages:,}쪽이면 주간 한도의 약 **{pct:.0f}%**입니다.")
+        return (f"⚠️ **구독 한도를 크게 씁니다.** {pages:,}쪽이면 주간 한도의 약 "
+                f"**{pct:.0f}%**입니다(실측 41쪽 = 10%). 여러 권을 돌릴 계획이면 "
+                "API가 오히려 현실적입니다 — 한도에 걸리지 않고 쪽당 1~4센트 수준입니다.")
     rate = _API_RATES.get(provider)
     if not rate:
         return (f"⚠️ '{provider}'는 사용량만큼 과금됩니다. {pages:,}쪽을 한 번에 돌리기 전에 "
@@ -265,8 +300,8 @@ def work_dir(out_txt: Path) -> Path:
 
 
 def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
-          pages: list[int] | None = None, dpi: int = 300,
-          progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
+          pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
+          workers: int = DEFAULT_WORKERS, progress=None, should_stop=None, timeout: int = 600) -> list[PageResult]:
     """PDF를 쪽마다 다시 읽어 out_txt로 합친다.
 
     pages는 1-기준 쪽번호 목록(None이면 전체). 이미 읽은 쪽은 건너뛰므로 중단해도
@@ -291,33 +326,58 @@ def reocr(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
         rows = [asdict(results[p]) for p in sorted(results)]
         log.write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    for n, page in enumerate(targets, 1):
-        if should_stop and should_stop():
-            append_log(f"AI 재OCR 중단 요청 — {pdf_path.name} {page}쪽에서 멈춤")
-            break
-        page_file = wd / f"p{page:04d}.txt"
-        if page_file.exists() and results.get(page) and results[page].status != "failed":
-            continue                                   # 이어하기
+    todo = [pg for pg in targets
+            if not ((wd / f"p{pg:04d}.txt").exists()
+                    and results.get(pg) and results[pg].status != "failed")]
 
-        # 쪽을 **시작할 때** 알린다 — 끝날 때만 알리면 한 쪽이 3분 걸리는 동안 화면이
-        # 직전 쪽에 멈춰 있어 작업이 죽은 것처럼 보인다 (2026-08-24 사용자 지적).
-        if progress:
-            progress(n - 1, len(targets), PageResult(page, "reading"))
+    def _one(page: int) -> PageResult:
+        """한 쪽 판독 — 워커에서 돈다. 쪽끼리 공유 상태가 없어 그대로 병렬로 돌 수 있다."""
         base = base_page_text(pdf_path, page - 1)
+        img = None
         try:
-            png = render_page(pdf_path, page - 1, png_dir, dpi)
-            text = read_page(provider, model, png, timeout)
+            img = render_page(pdf_path, page - 1, png_dir, dpi)
+            text = read_page(provider, model, img, timeout)
             status, sim, note = verify(text, base)
-            page_file.write_text(text, encoding="utf-8")
-            res = PageResult(page, status, len(text), len(base), round(sim, 3), note)
-            png.unlink(missing_ok=True)
+            (wd / f"p{page:04d}.txt").write_text(text, encoding="utf-8")
+            return PageResult(page, status, len(text), len(base), round(sim, 3), note)
         except Exception as e:
-            res = PageResult(page, "failed", 0, len(base), 0.0,
-                             f"{type(e).__name__}: {str(e)[:160]}")
-        results[page] = res
-        _flush()
-        if progress:
-            progress(n, len(targets), res)
+            return PageResult(page, "failed", 0, len(base), 0.0,
+                              f"{type(e).__name__}: {str(e)[:160]}")
+        finally:
+            if img is not None:
+                img.unlink(missing_ok=True)
+
+    done, stopped = len(targets) - len(todo), False
+    pending = list(todo)
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures: dict = {}
+
+        def _submit_next():
+            # 처음부터 전부 제출하지 않는다 — 중단 요청이 와도 큐를 비울 수가 없어진다.
+            # 하나 끝날 때마다 하나씩 채워 항상 workers개만 떠 있게 한다.
+            if pending and not stopped:
+                pg = pending.pop(0)
+                futures[pool.submit(_one, pg)] = pg
+                if progress:
+                    # 쪽을 **시작할 때**도 알린다 — 끝날 때만 알리면 한 쪽이 몇 분
+                    # 걸리는 동안 화면이 멈춰 보인다 (2026-08-24 사용자 지적).
+                    progress(done, len(targets), PageResult(pg, "reading"))
+
+        for _ in range(max(1, workers)):
+            _submit_next()
+        while futures:
+            fut = next(as_completed(list(futures)))
+            page = futures.pop(fut)
+            results[page] = fut.result()
+            done += 1
+            _flush()
+            if progress:
+                progress(done, len(targets), results[page])
+            if should_stop and should_stop() and not stopped:
+                stopped = True
+                append_log(f"AI 재OCR 중단 요청 — {pdf_path.name} "
+                           f"({done}/{len(targets)}쪽까지 하고 멈춤)")
+            _submit_next()
 
     assemble(pdf_path, out_txt, total_pages)
     ok = sum(1 for r in results.values() if r.status == "ok")
@@ -383,8 +443,8 @@ def request_stop(pdf_path) -> None:
 
 
 def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
-                     pages: list[int] | None = None, dpi: int = 300,
-                     timeout: int = 600) -> None:
+                     pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
+                     workers: int = DEFAULT_WORKERS, timeout: int = 600) -> None:
     """이미 돌고 있으면 아무 일도 하지 않는다."""
     import threading
     key = run_key(pdf_path)

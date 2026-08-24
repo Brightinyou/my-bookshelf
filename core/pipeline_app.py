@@ -2232,14 +2232,9 @@ if _active_view in {"1_txt", "all_run"}:
                 _prov_tq = st.radio(
                     t("판독 공급자"), _prov_opts, horizontal=True, key="tq_prov",
                     format_func=lambda p: _prov_lbl.get(p, f"{p} API"))
-                _cost_tq = ai_ocr.cost_notice(_prov_tq, _npages_tq)
-                if _cost_tq:
-                    st.warning(_cost_tq)
-                    _ok_cost = st.checkbox(
-                        t("비용이 발생하는 것을 이해했고 그대로 진행합니다"), key="tq_cost_ok")
-                else:
-                    _ok_cost = True
-                    st.success(t("구독형 CLI라 쪽수만큼 시간이 들 뿐 추가 과금은 없습니다."))
+                # 안내는 '실제로 판독할 쪽 수'로 계산해야 한다 — 시험 3쪽인데
+                # 책 전체 기준으로 겁을 주면 안 된다. _pages_tq는 아래에서 정해지므로
+                # 안내도 그 뒤로 미룬다.
 
                 _c1_tq, _c2_tq = st.columns(2)
                 _mode_tq = _c1_tq.radio(
@@ -2256,8 +2251,17 @@ if _active_view in {"1_txt", "all_run"}:
                     _pages_tq = None
                 _cnt_tq = len(_pages_tq) if _pages_tq else _npages_tq
                 _c2_tq.metric(t("판독할 쪽"), f"{_cnt_tq:,} / {_npages_tq:,}")
-                st.caption(tf("쪽당 20~40초쯤 걸립니다 — %d쪽이면 대략 %d분.",
-                              _cnt_tq, max(1, _cnt_tq * 30 // 60)))
+                st.caption(tf("동시 %d쪽씩 처리합니다 — %d쪽이면 대략 %d분.",
+                              ai_ocr.DEFAULT_WORKERS, _cnt_tq,
+                              max(1, _cnt_tq * 40 // ai_ocr.DEFAULT_WORKERS // 60)))
+                _cost_tq = ai_ocr.cost_notice(_prov_tq, _cnt_tq)
+                if _cost_tq.startswith("⚠️"):
+                    st.warning(_cost_tq)
+                    _ok_cost = st.checkbox(
+                        t("비용·한도 소모를 이해했고 그대로 진행합니다"), key="tq_cost_ok")
+                else:
+                    st.info(_cost_tq)
+                    _ok_cost = True
 
                 _running_tq = ai_ocr.is_running(_pdf_tq)
                 _out_tq = cfg.TXT_ARCHIVE_DIR / f"{_pdf_tq.stem}.txt"
