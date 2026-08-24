@@ -815,21 +815,17 @@ def _goto_view(view_id: str) -> None:
     st.rerun()
 
 
-_NEXT_TAB = {"2_split": "split2", "3_translate": "tr3", "4_summary": "summ4", "5_wiki": "wiki5"}
-
 def _set_stage_completion(title: str, message: str, next_stage: str | None = None,
                           open_target: Path | None = None, kind: str = "success",
-                          question: str | None = None, next_items: list | None = None,
+                          question: str | None = None,
+                          next_items: list | None = None,   # 안 쓴다 — 아래 주석 참고
                           open_label: str | None = None, open_action=None,
                           choices: list | None = None) -> None:
     st.session_state["_stage_completion"] = {
         "title": title,
         "message": message,
         "next_stage": next_stage,
-        "next_tab": _NEXT_TAB.get(next_stage or ""),
         "question": question,
-        # 방금 처리한 책 stem 목록 — [예] 자동 실행 시 '이 책들만' 다음 단계 처리
-        "next_items": [_nfc(x) for x in (next_items or [])],
         "open_target": str(open_target) if open_target else "",
         "kind": kind,  # "success"|"warning" — 일부 실패 시 완료로 오인되지 않도록 (2026-07-23)
         # 특정 파일 열기 등 결과 폴더 열기를 대신할 동작 — 있으면 open_target보다 우선
@@ -976,8 +972,6 @@ def _render_stage_completion_notice() -> None:
         (st.warning if payload.get("kind") == "warning" else st.success)(payload["title"])
         st.write(payload["message"])
         _q = payload.get("question")
-        _nb = payload.get("next_stage")
-        _nt = payload.get("next_tab")
         _choices = payload.get("choices")
         if _q and _choices:
             # 다음 단계가 아니라 '지금 해야 할 다른 일'을 묻는 경우 (예: 불량 본문 재OCR)
@@ -995,24 +989,16 @@ def _render_stage_completion_notice() -> None:
                 _clear_stage_completion()
                 st.rerun()
             return
-        if _q and _nb and _nt:
-            # 대화형: 질문 + [예, 바로 진행](다음 단계 자동 실행) / [직접 화면에서 선택](이동만)
-            st.markdown(f"### {_q}")
-            d1, d2 = st.columns(2)
-            if d1.button(t("예, 바로 진행"), icon=":material/play_arrow:", key="stage_yes",
-                         use_container_width=True, type="primary"):
-                st.session_state["_autostart_tab"] = _nt
-                st.session_state["_autostart_items"] = list(payload.get("next_items") or [])
-                _clear_stage_completion()
-                _goto_view(_nb)
-            if d2.button(t("직접 화면에서 선택"), icon=":material/tune:", key="stage_manual",
-                         use_container_width=True):
-                _clear_stage_completion()
-                _goto_view(_nb)
-            if st.button(t("닫기"), icon=":material/close:", key="stage_close2", use_container_width=True):
-                _clear_stage_completion()
-                st.rerun()
-            return
+        if _q:
+            # 선택지 없이 온 문구는 **다음 화면에서 할 일**을 알려 주는 안내다.
+            # 예전에는 이것이 "…할까요?"라는 물음이었고 [예]가 다음 단계를 대신
+            # 실행했다. 이제는 알리기만 한다.
+            st.info(_q)
+        # ★다음 단계를 **자동으로 대신 실행하지 않는다** (2026-08-25 연구자 요청).
+        # 예전에는 [예, 바로 진행]이 다음 탭의 처리를 곧바로 시작했는데, 그러면 어떤
+        # 책이 어떤 설정으로 도는지 모르는 채 일이 벌어진다. 완료 상황만 요약해 주고
+        # **다음 탭으로 데려다 놓는 것까지**가 이 알림의 몫이다 — 실행은 그 화면에서
+        # 사람이 고른다. 아래 표준 블록([다음 단계]·[결과 폴더 열기]·[닫기])이 그 일을 한다.
         c1, c2, c3 = st.columns(3)
         if payload.get("next_stage"):
             if c1.button(t("다음 단계"), icon=":material/arrow_forward:", key="stage_done_next", use_container_width=True, type="primary"):
@@ -1803,7 +1789,11 @@ def _scan_text_quality(paths=None) -> list[dict]:
     방금 뽑은 책만 보여야 지난 책 수십 권이 딸려 오지 않는다."""
     if paths is None:
         seen, targets = set(), []
-        for d in (cfg.TXT_ARCHIVE_DIR, cfg.TXT_DIR):
+        # ★**활성 사본을 먼저** 본다. 같은 이름이 보관 폴더에도 있으면 하나만 남기는데,
+        # 보관본을 먼저 잡으면 재OCR이 **보관본만 고치고** 정작 다음 단계(장별 분할)가
+        # 읽는 활성 사본은 불량인 채 남는다. 실제로 『기술신학』이 그랬다 — 373쪽을
+        # 다시 읽고도 분할 탭에는 계속 🔴가 떴다 (2026-08-25).
+        for d in (cfg.TXT_DIR, cfg.TXT_ARCHIVE_DIR):
             if not d.exists():
                 continue
             for f in sorted(d.rglob("*.txt")):
@@ -2145,9 +2135,8 @@ if _active_view in {"1_txt", "all_run"}:
                         st.rerun()
 
                     def _no_split1(_items=[_nfc(p.stem) for p in _done_txt_paths1]):
+                        # 데려다만 놓는다 — 분할 실행은 그 화면에서 사람이 고른다.
                         st.session_state["tq_dismissed"] = True
-                        st.session_state["_autostart_tab"] = _NEXT_TAB.get("2_split")
-                        st.session_state["_autostart_items"] = _items
                         _goto_view("2_split")
 
                     _q1 = tf("🔴 %d권은 본문이 불량합니다. AI로 다시 읽을까요?", len(_bad_now1))
@@ -2158,7 +2147,7 @@ if _active_view in {"1_txt", "all_run"}:
                          "action": _no_split1},
                     ]
                 else:
-                    _q1, _choices1 = t("이어서 장별로 분할할까요?"), None
+                    _q1, _choices1 = t("다음은 **장별 분할**입니다."), None
                 _set_stage_completion(
                     t("1-TXT변환 완료"),
                     _msg1,
@@ -2467,7 +2456,7 @@ if _active_view == "2_split":
             + (" " + t("외국어 책 → 번역") if _any_en else " " + t("한글 책 → 문서요약")),
             next_stage="3_translate" if _any_en else "4_summary",
             open_target=_stage_folder("2_split"),
-            question=t("이어서 번역을 진행할까요?") if _any_en else t("이어서 장별 요약을 진행할까요?"),
+            question=t("다음은 **번역**입니다.") if _any_en else t("다음은 **장별 요약**입니다."),
             next_items=_items2,
         )
 
@@ -2656,7 +2645,7 @@ if _active_view == "2_split":
                     + (" " + t("외국어 → 번역") if _queued_translate2 else " " + t("한글 → 문서요약")),
                     next_stage=_next_stage2,
                     open_target=_stage_folder("2_split"),
-                    question=t("이어서 번역을 진행할까요?") if _queued_translate2 else t("이어서 장별 요약을 진행할까요?"),
+                    question=t("다음은 **번역**입니다.") if _queued_translate2 else t("다음은 **장별 요약**입니다."),
                     next_items=_done_stems2,
                 )
                 st.rerun()
@@ -2667,13 +2656,6 @@ if _active_view == "2_split":
             st.warning(t("⚠️ 짧은 문서가 감지되었습니다. 아래 '짧은 문서 확인'에서 분할 처리 또는 다음단계로 이동을 선택하세요."))
         else:
             st.info(t("분할 대기 없음 — 📄 텍스트 변환에서 TXT를 먼저 생성하거나 아래에서 수동 추가하세요"))
-
-    if st.session_state.get("_autostart_tab") == "split2" and not _run_active("split2"):
-        st.session_state.pop("_autostart_tab", None)
-        _items = {_nfc(x) for x in st.session_state.pop("_autostart_items", [])}
-        _work = [_it["obj"] for _it in _split_pend2 if _nfc(_it["obj"]["stem"]) in _items]
-        if _work:
-            _run_start("split2", _work)
 
     if _split_short2:
         st.divider()
@@ -2870,7 +2852,7 @@ if _active_view == "3_translate":
             t("번역을 마쳤습니다."),
             next_stage="4_summary",
             open_target=_stage_folder("3_translate"),
-            question=t("이어서 장별 요약을 진행할까요?"),
+            question=t("다음은 **장별 요약**입니다."),
             next_items=_items3,
         )
 
@@ -2991,13 +2973,6 @@ if _active_view == "3_translate":
         else:
             st.info(t("번역 대기 없음 — 📂 챕터 분할에서 챕터를 먼저 분리하세요"))
 
-        if st.session_state.get("_autostart_tab") == "tr3" and not _run_active("tr3"):
-            st.session_state.pop("_autostart_tab", None)
-            _items = {_nfc(x) for x in st.session_state.pop("_autostart_items", [])}
-            _work = [_it["obj"] for _it in _tr_pend3 if _nfc(Path(_it["obj"]).parent.name) in _items]
-            if _work:
-                _run_start("tr3", _work)
-
     st.info(t("💡 다음 단계: **📝 문서요약**으로 이동하세요"))
 
 
@@ -3075,15 +3050,15 @@ if _active_view == "4_summary":
         _vstems4 = {_nfc(p.stem) for p in _vault4.rglob("*.md")} if _vault4.exists() else set()
         _already4 = [s for s in _touched4 if _nfc(s) in _vstems4]
         if _use_ob and _already4 and _touched4:
-            _q4 = (tf("「%s」이(가) 이미 위키에 있습니다. 방금 요약으로 갱신해 %s(으)로 저장할까요?", _touched4[0], _out_name4)
+            _q4 = (tf("「%s」은(는) 이미 위키에 있습니다 — 다음 화면에서 방금 요약으로 갱신해 %s(으)로 저장합니다.", _touched4[0], _out_name4)
                    if len(_touched4) == 1 else
-                   tf("요약한 %d권을 %s(으)로 저장할까요? (일부는 기존 위키 갱신)", len(_touched4), _out_name4))
+                   tf("다음 화면에서 요약한 %d권을 %s(으)로 저장합니다 (일부는 기존 위키 갱신).", len(_touched4), _out_name4))
         elif _touched4:
-            _q4 = (tf("요약된 「%s」을(를) %s(으)로 저장할까요?", _touched4[0], _out_name4)
+            _q4 = (tf("다음 화면에서 「%s」을(를) %s(으)로 저장합니다.", _touched4[0], _out_name4)
                    if len(_touched4) == 1 else
-                   tf("요약된 %d권을 %s(으)로 저장할까요?", len(_touched4), _out_name4))
+                   tf("다음 화면에서 요약된 %d권을 %s(으)로 저장합니다.", len(_touched4), _out_name4))
         else:
-            _q4 = tf("요약된 문서를 %s(으)로 저장할까요?", _out_name4)
+            _q4 = tf("다음 화면에서 요약된 문서를 %s(으)로 저장합니다.", _out_name4)
         _set_stage_completion(
             t("4-문서요약 완료"),
             t("요약을 마쳤습니다."),
@@ -3225,14 +3200,6 @@ if _active_view == "4_summary":
                 _run_start("summ4", _sel4_rels)
         else:
             st.info(t("요약 대기 없음 — 🌐 번역 처리 후 자동 등록되거나 위에서 TXT를 직접 업로드하세요"))
-
-        if st.session_state.get("_autostart_tab") == "summ4" and not _run_active("summ4"):
-            st.session_state.pop("_autostart_tab", None)
-            _items = {_nfc(x) for x in st.session_state.pop("_autostart_items", [])}
-            _auto4 = [str(_it["obj"][0].relative_to(cfg.BASE_DIR)) for _it in _sum_pend4
-                      if _nfc(_it["obj"][1]) in _items]
-            if _auto4:
-                _run_start("summ4", _auto4)
 
         if _sum_failed4:
             st.markdown(tf("#### 요약 실패 (%d개)", len(_sum_failed4)))
@@ -3773,13 +3740,6 @@ if _active_view == "5_wiki":
         if _refresh_run5 and _refresh_stems5:
             st.session_state["wiki5_status_place"] = "refresh"
             _run_start("wiki5", _refresh_stems5)
-
-    if st.session_state.get("_autostart_tab") == "wiki5" and not _run_active("wiki5"):
-        st.session_state.pop("_autostart_tab", None)
-        _items = {_nfc(x) for x in st.session_state.pop("_autostart_items", [])}
-        _auto5 = [_it["obj"]["stem"] for _it in _wiki_pend5 if _nfc(_it["obj"]["stem"]) in _items]
-        if _auto5:
-            _run_start("wiki5", _auto5)
 
     # 수동 추가 expander (책 단위)
     with st.expander(t("➕ 수동으로 추가 (요약 완료된 책에서 선택)")):
