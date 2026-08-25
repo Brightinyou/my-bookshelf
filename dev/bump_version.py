@@ -19,6 +19,16 @@ def main() -> int:
         f'APP_VERSION = "{new_version}"\nAPP_VERSION_NUMBER = APP_VERSION.removeprefix("v")\n',
         encoding="utf-8",
     )
+    # 설치본 버전도 같이 올린다. 따로 두면 어긋난다 — 실제로 앱이 v1.2.32일 때
+    # .iss는 1.2.17에 멈춰 있어서 "프로그램 추가/제거"에 옛 버전이 떴다.
+    iss = root / "dev" / "installer" / "MyBookshelf.iss"
+    if iss.exists():
+        s = iss.read_text(encoding="utf-8-sig")
+        s2 = re.sub(r'(#define MyAppVersion\s+")[\d.]+(")',
+                    rf'\g<1>{major}.{minor}.{patch}\g<2>', s, count=1)
+        if s2 != s:
+            iss.write_text("﻿" + s2, encoding="utf-8")
+
     print(new_version)
     return 0
 
