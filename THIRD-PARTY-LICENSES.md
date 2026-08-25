@@ -40,7 +40,7 @@ any third party a complete machine-readable copy of the Corresponding Source
 for the Poppler binary we shipped — including the source of the specific build,
 if it differs in any way from the upstream archive above — for no more than our
 cost of physically performing the distribution. To request it, open an issue at
-https://github.com/Brightinyou/my-bookshelf-for-pc/issues .
+https://github.com/Brightinyou/my-bookshelf/issues .
 
 ## Python libraries — permissive (MIT / BSD / Apache-2.0 / MPL-2.0)
 

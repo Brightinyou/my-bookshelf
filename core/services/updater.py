@@ -32,8 +32,8 @@ try:
 except Exception:
     APP_VERSION = "v0.0.0"
 
-REPO_WIN = "Brightinyou/my-bookshelf-for-pc"
-REPO_MAC = "Brightinyou/my-bookshelf-for-mac"
+REPO_WIN = "Brightinyou/my-bookshelf"
+REPO_MAC = "Brightinyou/my-bookshelf"
 
 
 def _repo() -> str:

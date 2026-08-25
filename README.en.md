@@ -28,7 +28,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translatio
 
 #### Step 1 — Download
 
-On the [**latest release**](https://github.com/Brightinyou/my-bookshelf-for-mac/releases/latest) page, under **Assets**, grab one of:
+On the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page, under **Assets**, grab one of:
 
 - **`MyBookshelf-vX.Y.Z.dmg`** — recommended. Opens the familiar "drag to install" window.
 - `MyBookshelf-vX.Y.Z-mac.zip` — unzipping gives just the app file. (Having no separate installer is normal — the app installs itself.)
@@ -57,7 +57,7 @@ The first launch **auto-installs** the Python environment and packages (**5–20
 > Requires Python 3.10+. If missing, install from [python.org](https://www.python.org/downloads/).
 > If setup seems stuck, check the log: `~/Library/Application Support/MyBookshelf/app.log`
 
-> 🪟 **On Windows?** → See the [my-bookshelf-for-pc](https://github.com/Brightinyou/my-bookshelf-for-pc) repository's manual.
+> 🪟 **On Windows?** → Grab `Setup.exe` from the same [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page and run it. macOS and Windows share a single repository.
 
 ---
 

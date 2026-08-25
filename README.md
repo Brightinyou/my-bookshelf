@@ -28,7 +28,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 #### 1단계 — 내려받기
 
-[**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf-for-mac/releases/latest) 페이지 아래 **Assets**에서 둘 중 하나를 받습니다:
+[**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지 아래 **Assets**에서 둘 중 하나를 받습니다:
 
 - **`MyBookshelf-vX.Y.Z.dmg`** — 권장. 익숙한 "드래그해서 설치" 창이 열립니다.
 - `MyBookshelf-vX.Y.Z-mac.zip` — 압축을 풀면 앱 파일만 나옵니다. (별도 설치 프로그램이 없는 것이 정상 — 앱 자체가 설치를 겸합니다.)
@@ -57,7 +57,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 > Python 3.10 이상이 필요합니다. 없으면 [python.org](https://www.python.org/downloads/)에서 설치하세요.
 > 설치가 오래 걸리거나 멈춘 것 같으면 로그를 확인하세요: `~/Library/Application Support/MyBookshelf/app.log`
 
-> 🪟 **Windows 사용자는?** → [my-bookshelf-for-pc](https://github.com/Brightinyou/my-bookshelf-for-pc) 저장소의 설명서를 참고하세요.
+> 🪟 **Windows 사용자는?** → 같은 [**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지에서 `Setup.exe`를 받아 실행하세요. macOS와 Windows가 저장소 하나를 함께 씁니다.
 
 ---
 
