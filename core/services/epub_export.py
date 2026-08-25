@@ -147,19 +147,72 @@ h1 { font-size: 1.4em; text-align: center; margin: 2.5em 0 1.8em; }
 p { margin: 0 0 1em; text-indent: 1em; }
 nav ol { list-style: none; padding-left: 0; }
 nav li { margin: 0.5em 0; }
+
+/* 각주 — 팝업을 지원하는 읽개(애플 북스·Thorium 등)는 aside를 본문에 안 보이게
+   두었다가 번호를 누르면 띄운다. 지원하지 않는 읽개에서는 장 끝에 모아 보여
+   준다. 그래서 `display:none`을 쓰지 않는다 — 그러면 옛 읽개에서 각주가 통째로
+   사라진다. */
+a.noteref { text-decoration: none; }
+a.noteref sup { font-size: 0.75em; vertical-align: super; }
+section.footnotes { margin-top: 2.5em; border-top: 1px solid #999; padding-top: 1em;
+                    font-size: 0.9em; }
+aside.footnote p { text-indent: 0; margin: 0 0 0.5em; }
+a.backref { text-decoration: none; margin-left: 0.3em; }
 """
 
 
-def _chapter_xhtml(title: str, text: str) -> str:
+_FN_DEF = re.compile(r"^\[\^([^\]]+)\]:\s*(.+)$", re.M)
+_FN_REF = re.compile(r"\[\^([^\]]+)\]")
+
+
+def _with_footnotes(text: str) -> tuple[str, str]:
+    """본문을 EPUB3 각주로 바꾼다 — (본문 HTML, 각주 HTML) (2026-08-25 연구자 요청).
+
+    ★Markdown 쪽에서 이미 하고 있던 일을 EPUB에서도 한다. 지금까지 EPUB은 각주를
+    **본문 아래 맨숫자 덩어리**로 흘려보냈다. `epub:type="noteref"`/`"footnote"`를
+    쓰면 읽는 이가 번호를 눌러 **그 자리에서 각주를 펴 볼 수 있다**(애플 북스·
+    Thorium 등은 팝업으로 띄운다). 학위논문 자료에서 각주는 본문만큼 중요하다.
+
+    각주를 찾는 일은 services/footnotes.convert가 이미 한다 — 그 결과(Markdown)를
+    받아 표시만 바꾼다. **찾는 규칙을 두 벌로 만들지 않는다.**"""
+    try:
+        from services import footnotes as _fn
+        md = _fn.convert(text).markdown
+    except Exception:
+        md = text
+    defs = {k: v.strip() for k, v in _FN_DEF.findall(md)}
+    body_md = _FN_DEF.sub("", md).strip()
+
     paras = [html.escape(p.strip()).replace("\n", "<br/>")
-             for p in re.split(r"\n\s*\n", text) if p.strip()]
+             for p in re.split(r"\n\s*\n", body_md) if p.strip()]
     body = "\n".join(f"<p>{p}</p>" for p in paras) or "<p></p>"
+
+    def _ref(m):
+        k = m.group(1)
+        if k not in defs:
+            return m.group(0)
+        kid = re.sub(r"[^0-9A-Za-z_-]", "_", k)
+        return (f'<a epub:type="noteref" href="#fn-{kid}" id="ref-{kid}" '
+                f'class="noteref"><sup>{html.escape(k)}</sup></a>')
+    body = _FN_REF.sub(_ref, body)
+
+    notes = "\n".join(
+        f'<aside epub:type="footnote" id="fn-{re.sub(r"[^0-9A-Za-z_-]", "_", k)}" '
+        f'class="footnote"><p><sup>{html.escape(k)}</sup> {html.escape(v)} '
+        f'<a href="#ref-{re.sub(r"[^0-9A-Za-z_-]", "_", k)}" class="backref">↩</a></p></aside>'
+        for k, v in defs.items())
+    return body, (f'\n<section epub:type="footnotes" class="footnotes">\n{notes}\n</section>'
+                  if notes else "")
+
+
+def _chapter_xhtml(title: str, text: str) -> str:
+    body, notes = _with_footnotes(text)
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">\n'
         f"<head><title>{html.escape(title)}</title>"
         '<link rel="stylesheet" type="text/css" href="../styles/style.css"/></head>\n'
-        f"<body>\n<h1>{html.escape(title)}</h1>\n{body}\n</body>\n</html>"
+        f"<body>\n<h1>{html.escape(title)}</h1>\n{body}{notes}\n</body>\n</html>"
     )
 
 
