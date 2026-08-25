@@ -1007,6 +1007,11 @@ def _pid_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True                                   # 남의 프로세스지만 살아 있다
+    except OSError:
+        # 윈도우는 없는 PID에 ProcessLookupError가 아니라 OSError(WinError 87,
+        # '매개 변수가 틀립니다')를 낸다. 이걸 안 받으면 is_running()이 예외를 올려
+        # '이어하기' 확인이 통째로 터진다 (2026-08-26 PC 테스트에서 드러남).
+        return False
 
 
 def request_stop(out_txt) -> None:

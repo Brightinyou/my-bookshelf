@@ -17,6 +17,7 @@ import json
 import re
 import subprocess
 import tempfile
+from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -177,6 +178,73 @@ def pages_pdf(pdf_path: Path, indices: list[int], label: str = "차례") -> Path
         return None
     finally:
         src.close()
+
+
+def page_count(pdf_path: Path) -> int:
+    """PDF 총 쪽수. 못 읽으면 0."""
+    try:
+        import pypdfium2 as pdfium
+        src = pdfium.PdfDocument(str(pdf_path))
+        n = len(src)
+        src.close()
+        return n
+    except Exception:
+        return 0
+
+
+def printed_offset(pdf_path: Path, sample: int = 12) -> int | None:
+    """물리 쪽 번호에 더하면 **인쇄된 쪽 번호**가 되는 값. 못 찾으면 None.
+
+    ★발췌본·별쇄본은 인쇄 번호가 1부터 시작하지 않는다 — 실측(2026-08-25)에서
+    영국감리교 보고서는 453부터였다. 사람은 책에 찍힌 번호로 생각하는데 앱은 파일
+    안 순번으로 받으니 늘 어긋난다.
+
+    ★**모르면 모른다고 한다.** 처음 판(2026-08-26)은 숫자 후보를 그냥 세었더니
+    Dorobantu 논문에서 각주 번호(`2 Paul Harmon…`, `4 Genesis 1:26`)를 쪽 번호로
+    잘못 읽어 -1을 내놓았다. 그 논문은 인쇄 번호가 텍스트층 가장자리에 아예 없다.
+    틀린 번호를 보여 주는 것은 안 보여 주는 것보다 나쁘다. 그래서:
+      · 한 쪽이 같은 차이에 여러 번 투표하지 못하게 쪽마다 **집합**으로 모으고,
+      · 표본 쪽의 **과반**이 같은 차이를 가리켜야 하며,
+      · 2등과 뚜렷이 벌어져야 채택한다."""
+    try:
+        import pypdfium2 as pdfium
+        src = pdfium.PdfDocument(str(pdf_path))
+    except Exception:
+        return None
+    try:
+        n = min(len(src), sample)
+        if n < 4:
+            return None
+        votes: Counter = Counter()
+        for i in range(n):
+            try:
+                raw = src[i].get_textpage().get_text_range()
+            except Exception:
+                continue
+            rows = [r.strip() for r in raw.replace("\r\n", "\n").split("\n") if r.strip()]
+            seen = {int(m.group(1)) - (i + 1)                 # 쪽마다 한 표씩만
+                    for row in rows[:3] + rows[-3:]
+                    for m in re.finditer(r"\b(\d{1,4})\b", row)}
+            votes.update(seen)
+        if not votes:
+            return None
+        ranked = votes.most_common(2)
+        off, top = ranked[0]
+        runner = ranked[1][1] if len(ranked) > 1 else 0
+        if top < max(4, (n + 1) // 2) or top < runner + 3:
+            return None                                       # 근거가 약하면 포기
+        return off
+    finally:
+        src.close()
+
+
+def printed_label(pdf_path: Path, pages_1based: list[int]) -> str:
+    """'3·4쪽' 또는 인쇄 번호를 알면 '3·4쪽 (인쇄 455·456)'."""
+    body = "·".join(str(p) for p in pages_1based)
+    off = printed_offset(pdf_path)
+    if off in (None, 0):
+        return f"{body}쪽"
+    return f"{body}쪽 (인쇄 {'·'.join(str(p + off) for p in pages_1based)})"
 
 
 def _visual_toc_gemini(model: str, key: str, scan_pdf: Path, prompt: str) -> str:

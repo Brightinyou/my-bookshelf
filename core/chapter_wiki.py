@@ -634,6 +634,11 @@ def _lead_title(lead: str) -> str:
         if len(lead) - m.end() >= 400:
             best = m
     if best is None:
+        # 논문은 'Introduction' 표제 없이 초록 뒤로 곧장 본문이 오는 일이 흔하다.
+        # 그 덩어리엔 제목·저자·초록·서론이 함께 들어 있어 '머리말'은 사실과
+        # 어긋난다 (2026-08-25 Dorobantu 논문에서 연구자 지적).
+        if re.search(r"^\s*Abstract\b|\bAbstract\s*[::]", lead[:3000], re.M):
+            return "제목·초록·서론"
         return "머리말"
     title = re.sub(r"\s+", "", best.group("title"))
     if title.lower() == "introduction":

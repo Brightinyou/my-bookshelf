@@ -1064,6 +1064,10 @@ def _book_source_text(book: str) -> str:
     return ""
 
 
+# 이보다 짧으면 차례 쪽을 짚어낼 것도 없이 통째로 연다. 논문·발췌본이 여기 든다.
+_SHORT_DOC_PAGES = 30
+
+
 def _render_toc_side_by_side(key: str, book: str) -> None:
     """원본 PDF의 **차례 쪽을 미리보기 창으로 띄운다** (2026-08-25 연구자 요청).
 
@@ -1074,29 +1078,55 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
     두 가지 보기 방식을 나란히 두면 고르는 일만 늘어난다.
 
     ★**같은 쪽을 두 번 열지 않는다.** Streamlit은 조작할 때마다 화면을 다시 그리므로,
-    그대로 두면 클릭 한 번에 창이 하나씩 늘어난다. 책과 고른 쪽이 바뀔 때만 연다."""
+    그대로 두면 클릭 한 번에 창이 하나씩 늘어난다. 책과 고른 쪽이 바뀔 때만 연다.
+
+    ★**모르면 추측하지 않는다** (2026-08-26). 예전에는 차례를 못 찾으면 `[3, 4]`쪽을
+    기본값으로 박아 두고 그대로 창을 띄웠다. 그런데 논문·발췌본은 차례가 없는 것이
+    정상이라, 연구자가 볼 때마다 엉뚱한 본문 쪽이 열렸다(실측: 인쇄 455·456쪽).
+    짧은 문서는 통째로 열고, 긴 책에서 차례를 못 찾으면 **창을 열지 않고** 말한다."""
     _pdf = cfg.PDF_DIR / f"{book}.pdf"
     if not _pdf.exists():
         return
+    _seen = f"{key}_tocopened_{book}"
+    _total = toc_svc.page_count(_pdf)
+
+    # ── 짧은 문서: 차례를 찾을 것 없이 전체를 연다 ──────────────────────
+    if 0 < _total <= _SHORT_DOC_PAGES:
+        if st.session_state.get(_seen) != ("whole", _total):
+            open_pdf_view(_pdf)
+            st.session_state[_seen] = ("whole", _total)
+        st.info("📖 " + tf("**원본 %s쪽 전체를 미리보기 창으로 열었습니다.** "
+                           "짧은 글이라 차례 쪽을 따로 짚지 않았습니다 — 그 창을 이 앱 창 옆에 "
+                           "나란히 놓고 아래 장 목록과 견주어 보세요.", str(_total)))
+        if st.button(t("원본 창 다시 열기"), icon=":material/refresh:",
+                     key=f"{key}_tocre_{book}"):
+            st.session_state.pop(_seen, None)
+            st.rerun()
+        return
+
+    # ── 긴 책: 차례 쪽을 짚는다 ────────────────────────────────────────
     _sugg = toc_svc.toc_page_candidates(_book_source_text(book)) or []
     _skey = f"{key}_tocpg_{book}"
-    _default = [p for p in ([i + 1 for i in _sugg[:2]] or [3, 4]) if p <= 40]
+    _default = [i + 1 for i in _sugg[:2] if i + 1 <= 40]      # 못 찾으면 비워 둔다
     with st.expander("📖 " + t("차례 쪽 고르기") + (
             tf(" — 차례로 보이는 쪽: %s", ", ".join(str(i + 1) for i in _sugg)) if _sugg else ""),
-            expanded=False):
+            expanded=not _sugg):
         st.caption(t("자동으로 짚은 쪽이 차례가 아니면 여기서 고쳐 주세요 — 고치면 창이 다시 열립니다."))
         _pages = st.multiselect(t("차례가 있는 쪽 (1-기반)"), list(range(1, 41)),
                                 default=_default, key=_skey)
         # 창을 닫았을 때 되살릴 길 — 접힌 칸 안에 둔다(본 화면에는 버튼을 두지 않는다).
         if st.button(t("차례 창 다시 열기"), icon=":material/refresh:",
                      key=f"{key}_tocre_{book}"):
-            st.session_state.pop(f"{key}_tocopened_{book}", None)
+            st.session_state.pop(_seen, None)
             st.rerun()
     if not _pages:
-        st.info(t("📖 차례 쪽을 고르면 미리보기 창으로 띄워 드립니다 — 위 «차례 쪽 고르기»를 펴 보세요."))
+        if _sugg:
+            st.info(t("📖 차례 쪽을 고르면 미리보기 창으로 띄워 드립니다 — 위 «차례 쪽 고르기»를 펴 보세요."))
+        else:
+            st.info(t("📖 이 책에서는 차례를 찾지 못했습니다. 차례가 있는 쪽을 위에서 짚어 "
+                      "주시면 열어 드리겠습니다. 차례가 없는 글이면 그냥 지나가셔도 됩니다."))
         return
 
-    _seen = f"{key}_tocopened_{book}"
     _want = tuple(_pages)
     if st.session_state.get(_seen) != _want:
         _out = toc_svc.pages_pdf(_pdf, [p - 1 for p in _pages])
@@ -1106,10 +1136,10 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
         else:
             st.warning(t("차례 PDF를 만들지 못했습니다 — 쪽 번호를 확인해 주세요."))
             return
-    st.info("📖 " + tf("**차례 %s쪽을 미리보기 창으로 열었습니다.** "
+    st.info("📖 " + tf("**차례 %s을 미리보기 창으로 열었습니다.** "
                        "그 창을 이 앱 창 옆에 나란히 놓고, 아래 장 목록과 **한 줄씩 견주어 보세요** — "
                        "빠진 장이나 잘못 붙은 장이 보이면 맨 아래 채팅창에 그대로 말씀하시면 됩니다.",
-                       "·".join(str(p) for p in _pages)))
+                       toc_svc.printed_label(_pdf, _pages)))
 
 
 def _render_chapter_chat(key: str, book: str) -> None:

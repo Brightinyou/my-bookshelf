@@ -10,6 +10,7 @@
 **다른 프로세스에서 건 중단이 보여야 한다.**
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -31,7 +32,9 @@ class RunStateTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _beat(self, **kw):
-        payload = {"beat": time.time(), "pid": 1, "done": 0, "total": 1}
+        # pid 1 은 유닉스에서만 늘 살아 있다(init). 윈도우에서는 없는 PID라
+        # "살아 있는 pid" 라는 뜻이 안 된다 — 확실히 도는 프로세스를 쓴다.
+        payload = {"beat": time.time(), "pid": os.getpid(), "done": 0, "total": 1}
         payload.update(kw)
         ai_ocr._hb_path(self.out).write_text(json.dumps(payload), encoding="utf-8")
 
