@@ -311,6 +311,71 @@ def reflow_pages(text: str, has_notes: list[bool] | None = None,
     return ("\n" + PAGE_SEP + "\n").join(out)
 
 
+def audit_sequence(text: str, has_notes: list[bool] | None = None) -> list[dict]:
+    """각주 번호가 **빠짐없이 이어지는지** 훑는다 (2026-08-25 연구자 지적).
+
+    ★연구자의 판단을 그대로 규칙으로 옮긴 것이다 — "각주로는 4 다음 6이 잡히는데,
+    그러면 5가 어디선가 사라진 것이다." 각주 번호는 글 안에서 **연속**이므로 빠진
+    번호는 곧 **놓친 각주**다. 사람은 눈으로 알아채지만 훑어야 알 수 있고, 373쪽을
+    사람이 다 훑을 수는 없다.
+
+    돌려주는 것: [{"page": 쪽(0기반), "after": 앞 번호, "missing": [빠진 번호들]}]
+
+    ★**고치지 않고 알리기만 한다.** 빠진 자리를 자동으로 메우려면 각주가 어디서
+    끝나고 본문이 어디서 다시 시작하는지 알아야 하는데, 그건 확신할 수 없는 판단이다
+    (`recover_hint` 참고). 잘못 메우면 본문이 각주로 떨어져 나가고 되돌릴 수 없다."""
+    pages = text.split(PAGE_SEP)
+    found: list[tuple[int, int]] = []          # (쪽, 번호)
+    for pi, page in enumerate(pages):
+        if has_notes is not None and pi < len(has_notes) and not has_notes[pi]:
+            continue
+        _h, notes = _split_notes(page)
+        for n, _b in notes:
+            found.append((pi, n))
+    out: list[dict] = []
+    for (p1, n1), (p2, n2) in zip(found, found[1:]):
+        if n2 <= n1:
+            continue                            # 장이 바뀌며 1로 돌아가는 자리
+        if n2 - n1 > 1 and n2 - n1 <= 15:      # 너무 크게 벌어지면 장이 바뀐 것이다
+            out.append({"page": p2, "after": n1,
+                        "missing": list(range(n1 + 1, n2))})
+    return out
+
+
+def recover_hint(page: str, missing: int, lexicon: str = "") -> dict | None:
+    """빠진 각주 하나를 **어디서 떼어내면 되는지** 짚어 본다. 고치지는 않는다.
+
+    ★연구자의 검증법을 그대로 옮겼다 — "각주 5 앞에 있는 `신` 다음에 `앙인`이 있으니
+    `신앙인`으로 이어진다. 그러면 그 사이가 각주다." 즉 **각주를 들어내고 남은 본문이
+    책에 있는 낱말로 이어붙으면** 그 경계가 맞다.
+
+    돌려주는 것: {"start": 시작위치, "end": 끝위치, "join": 이어붙은 낱말} 또는 None.
+    확신이 서지 않으면 None이다 — **찍지 않는다.**"""
+    if not lexicon:
+        return None
+    # 번호가 여러 번 나오면 **뒤엣것**이 각주다(앞엣것은 본문 속 참조).
+    starts = [m.start() for m in re.finditer(rf"(?<=\s){missing}\s+(?=\S)", page)]
+    if not starts:
+        return None
+    s = starts[-1]
+    before = page[:s].rstrip()
+    mt = _HANGUL_TAIL.search(before)
+    if not mt:
+        return None
+    tail = mt.group(0)[-3:]
+    # 각주가 끝나고 본문이 다시 시작하는 자리를 찾는다 — 이어붙인 말이 책에 있어야 한다
+    for m in re.finditer(r"(?<=[.。])\s*(?=[가-힣])", page[s:]):
+        e = s + m.end()
+        mh = _HANGUL_HEAD.search(page[e:])
+        if not mh:
+            continue
+        joined = tail + mh.group(0)[:3]
+        for k in range(len(joined), 1, -1):
+            if joined[:k] in lexicon and len(joined[:k]) >= 2:
+                return {"start": s, "end": e, "join": joined[:k]}
+    return None
+
+
 def convert(text: str, has_notes: list[bool] | None = None) -> Result:
     """쪽 구분(`\\f`)이 있는 본문을 Markdown으로. 각주는 `[^n]` / `[^n]: …`.
 

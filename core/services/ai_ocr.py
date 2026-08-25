@@ -837,6 +837,16 @@ def assemble(pdf_path: Path, out_txt: Path, total_pages: int | None = None) -> P
     # 나중에 인용할 때 사람이 매번 되짚어야 한다 (services/footnotes 머리말 참고).
     try:
         from services import footnotes
+        # ★각주 번호가 빠짐없이 이어지는지 훑어 **기록으로 남긴다.** 빠진 번호는 곧
+        # 놓친 각주다(연구자 지적: "4 다음 6이 잡히면 5가 사라진 것"). 자동으로
+        # 메우지는 않는다 — 각주가 어디서 끝나는지는 확신할 수 없는 판단이다.
+        gaps = footnotes.audit_sequence(body, flags)
+        if gaps:
+            miss = sum(len(g["missing"]) for g in gaps)
+            head = ", ".join(f"{g['page'] + 1}쪽 {g['missing']}" for g in gaps[:5])
+            append_log(f"⚠️ 각주 번호가 {len(gaps)}곳에서 끊깁니다 — 각주 {miss}개가 "
+                       f"판독에서 빠진 것으로 보입니다: {head}"
+                       + (" …" if len(gaps) > 5 else ""))
         res = footnotes.convert(body, flags)      # flags는 위에서 한 번만 잰다
         if res.notes:
             out_txt.with_suffix(".md").write_text(res.markdown, encoding="utf-8")
