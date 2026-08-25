@@ -247,49 +247,67 @@ def reflow_pages(text: str, has_notes: list[bool] | None = None,
 
     책은 쪽 아래에 각주를 두므로, 문장이 쪽을 넘어가면 판독 결과가 이렇게 된다:
 
-        …주목할 것은 소위 ‘제본스의 역        ← 문장이 중간에 끊긴다
-        35 Andy Clark, Natural-Born Cyborgs…
-        36 브린욜프슨 & 맥아피, 『제2의 기계시대』, 11.
-        37 위의 책, 12.\f설’인데, 영국의 경제학자…   ← 각주에 본문이 딱 붙는다
+        …생명체인 것처럼 착각하고 있다고 비판하였다.58 시     ← 낱말 한복판에서 끊긴다
+        58 시몽동, 『기술적 대상들의 존재양식에 대하여』, 71-73.
+        (다음 쪽) 몽동은 생명체와 기술 개체의 차이를…
 
-    ★**문장이 완성되지 않으면 사람도 AI도 검증하지 못한다**(연구자 지적). 그래서
-    각주 위에서 끊긴 본문을 다음 쪽 첫 문단과 **먼저 잇고**, 각주 덩어리는 그 뒤로
-    내린다. 각주는 쪽 아래 붙임이지 문장 한복판의 삽입구가 아니다.
+    ★**문장이 완성되지 않으면 사람도 AI도 검증하지 못한다.** 그래서 각주 위에서
+    끊긴 본문을 다음 쪽 **본문**과 잇고, 각주 덩어리는 **쪽 차례 그대로** 뒤에 놓는다.
 
-    ★그리고 **각주 덩어리 뒤에는 반드시 빈 줄**을 둔다 — 그렇지 않으면 다음 본문이
-    서지사항에 이어 붙어 한 문단처럼 보인다(`37 위의 책, 12.설’인데,`).
-    """
+    ★★**다음 쪽에서 끌어올 것은 그 쪽의 '본문'이지 '첫 문단'이 아니다.** 빈 줄로
+    각주가 갈려 있지 않은 쪽에서는 첫 문단이 **각주까지 통째로**라, 그대로 끌어올리면
+    그 쪽 각주가 앞 쪽 각주보다 먼저 나온다 — 실측에서 58이 55·56·57 앞에 놓였다
+    (2026-08-25 연구자 지적). 그래서 `_split_notes`로 본문만 떼어 끌어온다.
+
+    ★한 번 이어도 여전히 문장 중간이면(위 예의 `시` → `몽동은`) **다음 쪽까지 이어
+    간다.** 그때 지나친 쪽들의 각주는 **쪽 차례대로** 뒤에 붙인다."""
     pages = text.split(PAGE_SEP)
     out: list[str] = []
-    # 앞 쪽이 첫 문단을 가져갔으면 이번 쪽은 '남은 부분'부터 본다.
-    # ★빈 문자열도 뜻이 있다 — 한 문단뿐이던 쪽은 통째로 넘어가 **아무것도 안 남는다**.
-    # 그래서 참·거짓이 아니라 '넘겨받았는가'를 따로 둔다(안 그러면 그 쪽이 두 번 실린다).
-    carry_rest, carried = "", False
-    for pi, raw in enumerate(pages):
-        page = carry_rest if carried else raw
-        carry_rest, carried = "", False
-        if has_notes is not None and pi < len(has_notes) and not has_notes[pi]:
+    carry: dict[int, str] = {}          # 앞 쪽이 본문을 가져가고 남긴 것
+
+    def _block(notes: list[tuple[int, str]]) -> str:
+        return "\n".join(f"{n} {b}" for n, b in notes)
+
+    def _skip(i: int) -> bool:
+        return has_notes is not None and i < len(has_notes) and not has_notes[i]
+
+    i = 0
+    while i < len(pages):
+        page = carry.pop(i) if i in carry else pages[i]
+        if _skip(i) or not page.strip():
+            # ★본문을 앞 쪽이 다 가져가 빈 쪽이어도 **조각은 남긴다.** 조각 수가
+            # 원래 쪽 수와 같아야 뒤따르는 단계(services/layout이 잰 has_notes,
+            # 각주 짝짓기)의 쪽 번호가 어긋나지 않는다.
             out.append(page.strip())
+            i += 1
             continue
         head, notes = _split_notes(page)
         if not notes:
             out.append(page.strip())
+            i += 1
             continue
-        block = "\n".join(f"{n} {b}" for n, b in notes)
-        if ends_midsentence(head) and pi + 1 < len(pages):
-            first, rest = _first_para(pages[pi + 1])
-            # ★끌어올릴 것이 **본문이어야** 한다. 다음 쪽이 각주로 시작하면(앞 쪽에서
-            # 이어진 각주거나, 본문이 없는 쪽이다) 그걸 끌어올려 앞 쪽 본문에 붙이는
-            # 순간 **각주 차례가 뒤엉킨다** — 실측에서 11·12·13이 8·9·10보다 앞에
-            # 놓였다(2026-08-25 연구자 지적).
-            if first.strip() and not _NOTE_LINE.match(first.strip().split("\n")[0]):
-                head = join_across_break(head, first, lexicon)
-                carry_rest, carried = rest, True
-        out.append((head.strip() + "\n\n" + block).strip())
+        blocks = [_block(notes)]
+        j = i
+        while ends_midsentence(head) and j + 1 < len(pages) and (j + 1) not in carry:
+            nh, nn = _split_notes(pages[j + 1])
+            if not nh.strip():
+                break
+            first, rest = _first_para(nh)
+            if not first.strip() or _NOTE_LINE.match(first.strip().split("\n")[0]):
+                break
+            head = join_across_break(head, first, lexicon)
+            if rest.strip():
+                # 그 쪽에 본문이 남았다 — 남은 본문과 그 쪽 각주로 다시 세운다
+                carry[j + 1] = (rest.strip() + ("\n\n" + _block(nn) if nn else "")).strip()
+                break
+            carry[j + 1] = ""           # 본문을 다 가져왔다
+            if nn:
+                blocks.append(_block(nn))   # ★각주는 쪽 차례대로 뒤에 붙인다
+            j += 1
+        out.append("\n\n".join([head.strip()] + blocks).strip())
+        i += 1
     # ★쪽 구분자 앞뒤에 줄바꿈을 둔다. `\f`만 넣으면 화면에서 보이지 않아
-    # **앞 쪽의 마지막 각주와 다음 쪽 첫 본문이 한 줄처럼 붙는다**
-    # (`13 하이데거, 『강연과 논문』, 44.기술의 본질에 대해…`). 쪽을 가르는 코드는
-    # 모두 `\f`로 split하므로 줄바꿈이 있어도 그대로 동작한다.
+    # 앞 쪽의 마지막 각주와 다음 쪽 첫 본문이 한 줄처럼 붙는다.
     return ("\n" + PAGE_SEP + "\n").join(out)
 
 
