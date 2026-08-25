@@ -67,5 +67,28 @@ class SafeTitleTest(unittest.TestCase):
         self.assertEqual(_safe(":::"), "제목없음")
 
 
+class OneImplementationTest(unittest.TestCase):
+    """★규칙이 여러 벌 복사되면 한 곳만 고치게 된다.
+
+    실제로 그랬다: `chapter_map._safe`만 고쳤더니 장 제목이 제대로 저장됐다가
+    **다시 분할하니 또 잘렸다** — `chapters.split_book_to_chapters`가 제 사본
+    (`[:50]`)을 쓰고 있었다(2026-08-25). 사본이 다시 생기지 않게 지킨다."""
+
+    def test_두_모듈이_같은_함수를_쓴다(self):
+        from services import chapter_map, chapters
+        self.assertIs(chapter_map._safe, chapters.safe_title)
+
+    def test_옛_규칙_사본이_남아_있지_않다(self):
+        import re
+        from pathlib import Path
+        src = Path(chapters_src()).read_text(encoding="utf-8")
+        self.assertNotRegex(src, r"\[:\s*50\s*\]", "50자 절단 사본이 남아 있다")
+
+
+def chapters_src():
+    from services import chapters
+    return chapters.__file__
+
+
 if __name__ == "__main__":
     unittest.main()
