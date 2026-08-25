@@ -64,6 +64,84 @@ class Result:
     orphan: list[int] = field(default_factory=list)   # 본문 참조를 못 찾은 각주
 
 
+# 줄 한복판에 '번호 + 서지사항'이 이어지는 자리 — 각주가 본문에 녹아든 모양.
+# ★**번호 앞에 공백이 있어야 한다.** 본문 속 각주 참조는 문장부호·글자 바로 뒤에
+# **공백 없이** 붙고(`주장하였다.11`·`예속되었고12`), 쪽 아래 각주 항목은 공백으로
+# 떨어져 시작한다(`… 11 이기상,`). 이 구별을 안 넣었다가 실측 17쪽에서 **본문 참조를
+# 각주로 잘못 보고 본문을 찢었다**(2026-08-25).
+_INLINE_NOTE = re.compile(r'(?<=\s)(\d{1,3})\s+(?=[가-힣A-Za-z(『「][^\n]{5,})')
+# 각주다운 끝맺음 — 서지사항은 쪽수나 마침표로 끝난다
+_NOTE_TAIL = re.compile(r'[.。]\s*$|\d\s*[.。]?\s*$')
+# 덩어리 안에서 다음 각주를 찾을 때 — 앞 공백을 요구하지 않는다
+_NOTE_ANY = re.compile(r'(\d{1,3})\s+(?=[가-힣A-Za-z(『「][^\n]{5,})')
+
+
+def split_inline_notes(page: str) -> str:
+    """본문 줄에 녹아든 각주를 제 줄로 되돌린다 (2026-08-25).
+
+    ★판독 프롬프트가 "한 문단은 한 줄로"를 강조한 탓에 모델이 **각주까지 본문 문단에
+    이어 붙였다.** 실측 『기술신학』 373쪽 중 105쪽이 이 모양이었다:
+
+        …도취되지 않고 8 현대를 흔히… 9 그 대표적인… 10 기술철학이란… 11 이기상, …454.
+
+    프롬프트는 고쳤지만 **이미 판독한 글도 되돌려야** 한다. 다시 읽으면 다른 오독이
+    새로 생기므로, 확실한 자리만 규칙으로 가른다.
+
+    ★★**두 단계로 나눈다. 이것이 핵심이다.**
+
+    ① **각주 덩어리가 어디서 시작하는지** 먼저 찾는다 — 번호 **앞에 공백이 있고**
+       오름차순으로 둘 이상 이어지는 자리. 본문 속 각주 참조는 문장부호·글자 바로
+       뒤에 **공백 없이** 붙으므로(`주장하였다.11`) 이 조건이 둘을 가른다.
+       ★이걸 안 넣었다가 실측 17쪽에서 **본문 참조를 각주로 보고 본문을 찢었다.**
+    ② 시작을 찾은 **뒤로는** 공백을 요구하지 않는다 — 이미 각주 영역 안이므로
+       `…알려져 있다.11 이기상,`처럼 붙어 있어도 다음 각주다.
+       ★①의 규칙만 쓰면 이런 자리를 놓쳐 각주 10이 11·12·13을 삼킨다.
+    """
+    out: list[str] = []
+    for line in page.split("\n"):
+        marks = _note_marks(line)
+        if not marks:
+            out.append(line)
+            continue
+        head = line[:marks[0][0]].rstrip()
+        if head:
+            out.append(head)
+            out.append("")                      # 본문과 각주 사이 빈 줄
+        for k, (pos, _n) in enumerate(marks):
+            end = marks[k + 1][0] if k + 1 < len(marks) else len(line)
+            out.append(line[pos:end].strip())
+    return "\n".join(out)
+
+
+def _note_marks(line: str) -> list[tuple[int, int]]:
+    """줄 안에서 각주가 시작하는 [(위치, 번호)]. 확실하지 않으면 빈 목록."""
+    if not _NOTE_TAIL.search(line):
+        return []                               # 서지사항답게 끝나지 않는다
+    # ① 공백 뒤 번호로 시작하는 오름차순 사슬 — 가장 긴 것, 같으면 뒤쪽
+    starts = [(m.start(1), int(m.group(1))) for m in _INLINE_NOTE.finditer(line)]
+    best: list[tuple[int, int]] = []
+    for i in range(len(starts)):
+        chain = [starts[i]]
+        for pos, n in starts[i + 1:]:
+            if 0 < n - chain[-1][1] <= 2:
+                chain.append((pos, n))
+        if len(chain) >= 2 and len(chain) >= len(best):
+            best = chain
+    if not best:
+        return []
+    # ② 덩어리 안에서는 공백 없이 붙은 번호도 각주다
+    marks = list(best)
+    while True:
+        pos, num = marks[-1]
+        m = _NOTE_ANY.search(line, pos + 1)
+        while m and not (0 < int(m.group(1)) - num <= 2):
+            m = _NOTE_ANY.search(line, m.start(1) + 1)
+        if not m:
+            break
+        marks.append((m.start(1), int(m.group(1))))
+    return marks
+
+
 def _split_notes(page: str) -> tuple[str, list[tuple[int, str]]]:
     """한 쪽을 (본문, [(번호, 각주본문)])으로 가른다.
 
@@ -200,11 +278,19 @@ def reflow_pages(text: str, has_notes: list[bool] | None = None,
         block = "\n".join(f"{n} {b}" for n, b in notes)
         if ends_midsentence(head) and pi + 1 < len(pages):
             first, rest = _first_para(pages[pi + 1])
-            if first.strip():
+            # ★끌어올릴 것이 **본문이어야** 한다. 다음 쪽이 각주로 시작하면(앞 쪽에서
+            # 이어진 각주거나, 본문이 없는 쪽이다) 그걸 끌어올려 앞 쪽 본문에 붙이는
+            # 순간 **각주 차례가 뒤엉킨다** — 실측에서 11·12·13이 8·9·10보다 앞에
+            # 놓였다(2026-08-25 연구자 지적).
+            if first.strip() and not _NOTE_LINE.match(first.strip().split("\n")[0]):
                 head = join_across_break(head, first, lexicon)
                 carry_rest, carried = rest, True
         out.append((head.strip() + "\n\n" + block).strip())
-    return PAGE_SEP.join(out)
+    # ★쪽 구분자 앞뒤에 줄바꿈을 둔다. `\f`만 넣으면 화면에서 보이지 않아
+    # **앞 쪽의 마지막 각주와 다음 쪽 첫 본문이 한 줄처럼 붙는다**
+    # (`13 하이데거, 『강연과 논문』, 44.기술의 본질에 대해…`). 쪽을 가르는 코드는
+    # 모두 `\f`로 split하므로 줄바꿈이 있어도 그대로 동작한다.
+    return ("\n" + PAGE_SEP + "\n").join(out)
 
 
 def convert(text: str, has_notes: list[bool] | None = None) -> Result:

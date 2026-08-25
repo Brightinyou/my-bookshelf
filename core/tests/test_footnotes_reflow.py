@@ -83,9 +83,15 @@ class ReflowPagesTest(unittest.TestCase):
         got = fn.reflow_pages(text, lexicon="")
         self.assertEqual(got.count("이어지는 한 문단뿐이다."), 1)
 
-    def test_각주가_없는_쪽은_건드리지_않는다(self):
+    def test_각주가_없는_쪽은_글을_건드리지_않는다(self):
+        """쪽 구분자 앞뒤 줄바꿈만 붙고 **글자는 그대로**여야 한다.
+
+        ★`\f`만 넣으면 화면에서 보이지 않아 앞 쪽 끝과 다음 쪽 첫 줄이 한 줄처럼
+        붙는다(`…44.기술의 본질에 대해`) — 그래서 줄바꿈을 함께 둔다."""
         text = "본문만 있는 쪽이다." + SEP + "다음 쪽도 본문뿐이다."
-        self.assertEqual(fn.reflow_pages(text), text)
+        got = fn.reflow_pages(text)
+        self.assertEqual(got, "본문만 있는 쪽이다.\n" + SEP + "\n다음 쪽도 본문뿐이다.")
+        self.assertEqual(got.replace("\n", ""), text)      # 글자는 그대로
 
     def test_문장이_끝난_쪽은_잇지_않는다(self):
         text = ("문장이 여기서 끝난다.\n37 위의 책, 12."
