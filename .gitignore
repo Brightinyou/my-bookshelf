@@ -9,9 +9,12 @@ build/
 /dev/*
 !/dev/build_mac_app.sh
 !/dev/bump_version.py
+# 개발·협업 일지는 함께 관리한다 (2026-08-25) — 버전 관리 밖에 두면 백업도 이력도
+# 없다. 협업 일지는 연구자의 학위논문 사례 자료이기도 하다.
+!/dev/DEVLOG.md
+!/dev/COLLAB_LOG.md
 .github/
 AGENTS.md
-DEVLOG.md
 
 *.key
 keys.json
