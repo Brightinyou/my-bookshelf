@@ -477,7 +477,7 @@ def _extract(raw: str) -> str:
     return s.strip()
 
 
-def _read_codex_cli(model: str, imgs: list[Path], timeout: int) -> str:
+def _read_codex_cli(model: str, imgs: list[Path], timeout: int, hint: str = "") -> str:
     cli = llm.codex_cli_path()
     if not cli:
         raise RuntimeError("codex CLI를 찾지 못했습니다")
@@ -513,7 +513,7 @@ def _read_codex_cli(model: str, imgs: list[Path], timeout: int) -> str:
         r = subprocess.run(
             args, capture_output=True, text=True, timeout=timeout,
             cwd=str(work), encoding="utf-8", errors="replace",
-            input=PROMPT, env=llm._cli_env(), **llm._no_window_kwargs())
+            input=PROMPT + hint, env=llm._cli_env(), **llm._no_window_kwargs())
         if r.returncode != 0:
             raise RuntimeError(f"codex CLI exit {r.returncode}: {(r.stderr or '')[:200]}")
         raw = out_file.read_text(encoding="utf-8") if out_file.exists() else (r.stdout or "")
@@ -522,13 +522,13 @@ def _read_codex_cli(model: str, imgs: list[Path], timeout: int) -> str:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _read_claude_cli(model: str, imgs: list[Path], timeout: int) -> str:
+def _read_claude_cli(model: str, imgs: list[Path], timeout: int, hint: str = "") -> str:
     cli = llm.claude_cli_path()
     if not cli:
         raise RuntimeError("claude CLI를 찾지 못했습니다")
     # 같은 이유로 Read만 허용하고, 이미지는 이미 격리 폴더에 있다(_render_isolated)
     listed = "\n".join(f'{i}. "{f}"' for i, f in enumerate(imgs, 1))
-    prompt = f'다음 이미지 파일들을 순서대로 Read 도구로 읽어라.\n{listed}\n\n{PROMPT}'
+    prompt = f'다음 이미지 파일들을 순서대로 Read 도구로 읽어라.\n{listed}\n\n{PROMPT}{hint}'
     r = subprocess.run(
         [cli, "-p", prompt, "--model", model or "default", "--output-format", "text",
          "--allowedTools", "Read",
@@ -557,12 +557,17 @@ def _split_pages(raw: str, count: int) -> list[str]:
     return out
 
 
-def read_pages(provider: str, model: str, imgs: list[Path], timeout: int = 600) -> list[str]:
-    """이미지 여러 장을 한 번에 판독해 쪽별 본문 목록으로 돌려준다."""
+def read_pages(provider: str, model: str, imgs: list[Path], timeout: int = 600,
+               hint: str = "") -> list[str]:
+    """이미지 여러 장을 한 번에 판독해 쪽별 본문 목록으로 돌려준다.
+
+    hint는 프롬프트 끝에 덧붙는 **이 쪽에만 해당하는 당부**다 — 예컨대 "이 쪽에는
+    각주 4·5번이 있어야 한다". ★모델에게 **무엇을 찾아야 하는지 알려 주는 것**이
+    뭉개진 글에서 경계를 추리하는 것보다 훨씬 낫다 (2026-08-25)."""
     if provider == "codex_cli":
-        raw = _read_codex_cli(model, imgs, timeout)
+        raw = _read_codex_cli(model, imgs, timeout, hint)
     elif provider == "claude_cli":
-        raw = _read_claude_cli(model, imgs, timeout)
+        raw = _read_claude_cli(model, imgs, timeout, hint)
     else:
         raise RuntimeError(f"'{provider}'로는 아직 쪽 판독을 하지 않습니다 — "
                            "구독형 CLI(codex_cli·claude_cli)를 쓰세요")
@@ -855,6 +860,88 @@ def assemble(pdf_path: Path, out_txt: Path, total_pages: int | None = None) -> P
     except Exception as e:
         append_log(f"WARN: 각주 Markdown 생성 실패 ({type(e).__name__}) {str(e)[:120]}")
     return out_txt
+
+
+NOTE_HINT = """
+
+★이 쪽에는 각주 {nums}번이 반드시 있다. 앞선 판독에서 빠뜨렸다.
+쪽 아래 각주 영역을 특히 주의해서 보고, **빠짐없이** 옮겨 적어라.
+각주 번호가 작거나 흐리더라도 짐작하지 말고 보이는 대로 적되, 위 번호들이
+그 쪽에 있다는 것은 **확실하다**. 각주는 본문과 빈 줄로 떼고 한 줄에 하나씩 적어라.
+"""
+
+
+def recover_notes(pdf_path: Path, out_txt: Path, provider: str, model: str = "",
+                  dpi: int = DEFAULT_DPI, timeout: int = 600,
+                  progress=None) -> list[dict]:
+    """각주 번호가 끊긴 쪽만 **무엇을 찾아야 하는지 알려 주고** 다시 읽는다 (2026-08-25).
+
+    연구자 제안에서 나왔다 — 뭉개진 글에서 각주의 경계를 추리해 메우는 것보다,
+    **어느 쪽에 몇 번 각주가 빠졌는지 아는 채로 그 쪽을 다시 읽는 편**이 확실하다.
+    `audit_sequence`가 빠진 번호를 짚어 주므로 그것을 프롬프트에 실어 보낸다.
+
+    ★**나아졌을 때만 바꾼다.** 다시 읽은 결과에 빠진 번호가 실제로 들어왔고 글자가
+    크게 줄지 않았을 때만 그 쪽 파일을 갈아 끼운다. 아니면 옛 판독을 그대로 둔다 —
+    고치려다 멀쩡한 쪽을 망치면 안 된다.
+
+    돌려주는 것: [{"page":쪽, "want":[번호], "got":[찾은 번호], "ok":bool}]"""
+    from services import footnotes as _fn
+    wd = work_dir(out_txt)
+    total = page_count(pdf_path)
+    body = "\f".join(
+        (wd / f"p{n:04d}.txt").read_text(encoding="utf-8", errors="ignore")
+        if (wd / f"p{n:04d}.txt").exists() else ""
+        for n in range(1, total + 1))
+    small, large = _fn.recoverable_gaps(_fn.audit_sequence(body))
+    if large:
+        append_log(f"ℹ️ 각주가 크게 끊긴 자리 {len(large)}곳은 되찾기를 건너뜁니다 — "
+                   "글 끝에 미주를 모아 놓은 쪽일 수 있습니다(사람이 확인하세요)")
+    if not small:
+        return []
+    # ★빠진 번호는 '끊김을 알아챈 쪽'만이 아니라 **앞 쪽부터 그 쪽까지** 어딘가에 있다.
+    # 그 범위의 쪽을 모두 다시 읽는다(2026-08-25 실측: 알아챈 쪽만 읽어 대부분 놓쳤다).
+    want: dict[int, list[int]] = {}
+    for g in small:
+        for pg in range(g.get("from_page", g["page"]) + 1, g["page"] + 2):
+            want.setdefault(pg, []).extend(g["missing"])
+    png_dir = Path(tempfile.mkdtemp(prefix="ocr_fix_"))
+    out: list[dict] = []
+    try:
+        for k, (pg, nums) in enumerate(sorted(want.items()), 1):
+            nums = sorted(set(nums))
+            row = {"page": pg, "want": nums, "got": [], "ok": False}
+            img = None
+            try:
+                img = render_page(pdf_path, pg - 1, png_dir, dpi)
+                text = read_pages(provider, model, [img], timeout,
+                                  hint=NOTE_HINT.format(nums="·".join(map(str, nums))))[0]
+            except Exception as e:
+                row["note"] = f"{type(e).__name__}: {str(e)[:80]}"
+                out.append(row)
+                if progress:
+                    progress(k, len(want), row)
+                continue
+            finally:
+                if img:
+                    img.unlink(missing_ok=True)
+            text = _fn.split_inline_notes(text)
+            got = [n for n, _b in _fn._split_notes(text)[1]]
+            row["got"] = [n for n in nums if n in got]
+            old = (wd / f"p{pg:04d}.txt")
+            old_len = len(old.read_text(encoding="utf-8", errors="ignore")) if old.exists() else 0
+            # ★나아졌을 때만 갈아 끼운다
+            if row["got"] and len(text) >= old_len * 0.9:
+                old.write_text(text, encoding="utf-8")
+                row["ok"] = True
+            out.append(row)
+            if progress:
+                progress(k, len(want), row)
+    finally:
+        try:
+            png_dir.rmdir()
+        except OSError:
+            pass
+    return out
 
 
 def load_report(out_txt: Path) -> list[PageResult]:

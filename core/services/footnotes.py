@@ -337,9 +337,34 @@ def audit_sequence(text: str, has_notes: list[bool] | None = None) -> list[dict]
         if n2 <= n1:
             continue                            # 장이 바뀌며 1로 돌아가는 자리
         if n2 - n1 > 1 and n2 - n1 <= 15:      # 너무 크게 벌어지면 장이 바뀐 것이다
-            out.append({"page": p2, "after": n1,
+            out.append({"page": p2, "after": n1, "from_page": p1,
                         "missing": list(range(n1 + 1, n2))})
     return out
+
+
+# 되찾기를 시도할 만한 크기 — 이보다 크면 사람에게 넘긴다.
+RECOVER_MAX_MISSING = 3
+RECOVER_MAX_SPAN = 2
+
+
+def recoverable_gaps(gaps: list[dict]) -> tuple[list[dict], list[dict]]:
+    """끊긴 자리를 (되찾아 볼 만한 것, 사람이 봐야 할 것)으로 가른다.
+
+    ★실측에서 배운 것(2026-08-25): 이 책은 쪽마다의 각주만 쓰지 않는다. 글 끝에
+    **미주를 모아 놓은 쪽**이 있어(60쪽에 39~64번 26개) 번호가 크게 뛴다. 그런
+    자리를 "빠졌다"고 보고 그 쪽만 다시 읽으면 당연히 못 찾는다 — 실측 15쪽을
+    시도해 1쪽만 성공했다.
+
+    그래서 **작은 끊김만** 되찾는다: 빠진 번호가 {maxm}개 이하이고 쪽 간격이
+    {maxs}쪽 이하일 때. 그 조건에서는 정말 그 언저리에서 놓친 각주다.
+    나머지는 고치려 들지 않고 **알리기만 한다.**""".format(
+        maxm=RECOVER_MAX_MISSING, maxs=RECOVER_MAX_SPAN)
+    small, large = [], []
+    for g in gaps:
+        span = g.get("page", 0) - g.get("from_page", g.get("page", 0))
+        (small if len(g["missing"]) <= RECOVER_MAX_MISSING and span <= RECOVER_MAX_SPAN
+         else large).append(g)
+    return small, large
 
 
 def recover_hint(page: str, missing: int, lexicon: str = "") -> dict | None:
