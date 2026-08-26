@@ -140,3 +140,66 @@ class LeadTitleForTest(unittest.TestCase):
 
     def test_초록이_없으면_머리말(self):
         self.assertEqual(cmap.lead_title_for("어떤 책의 앞머리 글"), cmap.LEAD_TITLE)
+
+
+class AutoBoundarySplitTest(unittest.TestCase):
+    """'결론'·'서론'에서는 묻지 않고 나눈다 — chapter_map.auto_split_known_headings.
+
+    알려만 주고 사람이 «장 나누기»에서 누르게 했더니 "너무 번거롭다"는 지적을 받았다
+    (2026-08-26 연구자). 다만 아무 제목에나 하지는 않는다 — 절 제목까지 장으로 삼으면
+    책이 잘게 부서진다. 자동으로 나누는 낱말은 _BOUNDARY_WORDS 로 못 박혀 있다.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="autosp_"))
+        self._prev = cfg.CHAPTERS_DIR
+        cfg.CHAPTERS_DIR = self.tmp
+        self.d = self.tmp / BOOK
+        self.d.mkdir(parents=True)
+
+    def tearDown(self):
+        cfg.CHAPTERS_DIR = self._prev
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, name, *paras):
+        (self.d / name).write_text("\n\n".join(paras) + "\n", encoding="utf-8")
+
+    def _titles(self):
+        return [cmap.chapter_title(f) for f in cmap.chapter_files(WS, BOOK)]
+
+    def test_영문_결론에서_나눈다(self):
+        self._write("01_Body.txt", "Body text. " * 20, "Conclusion", "Although AI. " * 20)
+        self.assertEqual(cmap.auto_split_known_headings(WS, BOOK), ["Conclusion"])
+        self.assertIn("Conclusion", self._titles())
+
+    def test_한글_결론에서도_나눈다(self):
+        self._write("01_본문.txt", "본문이 이어집니다. " * 20, "결론", "정리하면 이렇습니다. " * 20)
+        self.assertEqual(cmap.auto_split_known_headings(WS, BOOK), ["결론"])
+
+    def test_번호가_붙어도_알아본다(self):
+        self._write("01_본문.txt", "본문. " * 20, "IV. 결론", "정리하면. " * 20)
+        self.assertEqual(cmap.auto_split_known_headings(WS, BOOK), ["IV. 결론"])
+
+    def test_같은_낱말로는_한_번만_나눈다(self):
+        """장 안에 남은 목차나 러닝헤더가 다시 걸리는 것을 막는다."""
+        self._write("01_A.txt", "본문. " * 20, "결론", "정리. " * 20, "결론", "또 정리. " * 20)
+        self.assertEqual(cmap.auto_split_known_headings(WS, BOOK), ["결론"])
+
+    def test_경계_낱말이_아니면_두지_않는다(self):
+        self._write("01_A.txt", "Body. " * 20, "Privacy, Security, and Safety", "More. " * 20)
+        self.assertEqual(cmap.auto_split_known_headings(WS, BOOK), [])
+
+    def test_문단_한가운데_낱말은_건드리지_않는다(self):
+        """홀로 선 문단이라야 제목이다 — 본문 속 '결론'은 그냥 낱말이다."""
+        self._write("01_A.txt", "이 결론은 본문 한가운데 있는 낱말입니다. " * 20)
+        self.assertEqual(cmap.auto_split_known_headings(WS, BOOK), [])
+
+    def test_장의_맨_앞이면_이미_경계다(self):
+        self._write("01_A.txt", "Conclusion", "Although AI. " * 20)
+        self.assertEqual(cmap.auto_split_known_headings(WS, BOOK), [])
+
+    def test_boundary_word_는_핵심_낱말을_돌려준다(self):
+        self.assertEqual(cmap.boundary_word("1. Introduction"), "introduction")
+        self.assertEqual(cmap.boundary_word("INTRODUCTION"), "introduction")
+        self.assertEqual(cmap.boundary_word("들어가는 말"), "들어가는말")
+        self.assertEqual(cmap.boundary_word("본문입니다"), "")

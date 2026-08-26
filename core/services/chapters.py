@@ -417,6 +417,16 @@ def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -
     if coverage < 0.85:
         LAST_SPLIT_WARNING[stem] = f"본문의 {coverage:.0%}만 챕터에 담겼습니다 — 앞뒤 일부가 빠졌을 수 있습니다"
         append_log(f"WARN: 장분할 커버리지 {coverage:.0%} — {stem}: 본문 일부가 챕터에 담기지 않았을 수 있음 (분할={mode})")
+    # '결론'·'서론'처럼 장 경계가 분명한 제목이 장 안에 홀로 서 있으면 바로 나눈다
+    # (2026-08-26). 알려만 주고 사람이 누르게 했더니 번거롭다는 지적을 받았다.
+    # 자동으로 나누는 낱말은 chapter_map._BOUNDARY_WORDS 로 못 박아 두었다.
+    try:
+        from services.chapter_map import auto_split_known_headings
+        _auto = auto_split_known_headings(ws_name, stem)
+        if _auto:
+            append_log(f"장분할: 경계 제목에서 자동으로 나눔 — {stem}: {', '.join(_auto)}")
+    except Exception as e:
+        append_log(f"WARN: 경계 제목 자동 분할 실패 — {stem} ({type(e).__name__})")
     # 장 지도 기록 — 확인 화면이 이걸 읽고, 사람이 고치면 여기에 남는다 (2026-08-17)
     try:
         from services.chapter_map import save_map

@@ -284,6 +284,88 @@ _HEAD_BAD_END = (".", ",", ";", ":", "!", "?")
 _HANGUL_ANY = re.compile(r"[가-힣]")
 
 
+# ── 장 경계가 분명한 제목 (2026-08-26) ──────────────────────────────
+# '결론'·'서론'처럼 **누가 봐도 장이 바뀌는 자리**는 묻지 않고 나눈다. 알려만 주고
+# 사람이 누르게 했더니 "너무 번거롭다"는 지적을 받았다(연구자). 다만 아무 제목에나
+# 하지는 않는다 — 절 제목까지 장으로 삼으면 책이 잘게 부서진다(『The Artifice of
+# Intelligence』 100쪽에 후보 26개). 그래서 **낱말을 못 박아 둔다.**
+_BOUNDARY_WORDS = (
+    "introduction", "conclusion", "conclusions", "concludingremarks",
+    "prologue", "epilogue", "preface", "foreword", "afterword",
+    "서론", "결론", "서언", "결어", "머리말", "맺음말", "맺는말",
+    "들어가는말", "나가는말", "들어가며", "나가며", "프롤로그", "에필로그", "후기",
+)
+# 앞에 붙는 번호(“IV. 결론”, “5. Conclusion”, “제5장 결론”)와 뒤 문장부호는 흘린다.
+_BOUNDARY_RE = re.compile(
+    r"^(?:제?\d{1,2}[.)장]?|[ivxl]{1,5}[.)])?"
+    r"(" + "|".join(_BOUNDARY_WORDS) + r")[.:：]?$")
+
+
+def _norm_head(s: str) -> str:
+    return re.sub(r"\s+", "", s).lower()
+
+
+def boundary_word(line: str) -> str:
+    """이 줄이 '여기서 장이 바뀐다'가 분명한 제목이면 그 핵심 낱말, 아니면 빈 문자열.
+
+    핵심 낱말을 돌려주는 이유는 **한 권에 한 번만 나누기 위해서**다. 번호가 붙은
+    「1. Introduction」과 그냥 「Introduction」은 같은 것으로 봐야 한다."""
+    s = line.strip()
+    if not (2 <= len(s) <= 40):
+        return ""
+    m = _BOUNDARY_RE.match(_norm_head(s))
+    return m.group(1) if m else ""
+
+
+def is_boundary_heading(line: str) -> bool:
+    return bool(boundary_word(line))
+
+
+def auto_split_known_headings(ws_name: str, stem: str, max_splits: int = 8) -> list[str]:
+    """장 **안에** '결론'·'서론' 같은 제목이 홀로 서 있으면 거기서 나눈다.
+
+    ★자동으로 나누는 것은 이 낱말들뿐이다(_BOUNDARY_WORDS). 그 밖의 제목처럼 보이는
+    줄은 missed_headings()가 알려만 주고 사람이 «✂️ 장 나누기»에서 고른다.
+
+    제목이 홀로 선 문단이어야 한다 — 앞뒤가 빈 줄이라야 본문 한가운데의 낱말과
+    구별된다. 장의 맨 앞이면(at=0) 이미 경계이므로 건드리지 않는다.
+
+    나눈 제목들을 돌려준다. 무한히 도는 것을 막으려고 횟수를 제한한다."""
+    made: list[str] = []
+    # ★같은 낱말로는 한 번만 나눈다 (2026-08-26 실측). 안 막았더니 『서양철학사』가
+    # 「머 리 말」에서 두 번, 『영국감리교』가 「1. Introduction」과 「Introduction」
+    # 에서 두 번 갈렸다 — 장 안에 남은 목차나 러닝헤더가 다시 걸린 것이다.
+    used: set[str] = set()
+    for _ in range(max_splits):
+        hit = None
+        for i, f in enumerate(chapter_files(ws_name, stem)):
+            try:
+                body = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            lines = body.splitlines(keepends=True)
+            pos = 0
+            for k, raw in enumerate(lines):
+                s = raw.strip()
+                prev_blank = (k == 0) or not lines[k - 1].strip()
+                next_blank = (k + 1 >= len(lines)) or not lines[k + 1].strip()
+                _w = boundary_word(s) if (pos > 0 and s and prev_blank and next_blank) else ""
+                if _w and _w not in used:
+                    hit = (i, pos, s.strip(), _w)
+                    break
+                pos += len(raw)
+            if hit:
+                break
+        if not hit:
+            break
+        i, at, title, word = hit
+        if not split_chapter(ws_name, stem, i, at, title):
+            break
+        used.add(word)
+        made.append(title)
+    return made
+
+
 def missed_headings(ws_name: str, stem: str, limit: int = 5) -> list[tuple[int, str]]:
     """장 **안에** 제목처럼 홀로 선 문단들 — 새 장이 여기서 시작할 만하다.
 
