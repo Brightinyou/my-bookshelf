@@ -2,8 +2,11 @@
 
 언어 결정 우선순위:
   1. 환경변수 MYBOOKSHELF_LANG (테스트/강제용)
-  2. config.json의 "lang" (앱 설정 화면에서 저장)
-  3. {app}\\app_lang.txt (인스톨러가 설치 언어 선택을 기록)
+  2. {app}/app_lang.txt — 인스톨러가 기록한 **방금 설치하며 고른 언어**.
+     읽는 즉시 config.json으로 옮겨 적고 파일을 지운다 (그 설치에 한 번만 듣는다,
+     2026-08-26 — 설치할 때 한국어를 골랐는데 예전 config.json의 en이 이겨서
+     영어로 뜨던 문제).
+  3. config.json의 "lang" (앱 설정 화면에서 저장)
   4. "ko"
 
 번역 방식: 한국어 원문 문자열 자체를 키로 쓰는 사전(_EN).
@@ -22,39 +25,79 @@ _APP_LANG_FILE = Path(cfg.__file__).resolve().parent.parent / "app_lang.txt"
 _lang_cache: str | None = None
 
 
+def _read_config_lang() -> str:
+    try:
+        d = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8")) if cfg.CONFIG_FILE.exists() else {}
+        return str(d.get("lang", "")).strip().lower()
+    except Exception:
+        return ""
+
+
+def _consume_installer_lang() -> str:
+    """인스톨러가 남긴 언어 선택을 **그 설치에 한 번만** 반영한다 (2026-08-26).
+
+    ★사고: 설치 중 한국어를 골랐는데 영어로 떴다. config.json의 "lang"이
+    app_lang.txt보다 우선이었는데, config.json은 설치 폴더 밖(~/.config/mybookshelf/)에
+    있어 **재설치해도 남는다.** 그래서 예전에 앱에서 고른 언어가 방금 설치하며 고른
+    언어를 계속 눌렀다.
+
+    설치는 사용자가 방금 한 명시적 선택이므로 예전 설정보다 우선해야 한다. 다만
+    계속 우선하면 앱에서 언어를 바꿔도 재시작마다 되돌아가므로, 읽어서 config.json에
+    옮겨 적고 **파일을 지운다** — 그 설치에 한 번만 듣는다.
+
+    config.json에 옮겨 적지 못하면 파일을 지우지 않는다. 지웠는데 저장이 안 되면
+    선택이 통째로 사라진다."""
+    if not _APP_LANG_FILE.exists():
+        return ""
+    try:
+        lang = _APP_LANG_FILE.read_text(encoding="utf-8", errors="ignore").strip().lower()
+    except Exception:
+        return ""
+    if lang not in ("ko", "en"):
+        return ""
+    if lang != _read_config_lang() and not _write_config_lang(lang):
+        return lang                       # 저장 실패 — 파일은 남겨 다음에 다시 시도
+    try:
+        _APP_LANG_FILE.unlink()
+    except Exception:
+        pass
+    return lang
+
+
 def get_lang() -> str:
     global _lang_cache
     if _lang_cache in ("ko", "en"):
         return _lang_cache
     lang = (os.environ.get("MYBOOKSHELF_LANG") or "").strip().lower()
     if lang not in ("ko", "en"):
-        try:
-            d = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8")) if cfg.CONFIG_FILE.exists() else {}
-            lang = str(d.get("lang", "")).strip().lower()
-        except Exception:
-            lang = ""
-    if lang not in ("ko", "en") and _APP_LANG_FILE.exists():
-        try:
-            lang = _APP_LANG_FILE.read_text(encoding="utf-8", errors="ignore").strip().lower()
-        except Exception:
-            lang = ""
+        lang = _consume_installer_lang()   # 방금 설치하며 고른 언어가 가장 최신이다
+    if lang not in ("ko", "en"):
+        lang = _read_config_lang()
     _lang_cache = lang if lang in ("ko", "en") else "ko"
     return _lang_cache
 
 
-def set_lang(lang: str) -> None:
-    """config.json에 언어 저장 — 인스톨러 기본값(app_lang.txt)보다 우선."""
-    global _lang_cache
-    if lang not in ("ko", "en"):
-        return
+def _write_config_lang(lang: str) -> bool:
     f = cfg.CONFIG_FILE
     try:
         d = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
     except Exception:
         d = {}
     d["lang"] = lang
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def set_lang(lang: str) -> None:
+    """config.json에 언어 저장 — 앱에서 고른 것이 이후 실행에서 계속 쓰인다."""
+    global _lang_cache
+    if lang not in ("ko", "en"):
+        return
+    _write_config_lang(lang)
     _lang_cache = lang
 
 
