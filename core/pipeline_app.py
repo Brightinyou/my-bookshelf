@@ -494,8 +494,10 @@ _brand_col.markdown(
 )
 with _font_col:
     _font_scale_controls()
-# 영어 UI에서는 영→한 번역 단계가 무의미하므로 번역을 파이프라인에서 숨긴다 (2026-07-10)
-_translation_on = (get_lang() != "en")
+# ★번역 단계는 화면 언어와 상관없이 늘 켜 둔다 (2026-08-26).
+# 2026-07-10에는 "영어 UI면 영→한 번역이 무의미하다"며 숨겼는데, 그때는 도착언어가
+# 한국어 하나뿐이었다. 지금은 설정에서 11개 언어 중 고르므로 — 영어 화면으로 쓰면서
+# 스페인어로 번역할 수 있다 — 화면 언어로 번역 단계를 막는 것은 근거가 없다.
 
 # 5단계(출력) 선택: 옵시디언 위키 / Word DOCX / 한글 HWPX / EPUB (독립 토글,
 # 2026-07-24, HWPX 2026-08-09, EPUB 2026-08-11 — EPUB만 요약이 아니라 챕터 원문·번역본
@@ -515,10 +517,7 @@ def _out_flow() -> str:
     parts = [nm for on, nm in [(_use_dx, "Word(.docx)"), (_use_hx, "한글(.hwpx)"),
                                 (_use_ep, "EPUB"), (_use_ob, "Obsidian Wiki")] if on]
     return " + ".join(parts) if parts else "출력 미선택"
-if _translation_on:
-    st.caption(tf("PDF → TXT변환 → 장별 분할 → 번역 → 요약생성 → %s", _out_flow()))
-else:
-    st.caption(f"PDF → Text → Chapter split → Summaries → {_out_flow()}")
+st.caption(tf("PDF → TXT변환 → 장별 분할 → 번역 → 요약생성 → %s", _out_flow()))
 
 
 def _book_chapters(stem: str) -> list[Path]:
@@ -545,7 +544,7 @@ def _book_language_cached(stem: str) -> tuple[str, float]:
 
 
 def _route_translate(stem: str) -> bool:
-    """이 책을 번역 대기로 보낼지 — 영어 UI에서는 항상 False(요약으로 직행).
+    """이 책을 번역 대기로 보낼지 — **도착언어와 다른 언어의 책**이면 보낸다.
 
     실제 본문 언어로 판단한다. 파일명(저자명)만 보고 판단하면 "The Artifice of
     Intelligence_노린 헤르츠펠트"처럼 원서 제목에 저자명만 한글 음역인 경우 번역이
@@ -555,12 +554,13 @@ def _route_translate(stem: str) -> bool:
     번역서)는 1장이 독일어 참고문헌으로 뒤덮여 있어 그 장만 보면 '독일어'로 잡혀
     한국어 책이 통째로 번역 대기에 들어갔다.
     챕터 파일을 아직 못 찾을 때만 옛 파일명 휴리스틱으로 폴백한다."""
-    if not _translation_on:
-        return False
     if not _book_chapters(stem):
         return _needs_translation(stem)
     _code, _ = _book_language_cached(stem)
-    return bool(_code) and _code != "ko"
+    # ★기준은 화면 언어가 아니라 **설정의 도착언어**다 (2026-08-26). 예전에는
+    # "ko"가 박혀 있어서, 도착언어를 스페인어로 바꿔도 한국어 책은 번역 대기로
+    # 가지 않았다.
+    return bool(_code) and _code != target_language()
 
 _loading_step("파일 목록 확인 중…", "처리된 파일과 API 설정을 읽고 있습니다")
 
@@ -653,10 +653,6 @@ def _stage_desc(tid: str, desc: str) -> str:
     return f"요약을 {' · '.join(_parts)} 여러 곳에 저장"
 
 _active_view = st.session_state.get("active_view")
-# 영어 UI에서 번역 탭에 머물러 있으면 메뉴로 되돌린다 (번역 단계 숨김)
-if _active_view == "3_translate" and not _translation_on:
-    st.session_state.pop("active_view", None)
-    _active_view = None
 if not _active_view:
     st.markdown("""
 <style>
@@ -699,8 +695,6 @@ if not _active_view:
         "원문 저작권과 이용허락은 사용자 책임으로 확인해야 하며, 외부 AI/CLI로 전송되는 텍스트에는 민감정보나 배포 권한이 불분명한 내용을 넣지 마세요."
     ))
     for _tid, _title, _desc in TASKS:
-        if not _translation_on and _tid == "3_translate":
-            continue  # 영어 UI: 번역 메뉴 숨김
         _clicked = st.query_params.get("view") == _tid
         _mico = f'<span class="msr" style="font-size:1.2rem">{_stage_icon(_tid)}</span>'
         st.markdown(
@@ -730,7 +724,7 @@ _STAGE_TASKS = [
 # 처리 중(잠금)에는 탭 이동 링크를 비활성 텍스트로 렌더 — 작업 이탈 방지 (2026-07-09)
 # 영어 UI면 번역 탭(3_translate)을 내비에서 제외 (2026-07-10)
 _run_lock = st.session_state.get("_run_lock")
-_nav_tasks = [x for x in _STAGE_TASKS if _translation_on or x[0] != "3_translate"]
+_nav_tasks = list(_STAGE_TASKS)
 _nav_cols = st.columns(len(_nav_tasks))
 for _col, (_tid, _label) in zip(_nav_cols, _nav_tasks):
     _active_cls = " active" if _active_view == _tid else ""
@@ -2940,8 +2934,8 @@ if _active_view == "2_split":
     # 분할이 조용히 틀린 채로 요약·번역·EPUB까지 진행되던 사고를 막는 자리다.
     _chapter_review_panel("rv2", full=True)
 
-    st.info(t("💡 다음 단계: 외국어 도서는 **:material/translate: 번역**으로, 한국어 도서는 **📝 문서요약**으로 이동하세요") if _translation_on
-            else t("💡 다음 단계: **📝 문서요약**으로 이동하세요"))
+    st.info(tf("💡 다음 단계: 도착언어(%s)가 아닌 책은 **:material/translate: 번역**으로, "
+               "이미 도착언어인 책은 **📝 문서요약**으로 이동하세요", target_language_name()))
 
 
 # ── 3: 번역 ─────────────────────────────────────────────

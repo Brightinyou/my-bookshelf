@@ -62,3 +62,25 @@ class TranslationNameTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NeedsTranslationTargetTest(unittest.TestCase):
+    """제목만 보고 하는 임시 판단도 **도착언어**를 따라야 한다 (2026-08-26).
+
+    예전에는 '제목에 한글이 없으면 번역 필요'가 박혀 있어서, 도착언어를 스페인어로
+    바꿔도 한국어 책은 번역 대상이 되지 않았다."""
+
+    def setUp(self):
+        self.prev = tr.target_language()
+
+    def tearDown(self):
+        tr.set_target_language(self.prev)
+
+    def test_도착언어가_한국어면_예전_동작_그대로(self):
+        tr.set_target_language("ko")
+        self.assertTrue(tr._needs_translation("Robot Ethics"))
+        self.assertFalse(tr._needs_translation("기술신학"))
+
+    def test_도착언어가_스페인어면_한국어_책도_번역_대상(self):
+        tr.set_target_language("es")
+        self.assertTrue(tr._needs_translation("기술신학"))

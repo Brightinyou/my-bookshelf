@@ -683,9 +683,21 @@ def find_skip_section_paragraphs(paragraphs: list[str]) -> set[int]:
 
 _HANGUL_RE = _re.compile(r'[가-힣ᄀ-ᇿ㄰-㆏]')
 
-def _needs_translation(stem: str) -> bool:
-    """책 제목(stem)에 한글이 없으면 번역 필요(영문 등), 한글 있으면 번역 불필요."""
-    return not bool(_HANGUL_RE.search(stem))
+def _needs_translation(stem: str, target: str = "") -> bool:
+    """챕터 파일이 아직 없을 때 쓰는 **임시 판단** — 책 제목의 문자만 보고 가린다.
+
+    도착언어가 한국어면 예전과 똑같다: 제목에 한글이 없으면 번역이 필요하다고 본다.
+    다른 언어가 도착언어면 제목을 감지해 도착언어와 다른지 본다(2026-08-26 — 예전에는
+    '한글이 없으면 번역'이 박혀 있어 도착언어를 바꿔도 한국어 책은 번역 대상이
+    되지 않았다).
+
+    제목은 짧아 감지가 확실하지 않다. 모르겠으면 **번역 대기로 보낸다** — 실제 번역
+    단계에서 이미 도착언어인 단락은 건너뛰므로 잘못 보내도 손해가 없고, 반대로 빠뜨리면
+    사람이 알아채기 어렵다."""
+    target = target or target_language()
+    if target == "ko":
+        return not bool(_HANGUL_RE.search(stem))
+    return langdetect.detect(stem)[0] != target
 
 
 _CLEAN_WORKERS_DEFAULT = 3

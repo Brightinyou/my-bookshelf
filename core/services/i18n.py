@@ -322,6 +322,10 @@ _EN: dict[str, str] = {
     # ── 도착언어 중립 이름 (2026-08-26) ────────────────────
     # '영한대역'은 도착언어가 스페인어일 때 틀린 이름이다.
     # ── 간단해진 버튼들 (2026-08-26) ──────────────────────
+    "💡 다음 단계: 도착언어(%s)가 아닌 책은 **:material/translate: 번역**으로, "
+    "이미 도착언어인 책은 **📝 문서요약**으로 이동하세요":
+        "💡 Next: books not already in your target language (%s) go to "
+        "**:material/translate: Translation**; the rest go to **📝 Summaries**",
     "본문 품질 검사": "Text quality check",
     "대상": "Targets",
     "자간정리 (%d권)": "Fix line breaks (%d books)",
