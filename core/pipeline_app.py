@@ -56,6 +56,7 @@ from services.pipeline_queue import (
 from services.convert import OCR_REQUIRED_MSG, _do_ocr_only, pdf_to_txt
 from services import updater
 from services.translate import (
+    DERIVED_SUFFIXES as _DERIVED, find_translation, has_translation, out_suffix,
     _needs_translation, _paragraph_already_target, _split_paragraphs_robust,
     _translate_paragraph, _translation_is_valid, book_language, build_translate_system,
     engine_label, find_sequential_footnotes, find_skip_section_paragraphs,
@@ -526,7 +527,7 @@ def _book_chapters(stem: str) -> list[Path]:
     if not _cdir.exists():
         return []
     return sorted(f for f in _cdir.glob("??_*.txt")
-                  if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean")))
+                  if not f.stem.endswith(_DERIVED))
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -628,7 +629,7 @@ _STAGE_ICONS = {
 TASKS = [
     ("1_txt", "텍스트 변환", "PDF·DOCX·HWP·HWPX·TXT를 텍스트로 변환 · 업로드 대기 → 변환 TXT"),
     ("2_split", "챕터 분할", "책 TXT를 챕터 단위로 분리 · 변환 TXT → chapters"),
-    ("3_translate", "번역", "챕터를 한국어로 번역 · chapters → 번역본(_ko.txt)"),
+    ("3_translate", "번역", "챕터를 도착언어로 번역 · chapters → 번역본"),
     ("4_summary", "문서요약", "챕터별 요약 노트 생성 · chapters → 요약(_wiki.md)"),
     ("5_wiki", "위키반영", "요약을 Obsidian 노트로 저장 · 요약(_wiki.md) → 보관함(Vault)"),
     ("settings", "설정", "API 키와 위키 생성 모델 설정"),
@@ -786,8 +787,7 @@ def _view_target_from_item(it: dict) -> Path | None:
     if isinstance(obj, Path):
         return obj
     if isinstance(obj, tuple) and obj and isinstance(obj[0], Path):
-        ko_path = obj[0].with_name(obj[0].stem + "_ko.txt")
-        return ko_path if ko_path.exists() else obj[0]
+        return find_translation(obj[0]) or obj[0]
     if hasattr(obj, "_p"):
         return Path(obj._p)
     if isinstance(obj, dict):
@@ -1045,7 +1045,7 @@ def _chapter_rel_paths(ws_name: str, stem: str) -> list[str]:
     return [
         str(f.relative_to(cfg.BASE_DIR))
         for f in sorted(ch_dir.glob("??_*.txt"))
-        if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))
+        if not f.stem.endswith(_DERIVED)
     ]
 
 
@@ -1523,7 +1523,7 @@ def _prepare_uploaded_single_chapter(ws_name: str, upload_name: str, upload_byte
             if not _d.is_dir() or _d.name == stem:
                 continue
             _chs = [f for f in _d.glob("??_*.txt")
-                    if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+                    if not f.stem.endswith(_DERIVED)]
             if len(_chs) != 1:
                 continue
             try:
@@ -1555,8 +1555,8 @@ def _chapter_counts() -> tuple[int, int, int]:
     summary_stems: set[str] = set()
     if root.exists():
         for f in root.rglob("??_*.txt"):
-            if f.stem.endswith("_ko"):
-                ko_n += 1
+            if f.stem.endswith(_DERIVED) and not f.stem.endswith(("_wiki", "_bilingual", "_clean")):
+                ko_n += 1                       # 번역본 — 접미사는 도착언어를 따른다
             elif not f.stem.endswith("_wiki"):
                 src_n += 1
         for f in root.rglob("*_wiki.md"):
@@ -2312,16 +2312,20 @@ if _active_view in {"1_txt", "all_run"}:
     # 접어 둔 채로 아래에 두면 아무도 안 본다. 변환이 끝나면 자동으로 진단해서
     # 여기에 결과를 펼치고, 불량이면 "다시 읽을까요?" 하고 물어본 뒤에 실행한다.
     _rows_tq = st.session_state.get("tq_rows")
-    st.markdown("#### 🔬 " + t("본문 품질 검사"))
     if _rows_tq is None:
-        st.caption(t("두 가지를 따로 봅니다 — **낱말 유실**(수·것·될 같은 한 글자 낱말이 "
-                     "통째로 빠짐, 정상 7~25%)과 **문자 깨짐**(기合·디지!i처럼 글자가 뭉개짐). "
-                     "실측상 둘은 서로 무관해서 각자 기준으로 재고 나쁜 쪽을 따릅니다."))
-        if st.button(t("이미 변환해 둔 책도 검사하기"), icon=":material/science:", key="tq_scan"):
+        # ★평소에는 버튼 하나만 둔다. 제목·설명 캡션을 늘 펼쳐 두니 화면이 무거웠다
+        # (2026-08-26 연구자 요청). 설명은 «?» 도움말로 접는다.
+        if st.button("🔬 " + t("본문 품질 검사"), icon=":material/science:", key="tq_scan",
+                     help=t("변환된 본문이 쓸 만한지 봅니다. 두 가지를 따로 재요 — "
+                            "낱말 유실(수·것·될 같은 한 글자 낱말이 통째로 빠짐, 정상 7~25%)과 "
+                            "문자 깨짐(기合·디지!i처럼 글자가 뭉개짐). 실측상 둘은 서로 무관해서 "
+                            "각자 기준으로 재고 나쁜 쪽을 따릅니다. 불량으로 나온 책은 여기서 "
+                            "AI로 다시 읽을 수 있습니다.")):
             st.session_state["tq_rows"] = _scan_text_quality(None)
             st.session_state.pop("tq_dismissed", None)
             st.rerun()
     else:
+        st.markdown("#### 🔬 " + t("본문 품질 검사"))
         _bad_tq = [r for r in _rows_tq if r["verdict"] == "bad"]
         _sus_tq = [r for r in _rows_tq if r["verdict"] == "suspect"]
         _shown_tq = [r for r in _rows_tq if r["verdict"] != "unknown"]
@@ -2561,7 +2565,7 @@ if _active_view == "2_split":
             return False, f"{_stem}: {_serr}"
         _cdir = chapters_dir(_ws, _stem)
         _new = [str(f.relative_to(cfg.BASE_DIR)) for f in sorted(_cdir.glob("??_*.txt"))
-                if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+                if not f.stem.endswith(_DERIVED)]
         if not _new:
             return False, f"{_stem}: 챕터 생성 안 됨"
         queue_remove("tab2_ready", [_stem])
@@ -2687,7 +2691,7 @@ if _active_view == "2_split":
             continue
         _ch2 = chapters_dir(DEFAULT_WS, _stem2)
         _ch_txts2 = [f for f in (_ch2.glob("??_*.txt") if _ch2.exists() else [])
-                     if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+                     if not f.stem.endswith(_DERIVED)]
         _meta2 = f"{_txt2.stat().st_size//1024}KB" + ("" if _stem2 in _q2_stems_set else " ·미등록")
         _already2 = bool(_ch_txts2) and _stem2 not in _split_dup_confirmed2
         # 분할이 끝난 뒤에도 TXT가 1_txt/에 남아 있으면 계속 "다시 분할할까요?"가 뜬다.
@@ -2831,7 +2835,7 @@ if _active_view == "2_split":
                 _ch_dir2 = chapters_dir(_o2["ws"], _o2["stem"])
                 _new_chs2 = [str(f.relative_to(cfg.BASE_DIR))
                              for f in sorted(_ch_dir2.glob("??_*.txt"))
-                             if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+                             if not f.stem.endswith(_DERIVED)]
                 if _new_chs2:
                     queue_add("tab3_ready" if _route_translate(_o2["stem"]) else "tab4_ready", _new_chs2)
                     _archive_split_source(_o2["stem"])
@@ -2857,7 +2861,7 @@ if _active_view == "2_split":
                 queue_remove("tab2_ready", [_o2["stem"]])
                 _new_chs2 = [str(f.relative_to(cfg.BASE_DIR))
                              for f in sorted(_one_path2.parent.glob("??_*.txt"))
-                             if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+                             if not f.stem.endswith(_DERIVED)]
                 _stage2 = "3_translate" if _route_translate(_o2["stem"]) else "4_summary"
                 if _new_chs2:
                     queue_add("tab3_ready" if _stage2 == "3_translate" else "tab4_ready", _new_chs2)
@@ -2907,7 +2911,7 @@ if _active_view == "2_split":
                     _ch_dir2b = chapters_dir(DEFAULT_WS, _ns2)
                     _new_chs2b = [str(f.relative_to(cfg.BASE_DIR))
                                   for f in sorted(_ch_dir2b.glob("??_*.txt"))
-                                  if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+                                  if not f.stem.endswith(_DERIVED)]
                     if _new_chs2b:
                         if _route_translate(_ns2):
                             queue_add("tab3_ready", _new_chs2b)
@@ -3005,7 +3009,7 @@ if _active_view == "3_translate":
             "도착언어는 설정에서 바꿉니다.", target_language_name()),
         [
             ("① 처리전 · 원문 챕터", _ch_root3f, tf("%d개", _src_n3f)),
-            ("② 처리후 · 번역본 (_ko.txt)", _ch_root3f, tf("%d개 번역됨", _ko_n3f)),
+            ("② 처리후 · 번역본", _ch_root3f, tf("%d개 번역됨", _ko_n3f)),
         ],
         "flow3",
     )
@@ -3063,7 +3067,7 @@ if _active_view == "3_translate":
             _cf3 = cfg.BASE_DIR / _rel3
             if not _cf3.exists():
                 continue
-            _ko3 = _cf3.with_name(_cf3.stem + "_ko.txt")
+            _ko3 = find_translation(_cf3) or _cf3.with_name(_cf3.stem + out_suffix() + ".txt")
             if _ko3.exists():
                 _tr_done3 += 1
             else:
@@ -3074,7 +3078,7 @@ if _active_view == "3_translate":
                 _lang3, _ = source_language(_cf3)
                 if _lang3:
                     _meta3 += f" · {language_name(_lang3)}"
-                if _cf3.with_name(_cf3.stem + "_ko.progress.json").exists():
+                if _cf3.with_name(_cf3.stem + out_suffix() + ".progress.json").exists():
                     _meta3 += t(" · ♻️ 중단됨 — 이어하기 가능")
                 _tr_pend3.append({
                     "key": _rel3,
@@ -3274,7 +3278,7 @@ if _active_view == "4_summary":
                 _sum_done4 += 1
                 _q4_remove_done.append(_rel4)
             else:
-                _ko4 = _cf4.with_name(_cf4.stem + "_ko.txt")
+                _ko4 = find_translation(_cf4) or _cf4.with_name(_cf4.stem + out_suffix() + ".txt")
                 _tag4 = "🌐ko" if _ko4.exists() else "📄원문"
                 # 목록 안에서 바로 제목을 고칠 수 있게 (책, 그 책에서 몇 번째 장) 을 얹는다
                 _bfiles4 = cmap.chapter_files(DEFAULT_WS, _bstem4)
@@ -3520,7 +3524,7 @@ if _active_view == "5_wiki":
         t("EPUB 전자책 생성"), value=_use_ep, key="wiki5_use_epub",
         help=t(
             "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
-            "번역본(_ko.txt)이나 자간정리본(_clean.txt)이 있으면 그걸 쓰고, 없으면 원문 그대로 담습니다 — "
+            "번역본이나 자간정리본이 있으면 그걸 쓰고, 없으면 원문 그대로 담습니다 — "
             "AI를 부르지 않으므로 항상 즉시 끝납니다. 한글 원문 책의 OCR 줄바꿈을 다듬으려면 "
             "아래 '자간정리 먼저 실행'을 한 번 돌려두세요. "
             "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다."
@@ -3545,15 +3549,19 @@ if _active_view == "5_wiki":
         # AI를 부르는지 모른 채 누르게 된다.
         # 동시 실행 칸도 뺐다. 저장해 둔 값(clean_workers)을 그대로 쓴다.
         if _clean_targets5:
-            for _b5, _n5 in _clean_targets5.items():
-                st.caption(f"　· {_b5} ({_n5}" + t("챕터") + ")")
-            if st.button(tf("자간정리 먼저 실행 (%d권)", len(_clean_targets5)),
+            # ★버튼 하나만 두고, 설명과 **대상 책 목록**을 «?» 도움말에 함께 넣는다
+            # (2026-08-26). 무엇에 AI를 부르는지는 알아야 하지만, 화면에 늘 펼쳐
+            # 둘 만큼 자주 쓰는 것은 아니다.
+            _tgt_lines5 = "\n".join(f"· {_b5} ({_n5}" + t("챕터") + ")"
+                                    for _b5, _n5 in _clean_targets5.items())
+            if st.button(tf("자간정리 (%d권)", len(_clean_targets5)),
                          icon=":material/format_align_left:", key="clean5_start",
                          disabled=not _epub_engine5,
                          help=t("스캔 PDF에서 뽑은 한글 원문은 인쇄된 줄마다 어절이 쪼개져 있습니다. "
-                                "AI에 줄바꿈마다 '붙임/공백'만 물어 이어 붙입니다. 결과는 _clean.txt로 "
+                                "AI에 줄바꿈마다 '붙임/공백'만 물어 이어 붙입니다. 한 번 해두면 결과가 "
                                 "남아 다시 걸리지 않습니다. 선택 사항입니다 — 하지 않아도 EPUB은 "
-                                "만들어지며, 원문이 쪼개진 그대로 담깁니다.")):
+                                "만들어지며, 원문이 쪼개진 그대로 담깁니다.")
+                              + "\n\n" + t("대상") + "\n" + _tgt_lines5):
                 _run_start("clean5", list(_clean_targets5))
             if not _epub_engine5:
                 st.caption(t("사용 가능한 AI가 없어 자간정리를 실행할 수 없습니다 — 설정 탭을 확인하세요."))
@@ -3621,7 +3629,7 @@ if _active_view == "5_wiki":
                 if not _epd.is_dir():
                     continue
                 _epchs5 = [f for f in _epd.glob("??_*.txt")
-                           if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+                           if not f.stem.endswith(_DERIVED)]
                 if not _epchs5:
                     continue
                 _epbooks5.append((_epd, len(_epchs5)))
@@ -3712,7 +3720,7 @@ if _active_view == "5_wiki":
             continue
         _jsons5 = list_summary_files(_ch5)
         _total5 = len([f for f in _ch5.glob("??_*.txt")
-                       if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]) if _ch5.exists() else 0
+                       if not f.stem.endswith(_DERIVED)]) if _ch5.exists() else 0
         # 요약 기반(위키/DOCX/HWPX) 정보는 그 출력 중 하나라도 켜져 있을 때만 의미가
         # 있다 — EPUB만 켰을 때는 요약·전체요약 여부와 무관하므로 챕터 수만 보여준다
         # (2026-08-11).
@@ -3724,7 +3732,7 @@ if _active_view == "5_wiki":
             _meta5 = tf("%d챕터", _total5)
         # 챕터 이름 목록 (NN_제목.txt → 제목)
         _ch_names5 = [_re.sub(r'^\d+_', '', f.stem) for f in sorted(_ch5.glob("??_*.txt"))
-                      if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))] if _ch5.exists() else []
+                      if not f.stem.endswith(_DERIVED)] if _ch5.exists() else []
         _wiki_item5 = {
             "key": _stem5,
             "label": _stem5,
@@ -3876,7 +3884,7 @@ if _active_view == "5_wiki":
             _stem5s = _nfc(_txt5s.stem)
             _ch5s = chapters_dir(DEFAULT_WS, _stem5s)
             if _ch5s.exists() and any(f for f in _ch5s.glob("??_*.txt")
-                                       if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))):
+                                       if not f.stem.endswith(_DERIVED)):
                 continue
             if _stem5s in _wiki_stems5:
                 continue
@@ -3948,7 +3956,7 @@ if _active_view == "settings":
         t("🎯 번역 도착언어"), _tgt_codes,
         index=_tgt_codes.index(_tgt_cur) if _tgt_cur in _tgt_codes else 0,
         format_func=lambda c: dict(_tgt_opts).get(c, c), key="target_lang_select",
-        help=t("번역본(_ko.txt)·챕터 요약·위키 노트가 모두 이 언어로 만들어집니다. "
+        help=t("번역본·챕터 요약·위키 노트가 모두 이 언어로 만들어집니다. "
                 "원문 언어는 자동으로 감지하므로 따로 고르지 않아도 됩니다."),
     )
     if _tgt_new != _tgt_cur:

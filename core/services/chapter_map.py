@@ -27,6 +27,7 @@ from pathlib import Path
 
 from services.chapters import (_CHAPTER_DERIVED_SUFFIXES, _chapter_stem_of,
                                chapters_dir, strip_redundant_number)
+from services.translate import DERIVED_SUFFIXES as _DERIVED, find_translation
 from services.common import append_log
 
 MAP_NAME = "_chapters.json"
@@ -42,7 +43,7 @@ def chapter_files(ws_name: str, stem: str) -> list[Path]:
         return []
     return sorted(
         f for f in d.glob("??_*.txt")
-        if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))
+        if not f.stem.endswith(_DERIVED)
     )
 
 
@@ -152,14 +153,16 @@ def sync_queue(ws_name: str, stem: str) -> None:
     except ValueError:
         return
     files = chapter_files(ws_name, stem)
-    for stage, done_suffix in (("tab3_ready", "_ko.txt"), ("tab4_ready", "_wiki.md")):
+    # 번역본은 접미사가 도착언어를 따르므로 이름이 아니라 find_translation 으로 본다.
+    for stage, done_suffix in (("tab3_ready", ""), ("tab4_ready", "_wiki.md")):
         mine = [i for i in queue_list(stage) if i.startswith(book_rel)]
         if not mine:
             continue                      # 이 단계에 없던 책은 새로 넣지 않는다
         queue_remove(stage, mine)
         queue_add(stage, [
             str(f.relative_to(cfg.BASE_DIR)) for f in files
-            if not f.with_name(f.stem + done_suffix).exists()
+            if not (find_translation(f) if not done_suffix
+                    else f.with_name(f.stem + done_suffix).exists())
         ])
 
 

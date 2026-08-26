@@ -12,9 +12,10 @@ services.langdetect가 무슨 언어인지 알아내고, 그 이름을 번역 �
 문자가 같아 그 방법이 통하지 않으므로 기능어 감지와 '원문과 거의 같은가' 검사에
 맡긴다.
 
-번역본 파일 이름은 도착언어와 무관하게 계속 `_ko.txt`다 — 여러 모듈이 이 이름을
-알고 있어서 바꾸면 이미 만들어둔 번역본이 전부 안 보이게 된다. 이름의 'ko'는
-이제 '한국어'가 아니라 '번역본'이라는 표시로 읽으면 된다."""
+번역본 파일 이름은 **도착언어를 따른다**(2026-08-26 변경) — 스페인어면 `_es.txt`.
+예전에는 늘 `_ko.txt`였는데 한국어가 도착언어가 아닐 때 이름이 사실과 어긋났다.
+이미 만들어 둔 `_ko.txt`는 그 자리에 그대로 두고 계속 읽는다 — 아래
+`find_translation()`이 현재 도착언어 → `_ko` → 그 밖의 언어 순으로 찾는다."""
 
 import hashlib
 import json
@@ -51,6 +52,51 @@ def set_target_language(code: str) -> None:
 
 def target_language_name() -> str:
     return language_name(target_language())
+
+
+# ── 번역본 파일 이름 (2026-08-26) ──────────────────────────────────────
+# 예전에는 도착언어와 무관하게 늘 `_ko.txt`였다. 한국어→스페인어처럼 한국어가
+# 도착언어가 아니면 이름이 사실과 어긋난다(연구자 지적).
+#
+# ★**이미 만들어 둔 `_ko.txt` 번역본은 그 자리에 그대로 둔다.** 읽을 때는
+# 현재 도착언어 → 예전 `_ko` → 그 밖의 알려진 언어 순으로 찾으므로 예전 파일도
+# 계속 쓰인다. 새로 만드는 것만 새 이름을 쓴다 — 옮기거나 지우지 않는다.
+LANG_SUFFIXES = tuple(f"_{_c}" for _c in TARGET_CHOICES)
+# 챕터 목록에서 원문과 구분해 걸러내야 하는 파생물들
+DERIVED_SUFFIXES = LANG_SUFFIXES + ("_wiki", "_bilingual", "_clean")
+
+
+def out_suffix(target: str = "") -> str:
+    """지금 도착언어의 파일 이름 접미사. 한국어면 예전과 같은 `_ko`."""
+    return "_" + (target or target_language())
+
+
+def translated_path(ch_path: Path, target: str = "") -> Path:
+    """**새로 만들** 번역본 경로."""
+    return ch_path.with_name(ch_path.stem + out_suffix(target) + ".txt")
+
+
+def find_translation(ch_path: Path) -> Path | None:
+    """**이미 있는** 번역본을 찾는다 — 현재 도착언어 → `_ko` → 그 밖의 언어 순.
+
+    도착언어를 바꿔도 예전에 만들어 둔 번역본이 사라지지 않게 하는 자리다."""
+    cur = translated_path(ch_path)
+    if cur.exists():
+        return cur
+    for suf in ("_ko",) + LANG_SUFFIXES:
+        p = ch_path.with_name(ch_path.stem + suf + ".txt")
+        if p.exists():
+            return p
+    return None
+
+
+def has_translation(ch_path: Path) -> bool:
+    return find_translation(ch_path) is not None
+
+
+def is_derived(stem: str) -> bool:
+    """파생물(번역본·요약·대역·자간정리본)인가 — 원문 챕터 목록에서 뺄 것인가."""
+    return stem.endswith(DERIVED_SUFFIXES)
 
 
 def target_language_options() -> list[tuple[str, str]]:
@@ -768,19 +814,20 @@ def clean_chapter_ko(ch_path: Path, engine: str, progress_cb=None) -> tuple[bool
 
 def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                            want_plain: bool = True, want_bilingual: bool = False) -> tuple[bool, str]:
-    """단일 챕터 TXT 번역. want_plain이면 _ko.txt, want_bilingual이면 원문·번역을
+    """단일 챕터 TXT 번역. want_plain이면 번역본(도착언어 접미사), want_bilingual이면 원문·번역을
     문단별로 나란히 묶은 _bilingual.txt도 저장(둘 다 켜면 둘 다 저장). (ok, msg).
 
     중단 대비 (2026-07-03): Streamlit rerun 등으로 도중에 죽어도 진행분이
-    읽을 수 있는 _ko.partial.md로 남는다. 완주하면 _ko.txt로 확정하고
+    읽을 수 있는 partial.md로 남는다. 완주하면 번역본으로 확정하고
     partial·progress 캐시를 정리한다.
     (.md인 이유: .txt면 챕터 목록 glob(??_*.txt)에 원문으로 오인된다.)"""
     try:
         text = ch_path.read_text(encoding="utf-8", errors="ignore")
-        ko_path = ch_path.with_name(ch_path.stem + "_ko.txt")
+        _suf = out_suffix()                       # 도착언어에 따라 _ko·_es …
+        ko_path = ch_path.with_name(ch_path.stem + _suf + ".txt")
         bilingual_path = ch_path.with_name(ch_path.stem + "_bilingual.txt")
-        partial_path = ch_path.with_name(ch_path.stem + "_ko.partial.md")
-        progress_path = ch_path.with_name(ch_path.stem + "_ko.progress.json")
+        partial_path = ch_path.with_name(ch_path.stem + _suf + ".partial.md")
+        progress_path = ch_path.with_name(ch_path.stem + _suf + ".progress.json")
         if not needs_translation(ch_path):
             if want_plain:
                 ko_path.write_text(text, encoding="utf-8")
@@ -885,8 +932,8 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             _save_bilingual_atomic(bilingual_path, [f"{src}\n\n{tgt}" for src, tgt in bilingual_pairs])
         # 챕터 제목도 번역해 사이드카로 저장 — 본문은 번역돼도 파일명에서 뽑는 장 제목은
         # 그대로 영문으로 남아있던 문제(EPUB 등에서 노출) 수정 (2026-08-11).
-        # 파일명이 "_ko"로 끝나서, 챕터 목록에서 원문과 구분하는 기존 필터에 자동으로 걸린다.
-        title_ko_path = ch_path.with_name(ch_path.stem + "_title_ko.txt")
+        # 파일명이 언어 접미사로 끝나서, 챕터 목록의 파생물 필터(is_derived)에 걸린다.
+        title_ko_path = ch_path.with_name(ch_path.stem + "_title" + _suf + ".txt")
         orig_title = _re.sub(r"^\d+_", "", ch_path.stem)
         ko_title = translate_title(orig_title, engine, src_lang=src_lang, target=_target)
         if ko_title:

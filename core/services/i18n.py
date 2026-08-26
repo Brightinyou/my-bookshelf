@@ -321,6 +321,28 @@ _EN: dict[str, str] = {
     "영한대역 (_bilingual.txt)": "Bilingual EN-KO (_bilingual.txt)",
     # ── 도착언어 중립 이름 (2026-08-26) ────────────────────
     # '영한대역'은 도착언어가 스페인어일 때 틀린 이름이다.
+    # ── 간단해진 버튼들 (2026-08-26) ──────────────────────
+    "본문 품질 검사": "Text quality check",
+    "대상": "Targets",
+    "자간정리 (%d권)": "Fix line breaks (%d books)",
+    "변환된 본문이 쓸 만한지 봅니다. 두 가지를 따로 재요 — "
+    "낱말 유실(수·것·될 같은 한 글자 낱말이 통째로 빠짐, 정상 7~25%)과 "
+    "문자 깨짐(기合·디지!i처럼 글자가 뭉개짐). 실측상 둘은 서로 무관해서 "
+    "각자 기준으로 재고 나쁜 쪽을 따릅니다. 불량으로 나온 책은 여기서 "
+    "AI로 다시 읽을 수 있습니다.":
+        "Checks whether the converted text is usable. Two things are measured "
+        "separately - dropped words (single-syllable Korean words vanishing; 7-25% is "
+        "normal) and garbled characters. In practice the two are unrelated, so each is "
+        "judged on its own and the worse one wins. Books judged bad can be re-read here "
+        "with AI.",
+    "스캔 PDF에서 뽑은 한글 원문은 인쇄된 줄마다 어절이 쪼개져 있습니다. "
+    "AI에 줄바꿈마다 '붙임/공백'만 물어 이어 붙입니다. 한 번 해두면 결과가 "
+    "남아 다시 걸리지 않습니다. 선택 사항입니다 — 하지 않아도 EPUB은 "
+    "만들어지며, 원문이 쪼개진 그대로 담깁니다.":
+        "Korean text pulled from scanned PDFs is broken at every printed line. The AI "
+        "is asked only join-or-space for each line break. Done once, the result is kept "
+        "and will not be asked again. Optional - without it the EPUB is still produced, "
+        "with the text left as extracted.",
     "번역문만": "Translation only",
     "원문·번역 나란히": "Source and translation side by side",
     "원문 없이 번역문만 저장합니다.": "Save only the translated text, without the source.",

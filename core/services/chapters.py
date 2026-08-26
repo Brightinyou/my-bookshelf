@@ -10,6 +10,7 @@ import llm_providers as llm
 
 from services.common import TXT_SUB, _nfc, append_log
 from services.files import find_md, find_txt, txt_dir
+from services.translate import DERIVED_SUFFIXES as _DERIVED, find_translation
 from services.translate import _split_paragraphs_robust
 
 DONE_DIR = cfg.DONE_DIR
@@ -235,9 +236,12 @@ LAST_SPLIT_WARNING: dict[str, str] = {}
 
 
 # 챕터 파생물 접미사 — 원문 챕터 TXT 하나에서 파생되는 파일들 (번역·진행·위키)
+# 번역본 접미사는 도착언어를 따르므로(2026-08-26) 알려진 언어를 모두 편다.
 _CHAPTER_DERIVED_SUFFIXES = (
-    ".txt", "_ko.txt", "_ko.partial.md", "_ko.progress.json",
-    "_wiki.md", "_wiki.json",
+    (".txt", "_wiki.md", "_wiki.json")
+    + tuple(f"{_s}.txt" for _s in _DERIVED)
+    + tuple(f"{_s}.partial.md" for _s in _DERIVED)
+    + tuple(f"{_s}.progress.json" for _s in _DERIVED)
 )
 
 
@@ -366,7 +370,7 @@ def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -
     new_stems: set[str] = set()
     changed_stems: set[str] = set()
     _prev_stems = {f.stem for f in ch_dir.glob("??_*.txt")
-                   if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))}
+                   if not f.stem.endswith(_DERIVED)}
     for idx, (title, body) in enumerate(chapters):
         # 자동 생성된 "머리말"(첫 장 표시 이전 본문, _split_at 참고)은 실제 장이 아니므로
         # 01번을 차지하면 안 된다 — 그러면 진짜 1장(Introduction 등)이 02번으로 밀린다.
@@ -428,7 +432,7 @@ def _merge_chapter_folder(ws_name: str, stem: str, prefer_ko: bool = False) -> t
     if not ch_dir.exists():
         return False, None, "챕터 폴더 없음"
     chapters = sorted(
-        [f for f in ch_dir.glob("??_*.txt") if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))],
+        [f for f in ch_dir.glob("??_*.txt") if not f.stem.endswith(_DERIVED)],
         key=lambda p: p.name,
     )
     if not chapters:
@@ -439,7 +443,7 @@ def _merge_chapter_folder(ws_name: str, stem: str, prefer_ko: bool = False) -> t
     parts: list[str] = [f"# {stem}", ""]
     used_ko = 0
     for ch in chapters:
-        body_path = ch.with_name(ch.stem + "_ko.txt") if prefer_ko and ch.with_name(ch.stem + "_ko.txt").exists() else ch
+        body_path = (find_translation(ch) or ch) if prefer_ko else ch
         if body_path != ch:
             used_ko += 1
         title = _re.sub(r"^\d+_", "", ch.stem)
@@ -521,7 +525,7 @@ def summarize_book_overview(ws_name: str, stem: str) -> tuple[bool, str]:
             _full = _orig.read_text(encoding="utf-8", errors="ignore")
             head_text = (_full[:3500] + "\n…\n" + _full[-1500:]).strip()
         else:
-            _txts = [f for f in sorted(ch_dir.glob("??_*.txt")) if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
+            _txts = [f for f in sorted(ch_dir.glob("??_*.txt")) if not f.stem.endswith(_DERIVED)]
             if _txts:
                 _h = _txts[0].read_text(encoding="utf-8", errors="ignore")[:3500]
                 _t = _txts[-1].read_text(encoding="utf-8", errors="ignore")[-2000:]
@@ -574,8 +578,8 @@ def summarize_one_chapter(ch_path: Path, book_stem: str) -> tuple[bool, str]:
     except ImportError:
         return False, "chapter_wiki 임포트 실패"
     try:
-        ko_path = ch_path.with_name(ch_path.stem + "_ko.txt")
-        src = (ko_path if ko_path.exists() else ch_path).read_text(encoding="utf-8", errors="ignore")
+        ko_path = find_translation(ch_path)     # 도착언어 무관 — 있으면 번역본을 요약한다
+        src = (ko_path or ch_path).read_text(encoding="utf-8", errors="ignore")
         chap_title = _re.sub(r"^\d+_", "", ch_path.stem)
         data = _cw.generate_chapter(book_stem, chap_title, src)
         if not isinstance(data, dict):

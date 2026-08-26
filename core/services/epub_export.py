@@ -15,6 +15,7 @@ from pathlib import Path
 
 import config as cfg
 
+from services.translate import DERIVED_SUFFIXES as _DERIVED, find_translation
 from services.chapters import _author_from_stem, chapters_dir
 
 
@@ -62,8 +63,8 @@ def _chapter_source_text(ch_path: Path, engine: str = "", clean: bool = False,
     prefix는 진행 표시 앞에 붙일 문구('챕터 3/15 · ') — 진행 표시가 placeholder
     하나를 덮어쓰는 구조라, 매 메시지가 챕터 맥락을 같이 들고 있어야 어느 챕터를
     처리 중인지 보인다(2026-08-14)."""
-    ko = ch_path.with_name(ch_path.stem + "_ko.txt")
-    if ko.exists():
+    ko = find_translation(ch_path)            # 도착언어 무관(예전 _ko.txt 포함)
+    if ko:
         return ko.read_text(encoding="utf-8", errors="ignore")
     clean_path = ch_path.with_name(ch_path.stem + "_clean.txt")
     if clean and engine and not clean_path.exists():
@@ -85,7 +86,7 @@ def chapter_files(ws_name: str, stem: str) -> list[Path]:
     if not ch_dir.exists():
         return []
     return sorted(f for f in ch_dir.glob("??_*.txt")
-                  if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean")))
+                  if not f.stem.endswith(_DERIVED))
 
 
 def chapters_needing_clean(ws_name: str, stem: str) -> list[Path]:
@@ -94,7 +95,7 @@ def chapters_needing_clean(ws_name: str, stem: str) -> list[Path]:
     된다 — 이어서 남은 줄바꿈만 묻는다."""
     out = []
     for ch in chapter_files(ws_name, stem):
-        if ch.with_name(ch.stem + "_ko.txt").exists():
+        if find_translation(ch):
             continue        # 번역본이 있으면 EPUB은 그걸 쓴다
         if (ch.with_name(ch.stem + "_clean.txt").exists()
                 and not ch.with_name(ch.stem + "_clean.progress.json").exists()):
@@ -246,9 +247,11 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
         # 본문이 번역돼 있으면(=_ko.txt 존재) 제목도 번역본을 우선 쓴다 — "번역제목 (원제)"
         # 형태로, 번역 사이드카(_title_ko.txt, translate_one_chapter가 만듦)가 없으면
         # 원제 그대로(2026-08-11 — 본문은 번역됐는데 제목만 영문으로 남던 문제 수정).
-        _ko_txt_path = ch_path.with_name(ch_path.stem + "_ko.txt")
-        if _ko_txt_path.exists():
-            _title_ko_path = ch_path.with_name(ch_path.stem + "_title_ko.txt")
+        _ko_txt_path = find_translation(ch_path)
+        if _ko_txt_path:
+            # 사이드카 이름도 본문 번역본과 같은 언어 접미사를 쓴다.
+            _suf = _ko_txt_path.stem[len(ch_path.stem):]
+            _title_ko_path = ch_path.with_name(ch_path.stem + "_title" + _suf + ".txt")
             if _title_ko_path.exists():
                 _ko_title = _title_ko_path.read_text(encoding="utf-8", errors="ignore").strip()
                 if _ko_title:
