@@ -126,45 +126,54 @@ def _footnote_block_start(rows: list[str]) -> int | None:
 def separate_footnotes(lines: list[str]) -> list[str]:
     """각주 줄 앞에 빈 줄을 넣어 **제 문단으로** 서게 한다.
 
-    strip_page_furniture 가 심어 둔 쪽 경계(_PAGE_MARK)로 쪽을 가른 뒤 쪽마다 본다."""
+    ★판정 근거는 **문서 전체를 관통하는 번호 사슬**이다 (2026-08-26 2차).
+    처음에는 '쪽 끝에 모여 있다'로 잡았는데, 다단 정렬(pdfcols)을 거치면 각주가 쪽
+    줄 목록의 끝에 오지 않는 경우가 많아 22쪽 중 8쪽을 놓쳤다. 각주 번호는 1,2,3…
+    으로 책 전체에서 이어지므로, **다음에 올 번호와 맞는 줄만** 각주로 받는다.
+    본문 한가운데의 숫자 시작 줄은 사슬에 안 맞아 저절로 걸러진다.
+
+    사슬이 3개 미만이면 각주가 아니라고 보고 아무것도 건드리지 않는다."""
     # ★라틴 문서에만 건다 (2026-08-26 실측). 한글 책에 그대로 걸었더니 문단이
     # 2→259, 4→123 으로 터졌다 — 번호 매김 목록·쪽 아래 잔줄이 죄다 각주로 잡힌다.
     # 한글 스캔본은 원래 ai_ocr → footnotes.reflow_pages 라는 다른 경로에서 각주를
     # 다루므로 여기서 손댈 이유도 없다. 한글용 규칙은 실측한 뒤에 따로 넣는다.
-    _joined = "\n".join(lines)
-    if _joined and len(_HANGUL.findall(_joined)) / len(_joined) > 0.15:
+    joined = "\n".join(lines)
+    if joined and len(_HANGUL.findall(joined)) / len(joined) > 0.15:
         return list(lines)
+
+    cands: list[tuple[int, int]] = []
+    for i, r in enumerate(lines):
+        s = r.strip()
+        if not s or s == _PAGE_MARK or len(s) > 300:
+            continue
+        m = _FN_START.match(s)
+        if m:
+            cands.append((i, int(m.group(1))))
+    if len(cands) < 3:
+        return list(lines)
+
+    # 1번(없으면 가장 작은 번호)에서 시작해 다음 번호와 맞는 것만 이어 받는다.
+    picked: set[int] = set()
+    expected: int | None = None
+    for i, n in cands:
+        if expected is None:
+            if n <= 2:                     # 각주는 1(가끔 2)에서 시작한다
+                expected = n
+            else:
+                continue
+        # 번호가 **커지기만 하면** 받는다. 딱 맞아떨어지기를 요구했더니 중간에
+        # 각주 하나가 본문에 먹혀 사슬이 끊기면 그 뒤가 통째로 버려졌다(19→8).
+        if n >= expected:
+            picked.add(i)
+            expected = n + 1
+    if len(picked) < 3:
+        return list(lines)
+
     out: list[str] = []
-    seg: list[str] = []
-
-    def _flush(seg: list[str]) -> None:
-        rows = [r for r in seg if r.strip()]
-        s = _footnote_block_start(rows) if rows else None
-        if s is None:
-            out.extend(seg)
-            return
-        # rows 는 빈 줄을 뺀 목록이라, seg 안에서 몇 번째 줄인지 되짚는다
-        # (값이 같은 줄이 있을 수 있어 identity 로 찾으면 안 된다).
-        nth, begin = 0, len(seg)
-        for i, r in enumerate(seg):
-            if r.strip():
-                if nth == s:
-                    begin = i
-                    break
-                nth += 1
-        for i, r in enumerate(seg):
-            if i >= begin and _FN_START.match(r):
-                out.append("")            # 각주마다 제 문단으로
-            out.append(r)
-
-    for l in lines:
-        if l.strip() == _PAGE_MARK:
-            _flush(seg)
-            out.append(l)
-            seg = []
-        else:
-            seg.append(l)
-    _flush(seg)
+    for i, r in enumerate(lines):
+        if i in picked:
+            out.append("")                 # 각주마다 제 문단으로
+        out.append(r)
     return out
 
 

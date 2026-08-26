@@ -95,12 +95,22 @@ class SeparateFootnotesTest(unittest.TestCase):
         out = reflowlib.separate_footnotes(lines)
         return [p.strip() for p in reflowlib.reflow("\n".join(out)).split("\n\n") if p.strip()]
 
-    def test_쪽_아래_각주가_제_문단으로_선다(self):
+    def test_각주가_제_문단으로_선다(self):
+        body = ["Body line one that runs on and on.", "More body text here."]
+        paras = self._run(body + ["1 David Silver, “AlphaGo,” Nature, 2016.",
+                                  "2 Paul Harmon, “AI Plays Games,” Forbes, 2019.",
+                                  "3 Psalm 8:4."])
+        for note in ("1 David Silver, “AlphaGo,” Nature, 2016.",
+                     "2 Paul Harmon, “AI Plays Games,” Forbes, 2019.",
+                     "3 Psalm 8:4."):
+            self.assertIn(note, paras)
+
+    def test_사슬이_짧으면_건드리지_않는다(self):
+        """둘뿐이면 각주인지 그냥 숫자인지 알 수 없다 — 셋부터 믿는다."""
         body = ["Body line one that runs on and on.", "More body text here."]
         paras = self._run(body + ["1 David Silver, “AlphaGo,” Nature, 2016.",
                                   "2 Paul Harmon, “AI Plays Games,” Forbes, 2019."])
-        self.assertIn("1 David Silver, “AlphaGo,” Nature, 2016.", paras)
-        self.assertIn("2 Paul Harmon, “AI Plays Games,” Forbes, 2019.", paras)
+        self.assertEqual(len(paras), 1, f"쪼개지면 안 된다: {paras}")
 
     def test_본문_한가운데_숫자는_각주가_아니다(self):
         paras = self._run(["3 is a number in the middle of things.",
