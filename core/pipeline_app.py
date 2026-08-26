@@ -32,7 +32,6 @@ from version import APP_VERSION
 # ── 처리 로직 서비스 (2026-07-03 pipeline_app.py에서 분리) ──
 # UI 코드가 기존 이름 그대로 쓰도록 명시적으로 재노출한다.
 from services import ai_ocr
-from services import chapter_chat as chat_svc
 from services import chapter_map as cmap
 from services import textquality
 from services import toc as toc_svc
@@ -1135,54 +1134,48 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
                        toc_svc.printed_label(_pdf, _pages)))
 
 
-def _render_chapter_chat(key: str, book: str) -> None:
-    """말로 장 구분 고치기 — 접수는 말로, **판단과 실행은 앱이** (2026-08-25).
+def _render_chapter_split(key: str, book: str) -> None:
+    """장 나누기 — **보면서 고른다** (2026-08-26, 채팅을 대신한다).
 
-    ★모델은 의도만 고르고 아무것도 실행하지 않는다. 앱이 장 분량·후보 줄을 실제로
-    확인해 **제안**을 만들고, 사람이 누를 때 비로소 반영된다
-    (services/chapter_chat 머리말 참고)."""
-    st.markdown("##### 💬 " + t("고칠 곳을 말로 알려 주세요"))
-    st.caption(t("예: “마지막 장이 분할이 안 된 것 같아” · “5장을 4장에 붙여줘” · "
-                 "“2장 제목을 ‘서론’으로” · “‘정든 인공지능과’ 앞에서 나눠줘”"))
-    _pkey = f"{key}_chat_prop_{book}"
-    _msg = st.chat_input(t("무엇이 잘못됐나요?"), key=f"{key}_chat_in_{book}")
-    if _msg:
-        _titles = [cmap.chapter_title(f) for f in cmap.chapter_files(DEFAULT_WS, book)]
-        _prov, _model = llm.wiki_provider_model()
-        with st.spinner(t("확인하는 중…")):
-            _it = chat_svc.interpret(_msg, _titles, _prov, _model)
-            _prop = chat_svc.plan(DEFAULT_WS, book, _it)
-        st.session_state[_pkey] = {"said": _msg, "action": _prop.action, "ok": _prop.ok,
-                                   "message": _prop.message, "evidence": _prop.evidence,
-                                   "params": _prop.params, "source": _it.source}
-    _saved = st.session_state.get(_pkey)
-    if not _saved:
+    ★예전에는 말로 시켰다: "'정든 인공지능과' 앞에서 나눠줘". 화면에 보이지도 않는
+    본문 문구를 외워서 정확히 쳐야 했고, AI가 해석해 제안을 내면 그걸 또 확인해야
+    했다 — 타이핑·해석·제안·실행 네 단계. 채팅이 할 수 있던 나머지(제목 바꾸기·앞
+    장에 합치기)는 위 표에서 이미 더 빠르게 되고, '다시 나누기'는 실행조차 안 했다.
+    그래서 채팅을 걷어내고 **유일하게 표에 없던 '나누기'만** 여기로 옮겼다.
+
+    후보 줄은 chapter_map.split_candidates가 고른다 — 문장부호로 끝나지 않는 짧은
+    줄, 곧 '제목처럼 생긴 줄'이다. 수백 개가 나오면 고르게 솎아 내므로 필요한 줄이
+    빠질 수 있다. 그때는 검색어로 좁힌다(솎아 내지 않는다)."""
+    files = cmap.chapter_files(DEFAULT_WS, book)
+    if not files:
         return
-    with st.container(border=True):
-        st.caption("🗣️ " + _saved["said"])
-        (st.info if _saved["ok"] else st.warning)(_saved["message"])
-        for _e in _saved["evidence"]:
-            st.markdown("- " + _e)
-        if _saved["ok"] and _saved["action"] == "resplit":
-            st.caption(t("‘다시 나누기’는 아래 목록에서 이 책을 다시 처리하세요."))
-        elif _saved["ok"]:
-            _c1, _c2 = st.columns(2)
-            if _c1.button(t("이대로 실행"), icon=":material/play_arrow:",
-                          key=f"{key}_chat_go_{book}", use_container_width=True, type="primary"):
-                _p = chat_svc.Proposal(action=_saved["action"], ok=True,
-                                       message=_saved["message"], params=_saved["params"])
-                _ok, _note = chat_svc.apply(DEFAULT_WS, book, _p)
-                st.session_state.pop(_pkey, None)
-                (st.success if _ok else st.error)(_note)
+    with st.expander("✂️ " + t("장 나누기 — 한 장이 둘 이상 붙어 있을 때")):
+        _labels = {i: f"{f.stem[:2]}. {cmap.chapter_title(f)} "
+                      f"({len(f.read_text(encoding='utf-8', errors='ignore')):,}자)"
+                   for i, f in enumerate(files)}
+        _idx = st.selectbox(t("나눌 장"), list(range(len(files))),
+                            format_func=lambda i: _labels[i], key=f"{key}_sp_ch_{book}")
+        _q = st.text_input(t("찾는 문구 (선택 — 후보가 많을 때 좁히기)"),
+                           key=f"{key}_sp_q_{book}", placeholder=t("예: 정든 인공지능과"))
+        _cands, _total = cmap.split_candidates(DEFAULT_WS, book, _idx, query=_q)
+        if not _cands:
+            st.caption(t("나눌 만한 자리를 찾지 못했습니다 — 검색어를 바꿔 보세요.")
+                       if _q else t("이 장에서는 새 장이 시작될 만한 줄을 찾지 못했습니다."))
+            return
+        if _total > len(_cands):
+            st.caption(tf("후보 %d개 중 %d개를 고르게 뽑아 보여 줍니다 — 찾는 줄이 없으면 "
+                          "위에 그 문구를 넣어 좁히세요.", _total, len(_cands)))
+        _pick = st.radio(t("여기서부터 새 장이 시작됩니다"), [p for p, _ in _cands],
+                         format_func=lambda p: dict(_cands)[p][:70],
+                         key=f"{key}_sp_at_{book}")
+        _title = st.text_input(t("새 장 제목 (비우면 그 줄을 제목으로)"),
+                               key=f"{key}_sp_t_{book}")
+        if st.button(t("여기서 나누기"), icon=":material/content_cut:",
+                     key=f"{key}_sp_go_{book}", type="primary"):
+            if cmap.split_chapter(DEFAULT_WS, book, _idx, _pick, _title.strip()):
+                st.success(t("장을 나눴습니다."))
                 st.rerun()
-            if _c2.button(t("취소"), icon=":material/close:",
-                          key=f"{key}_chat_no_{book}", use_container_width=True):
-                st.session_state.pop(_pkey, None)
-                st.rerun()
-        else:
-            if st.button(t("닫기"), icon=":material/close:", key=f"{key}_chat_cl_{book}"):
-                st.session_state.pop(_pkey, None)
-                st.rerun()
+            st.error(t("나누지 못했습니다 — 다른 자리를 골라 보세요."))
 
 
 def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = None) -> None:
@@ -1332,7 +1325,7 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
         return
 
     st.divider()
-    _render_chapter_chat(key, book)
+    _render_chapter_split(key, book)
     st.divider()
 
     # ── 📖 PDF 차례에서 가져오기 (2026-08-17) ────────────────────

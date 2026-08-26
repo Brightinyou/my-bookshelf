@@ -378,6 +378,28 @@ _EN: dict[str, str] = {
         "Saves your edits and stays here - for when you want to keep adjusting.",
     "확정했습니다. 위 안내를 확인하고 한 번 더 누르면 다음 단계로 넘어갑니다.":
         "Confirmed. Read the note above, then press again to move on.",
+    # ── 장 나누기 (2026-08-26, 채팅 대체) ──────────────────
+    "장 나누기 — 한 장이 둘 이상 붙어 있을 때":
+        "Split a chapter - when two or more chapters ended up as one",
+    "나눌 장": "Chapter to split",
+    "찾는 문구 (선택 — 후보가 많을 때 좁히기)":
+        "Text to look for (optional - narrows a long candidate list)",
+    "예: 정든 인공지능과": "e.g. the first words of the new chapter",
+    "여기서부터 새 장이 시작됩니다": "The new chapter starts here",
+    "새 장 제목 (비우면 그 줄을 제목으로)":
+        "Title for the new chapter (leave empty to use that line)",
+    "여기서 나누기": "Split here",
+    "장을 나눴습니다.": "Chapter split.",
+    "나누지 못했습니다 — 다른 자리를 골라 보세요.":
+        "Could not split there - try another line.",
+    "이 장에서는 새 장이 시작될 만한 줄을 찾지 못했습니다.":
+        "No line in this chapter looks like the start of a new one.",
+    "나눌 만한 자리를 찾지 못했습니다 — 검색어를 바꿔 보세요.":
+        "Nothing matched - try different text.",
+    "후보 %d개 중 %d개를 고르게 뽑아 보여 줍니다 — 찾는 줄이 없으면 "
+    "위에 그 문구를 넣어 좁히세요.":
+        "Showing %d of %d candidates, spread evenly - if the line you want is missing, "
+        "type some of its text above to narrow the list.",
     "본문 품질 검사": "Text quality check",
     "대상": "Targets",
     "자간정리 (%d권)": "Fix line breaks (%d books)",
