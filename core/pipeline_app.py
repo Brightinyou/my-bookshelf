@@ -803,6 +803,10 @@ def _view_target_from_item(it: dict) -> Path | None:
 
 
 def _goto_view(view_id: str) -> None:
+    # ★탭을 옮기면 완료 알림은 닫는다 (2026-08-26). 알림이 세션에 남아 있어서
+    # «확정하고 번역(으)로»로 넘어가도 「챕터 분할 완료」가 번역 화면 아래에 계속
+    # 따라다녔다 — 이미 지나온 단계의 안내가 다음 화면을 가린다.
+    _clear_stage_completion()
     st.session_state["active_view"] = view_id
     st.query_params.clear()
     st.rerun()

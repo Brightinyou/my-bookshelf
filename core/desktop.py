@@ -202,6 +202,19 @@ def main() -> int:
     _win_h = max(640, min(1040, int(_sh * 0.92)))
     _min_w = min(900, _win_w)
     _min_h = min(720, _win_h)
+    # ★작업표시줄에 파이썬 아이콘이 뜨던 것을 고친다 (2026-08-26 연구자 지적).
+    # 창 아이콘(WM_SETICON)은 아래에서 제대로 붙이고 있어 **제목 표시줄**에는 올바른
+    # 아이콘이 나왔다. 그런데 작업표시줄은 창이 아니라 **프로세스의 신원**
+    # (AppUserModelID)으로 묶는데, 그 값이 없으면 호스트인 pythonw.exe 를 따라간다.
+    # 그래서 작업표시줄에만 파이썬 아이콘이 떴다. 창을 만들기 **전에** 신원을 밝힌다.
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "Brightinyou.MyBookshelf")
+        except Exception:
+            pass                      # 못 해도 앱은 그대로 뜬다 — 아이콘만 아쉬울 뿐
+
     webview.create_window(
         APP_TITLE,
         url,
