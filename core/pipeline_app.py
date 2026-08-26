@@ -1085,7 +1085,9 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
     # ── 짧은 문서: 차례를 찾을 것 없이 전체를 연다 ──────────────────────
     if 0 < _total <= _SHORT_DOC_PAGES:
         if st.session_state.get(_seen) != ("whole", _total):
-            open_pdf_view(_pdf)
+            # ★원본이 아니라 사본을 연다 — 뷰어가 원본을 붙들면 같은 책을 다시
+            # 변환할 때 옮기지 못해 앱이 멎는다 (2026-08-26 WinError 32).
+            open_pdf_view(toc_svc.whole_pdf_copy(_pdf))
             st.session_state[_seen] = ("whole", _total)
         st.info("📖 " + tf("**원본 %s쪽 전체를 미리보기 창으로 열었습니다.** "
                            "짧은 글이라 차례 쪽을 따로 짚지 않았습니다 — 그 창을 이 앱 창 옆에 "

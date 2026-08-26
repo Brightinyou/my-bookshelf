@@ -15,6 +15,7 @@ TXT에서 제목을 퍼지 탐색해 로컬에서 확정한다(환각 무해화�
 import base64
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 from collections import Counter
@@ -190,6 +191,25 @@ def page_count(pdf_path: Path) -> int:
         return n
     except Exception:
         return 0
+
+
+def whole_pdf_copy(pdf_path: Path) -> Path:
+    """원본 PDF의 **사본** 경로 — 미리보기로 열 때 쓴다 (2026-08-26).
+
+    ★원본을 그대로 열면 뷰어가 그 파일을 붙들고, 나중에 같은 책을 다시 변환할 때
+    `WinError 32`로 옮기지 못한다(실제로 앱이 멎었다). 사본을 열면 원본은 자유롭다.
+
+    이름을 고정해 두어 다시 눌러도 창이 늘어나지 않는다. 복사에 실패하면 원본을
+    돌려준다 — 못 여는 것보다는 낫다."""
+    try:
+        safe = re.sub(r'[\/:*?"<>|]', "_", pdf_path.stem)[:60]
+        dst = Path(tempfile.gettempdir()) / f"{safe}_원본.pdf"
+        if not (dst.exists() and dst.stat().st_size == pdf_path.stat().st_size):
+            shutil.copy2(str(pdf_path), str(dst))
+        return dst
+    except Exception as e:
+        append_log(f"WARN: 원본 PDF 사본 만들기 실패 ({type(e).__name__}) — 원본을 엽니다")
+        return pdf_path
 
 
 def printed_offset(pdf_path: Path, sample: int = 12) -> int | None:

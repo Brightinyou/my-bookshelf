@@ -1,11 +1,13 @@
 """PDF/DOCX/HWP/HWPX → TXT 변환 (pypdfium2 좌표 추출 + pdftotext 폴백,
 office 문서는 python-docx·rhwp) + TXT 단독 처리."""
 
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import config as cfg
@@ -172,6 +174,40 @@ def pdf_to_txt(pdf_path: Path, fast: bool = True) -> tuple[Path | None, Path | N
 
 # ─── TXT 단독 처리 (번역·위키 생략) ─────────────────────────
 
+def _move_over(src, dst, tries: int = 6) -> None:
+    """옮긴다 — **목적지에 같은 이름이 있어도, 잠깐 잠겨 있어도.**
+
+    ★2026-08-26 윈도우에서 실제로 터졌다. 이미 변환해 둔 PDF를 다시 변환하니
+    `PermissionError: [WinError 32] 다른 프로세스가 파일을 사용 중`.
+    원인이 둘 겹쳐 있었다:
+      · 목적지(1_원본PDF/…)에 같은 이름이 이미 있어 `os.rename`이 실패하고
+        shutil.move가 **복사 경로**로 내려갔다.
+      · 그 파일을 미리보기 창이 붙들고 있었다 — 장 확인 화면이 원본 PDF를 OS
+        뷰어로 열기 때문이다. 복사는 잠긴 파일에 부딪혀 예외가 됐고, 그것이
+        화면까지 그대로 올라와 앱이 통째로 멎었다.
+
+    `os.replace`는 같은 이름이 있어도 덮어쓰므로 첫째 원인이 사라진다. 잠금은 대개
+    잠깐이라(뷰어가 파일을 놓는 데 걸리는 시간) 몇 번 쉬며 다시 해 본다."""
+    src, dst = str(src), str(dst)
+    for k in range(tries):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if k == tries - 1:
+                raise
+            time.sleep(0.4)
+        except OSError:
+            # 다른 드라이브면 replace가 안 된다 — 복사하고 지운다.
+            shutil.copy2(src, dst)
+            try:
+                os.unlink(src)
+            except OSError:
+                pass
+            return
+
+
+
 def _do_ocr_only(uf, ws_name: str, fast: bool = False) -> dict:
     """PDF/DOCX/HWP/HWPX → TXT 변환만 수행. fast=True이면 PDF는 pdftotext 직접 추출."""
     dest = UPLOAD_TMP / uf.name
@@ -184,7 +220,7 @@ def _do_ocr_only(uf, ws_name: str, fast: bool = False) -> dict:
     if _suf not in {".pdf", *OFFICE_EXTS}:
         txt_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)
         final = txt_dir(DONE_DIR, ws_name) / dest.name
-        shutil.move(str(dest), str(final))
+        _move_over(dest, final)
         append_log(f"TXT 직접 업로드: {final.name}")
         queue_add("tab2_ready", [_nfc(Path(final).stem)])   # → 장별분할 큐
         return {"ok": True, "name": uf.name, "txt_path": str(final), "md_path": "", "error": ""}
@@ -195,7 +231,7 @@ def _do_ocr_only(uf, ws_name: str, fast: bool = False) -> dict:
         md_src = None
     if not txt_path:
         _needs_ocr = (err == OCR_REQUIRED_MSG)
-        try: shutil.move(str(dest), str(FAILED_DIR / uf.name))
+        try: _move_over(dest, FAILED_DIR / uf.name)
         except Exception: pass
         append_log(f"{'OCR 필요' if _needs_ocr else 'ERROR: TXT 변환 실패'} — {uf.name}: {err}")
         return {"ok": False, "name": uf.name, "txt_path": "", "md_path": "",
@@ -203,14 +239,14 @@ def _do_ocr_only(uf, ws_name: str, fast: bool = False) -> dict:
     orig_save_dir2 = cfg.PDF_DIR   # 원본 보관 폴더 — PDF 외 오피스 문서 원본도 여기 보관
     orig_save_dir2.mkdir(parents=True, exist_ok=True)
     final_orig = orig_save_dir2 / uf.name
-    shutil.move(str(dest), str(final_orig))
+    _move_over(dest, final_orig)
     txt_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)
     final_txt = txt_dir(DONE_DIR, ws_name) / txt_path.name   # 항상 1_txt/에 저장
-    shutil.move(str(txt_path), str(final_txt))
+    _move_over(txt_path, final_txt)
     if md_src and md_src.exists():
         md_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)
         final_md = md_dir(DONE_DIR, ws_name) / md_src.name
-        shutil.move(str(md_src), str(final_md))
+        _move_over(md_src, final_md)
     else:
         final_md = None
     append_log(f"TXT 변환 완료: {uf.name} → {Path(final_txt).name}"
