@@ -319,6 +319,32 @@ _EN: dict[str, str] = {
     "번역 (_ko.txt)": "Translation (_ko.txt)",
     "원문 없이 한국어 번역문만 저장합니다.": "Saves only the Korean translation, without the source text.",
     "영한대역 (_bilingual.txt)": "Bilingual EN-KO (_bilingual.txt)",
+    # ── 도착언어 중립 이름 (2026-08-26) ────────────────────
+    # '영한대역'은 도착언어가 스페인어일 때 틀린 이름이다.
+    "번역문만": "Translation only",
+    "원문·번역 나란히": "Source and translation side by side",
+    "원문 없이 번역문만 저장합니다.": "Save only the translated text, without the source.",
+    "번역문만 · 원문·번역 나란히 중 하나 이상 선택하세요.":
+        "Select at least one: Translation only, or Source and translation side by side.",
+    "출력 방식을 하나 이상 선택하세요": "Select at least one output format",
+    "스캔 PDF에서 뽑은 한글 원문은 인쇄된 줄마다 어절이 쪼개져 있습니다. "
+    "AI에 줄바꿈마다 '붙임/공백'만 물어 이어 붙입니다. 결과는 _clean.txt로 "
+    "남아 다시 걸리지 않습니다. 선택 사항입니다 — 하지 않아도 EPUB은 "
+    "만들어지며, 원문이 쪼개진 그대로 담깁니다.":
+        "Korean text pulled from scanned PDFs is broken at every printed line. "
+        "The AI is asked only join-or-space for each line break. The result is kept "
+        "as _clean.txt and will not be asked again. Optional — without it the EPUB is "
+        "still produced, with the text left as extracted.",
+    "장별 요약 본문을 원문 글자수 대비 몇 %로 만들지 정합니다 (권장 15%). "
+    "짧은 장은 최소 분량을 보장합니다. 다음 요약부터 적용됩니다. "
+    "분량이 커질수록 요약이 길어져 출력 토큰 소비·API 비용이 늘어납니다 "
+    "(원문을 보내는 입력 토큰은 분량과 무관하게 동일합니다). "
+    "설정 탭과 문서요약 탭이 같은 값을 공유합니다.":
+        "How long each chapter summary should be, as a % of the source length "
+        "(15% recommended). Short chapters get a guaranteed minimum. Applies from the "
+        "next summary on. A larger share makes summaries longer, raising output-token "
+        "use and API cost (the input tokens for the source stay the same). "
+        "The Settings tab and the Summary tab share this value.",
     "원문과 번역을 문단별로 나란히 저장합니다.": "Saves the source and translation side by side, paragraph by paragraph.",
     "번역 · 영한대역 중 하나 이상 선택하세요.": "Select at least one of Translation or Bilingual EN-KO.",
     "출력 방식(번역/영한대역)을 하나 이상 선택하세요": "Select at least one output (Translation/Bilingual EN-KO)",

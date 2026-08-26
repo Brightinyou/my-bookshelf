@@ -58,7 +58,6 @@ from services import updater
 from services.translate import (
     _needs_translation, _paragraph_already_target, _split_paragraphs_robust,
     _translate_paragraph, _translation_is_valid, book_language, build_translate_system,
-    clean_workers as translate_clean_workers,
     engine_label, find_sequential_footnotes, find_skip_section_paragraphs,
     language_name, needs_translation, set_target_language, should_drop_paragraph,
     source_language, target_language, target_language_name, target_language_options,
@@ -1210,22 +1209,8 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
         # 수십 권이 딸려 오고, 다 지나간 책의 "수상한 분할"을 붙잡게 된다(2026-08-18).
         _live = {_nfc(b) for b in st.session_state.get("_review_books", [])}
         _fresh = [b for b in books if _nfc(b) in _live]
-        # ★그런데 그 제한 때문에 **확인이 일회성**이 됐다 — 앱을 껐다 켜면 확인 화면이
-        # 통째로 사라져서, 어제 나눈 책을 오늘 확인할 방법이 없었다. 그래서 연구자가
-        # 확인하려고 멀쩡한 책을 **다시 분할하는** 일이 반복됐다(2026-08-25).
-        # 아직 «이대로 확정»하지 않은 책은 언제든 꺼내 볼 수 있게 한다 — 확정한 책은
-        # 안 뜨므로 목록이 수십 권으로 불어나지 않는다.
-        _unconfirmed = [b for b in books
-                        if _nfc(b) not in _live and not cmap.is_confirmed(DEFAULT_WS, b)]
-        if full and _unconfirmed:
-            with st.expander("📑 " + tf("확인하지 않은 책 %d권 — 장 구분 확인하기",
-                                        len(_unconfirmed))):
-                _pick = st.selectbox(t("책 고르기"), ["—"] + _unconfirmed,
-                                     key=f"{key}_pickold")
-                if _pick and _pick != "—":
-                    st.session_state["_review_books"] = sorted(
-                        set(st.session_state.get("_review_books", [])) | {_nfc(_pick)})
-                    st.rerun()
+        # ★'확인하지 않은 책' 목록은 뺐다 (2026-08-26 연구자 요청 — 자주 안 쓴다).
+        # 필요해지면 여기서 확정 안 된 책을 다시 꺼내면 된다.
         books = _fresh
     if not books:
         return
@@ -1587,8 +1572,9 @@ def _stage_flow_panel(app_title: str, app_desc: str,
     폴더 열기란은 접이식으로 작게 처리한다 (2026-07-09). cards=[(라벨, 경로, 개수문구)]"""
     st.markdown(f"### {t(app_title)}")
     st.caption(t(app_desc))
-    _summary = "  ·  ".join(f"{t(label)} {count_txt}" for label, _p, count_txt in cards)
-    st.caption(_summary)
+    # ★진행 요약 줄("① 처리전 · … · ② 처리후 · …")은 뺐다 (2026-08-26 연구자 요청).
+    # 다섯 탭 머리마다 숫자가 늘어서 있어 정작 할 일이 눈에 안 들어왔다.
+    # 폴더 열기는 그대로 둔다 — 그건 실제로 쓰는 기능이다.
     with st.expander(t("📁 폴더 열기"), expanded=False):
         _fcols = st.columns(len(cards))
         for i, (label, path, _count_txt) in enumerate(cards):
@@ -2036,22 +2022,10 @@ def _wiki_model_radio(key: str) -> tuple[str, str]:
     return _p, _m
 
 
-def _settings_ai_label() -> str:
-    """설정에서 선택된 AI(공급자·모델)의 사람용 라벨."""
-    _wp, _wm = llm.wiki_provider_model()
-    _plabel = llm.PROVIDERS.get(_wp, {}).get("label", _wp)
-    return f"{_plabel} · {_wm}"
-
-
 def _settings_engine_id() -> str:
     """설정에서 선택된 AI의 번역 엔진 id (provider:model)."""
     _wp, _wm = llm.wiki_provider_model()
     return f"{_wp}:{_wm}" if _wp and _wm else ""
-
-
-def _settings_ai_note() -> None:
-    """AI 모델은 설정에서만 고른다는 안내 + 현재 선택 표시 (탭 공통)."""
-    st.caption(":material/smart_toy: " + t("AI 모델은 설정에서 선택합니다 · 현재: ") + _settings_ai_label())
 
 
 _loading_step("화면 구성 중…", "탭과 UI를 초기화하고 있습니다")
@@ -2655,7 +2629,6 @@ if _active_view == "2_split":
         "flow2",
     )
     _sp_prov2, _sp_model2 = llm.wiki_provider_model()
-    _settings_ai_note()
 
     # TXT 직접 업로드
     _up2 = st.file_uploader(t("TXT 직접 업로드"),
@@ -2963,24 +2936,6 @@ if _active_view == "2_split":
     # 분할이 조용히 틀린 채로 요약·번역·EPUB까지 진행되던 사고를 막는 자리다.
     _chapter_review_panel("rv2", full=True)
 
-    # 수동 추가 expander
-    with st.expander(t("➕ 수동으로 추가 (기존 책에서 선택)")):
-        _mc2a, _mc2b = st.columns([3, 2])
-        _search2 = _mc2a.text_input(t("책 이름 검색"), key="split2_search", placeholder=t("검색어 입력…"))
-        _sort2 = _mc2b.radio(t("정렬"), [t("최근 추가순"), t("이름순")], horizontal=True, key="split2_sort")
-        _all_txts2 = (list(_txt_root2.glob("*.txt")) + list(_txt_root2.glob("*.md"))) if _txt_root2.exists() else []
-        _all_txts2 = sorted(_all_txts2, key=lambda f: f.stat().st_mtime, reverse=True) \
-                     if _sort2 == t("최근 추가순") else sorted(_all_txts2, key=lambda f: f.name)
-        _filtered2 = [f for f in _all_txts2 if _search2.lower() in f.stem.lower()] \
-                     if _search2 else _all_txts2
-        _manual_items2 = [{"key": f.name, "label": f.name,
-                           "meta": f"{f.stat().st_size//1024}KB", "obj": f.stem}
-                          for f in _filtered2]
-        _msel2 = _checklist(_manual_items2, "split2m", height=220)
-        if st.button(tf("선택 항목 큐에 추가 (%d권)", len(_msel2)), icon=":material/add:", key="split2m_add",
-                     disabled=len(_msel2)==0):
-            queue_add("tab2_ready", _msel2); st.rerun()
-
     st.info(t("💡 다음 단계: 외국어 도서는 **:material/translate: 번역**으로, 한국어 도서는 **📝 문서요약**으로 이동하세요") if _translation_on
             else t("💡 다음 단계: **📝 문서요약**으로 이동하세요"))
 
@@ -2997,7 +2952,7 @@ if _active_view == "3_translate":
         if not _cf.exists():
             return False, f"{Path(rel).name}: 파일 없음"
         if not (_want_plain3 or _want_bil3):
-            return False, f"{Path(rel).name}: {t('출력 방식(번역/영한대역)을 하나 이상 선택하세요')}"
+            return False, f"{Path(rel).name}: {t('출력 방식을 하나 이상 선택하세요')}"
         _ok, _msg = translate_one_chapter(_cf, _tr_eng3, progress_cb=progress_cb,
                                            want_plain=_want_plain3, want_bilingual=_want_bil3)
         if _ok:
@@ -3045,7 +3000,7 @@ if _active_view == "3_translate":
         st.stop()
     _stage_flow_panel(
         ":material/translate: 번역",
-        tf("챕터 TXT를 %s로 번역해 같은 폴더에 `_ko.txt`로 저장합니다. "
+        tf("챕터 TXT를 %s로 번역해 같은 폴더에 저장합니다. "
             "원문 언어(영어·독일어·네덜란드어·프랑스어·라틴어·일본어·중국어 등)는 자동으로 감지하며, "
             "도착언어는 설정에서 바꿉니다.", target_language_name()),
         [
@@ -3058,20 +3013,18 @@ if _active_view == "3_translate":
     if not _tr_eng3:
         st.warning(t("사용 가능한 AI 없음 — :material/settings: 설정 탭에서 API 키를 입력하세요."),
                    icon=":material/warning:")
-    else:
-        _settings_ai_note()
 
         # 번역 출력 방식 — 독립 토글(둘 다 켜도 됨), 최소 하나는 있어야 함 (2026-08-11)
-        _wp_new3 = st.toggle(t("번역 (_ko.txt)"), value=_want_plain3, key="tr3_want_plain",
-                              help=t("원문 없이 한국어 번역문만 저장합니다."))
-        _wb_new3 = st.toggle(t("영한대역 (_bilingual.txt)"), value=_want_bil3, key="tr3_want_bilingual",
+        _wp_new3 = st.toggle(t("번역문만"), value=_want_plain3, key="tr3_want_plain",
+                              help=t("원문 없이 번역문만 저장합니다."))
+        _wb_new3 = st.toggle(t("원문·번역 나란히"), value=_want_bil3, key="tr3_want_bilingual",
                               help=t("원문과 번역을 문단별로 나란히 저장합니다."))
         if bool(_wp_new3) != _want_plain3 or bool(_wb_new3) != _want_bil3:
             llm.set_pref("translate_want_plain", bool(_wp_new3))
             llm.set_pref("translate_want_bilingual", bool(_wb_new3))
             st.rerun()
         if not (_wp_new3 or _wb_new3):
-            st.warning(t("번역 · 영한대역 중 하나 이상 선택하세요."))
+            st.warning(t("번역문만 · 원문·번역 나란히 중 하나 이상 선택하세요."))
 
         # TXT 직접 업로드 — 즉시 번역하지 않고 번역 대기 큐에 등록 (2026-07-09)
         _up3 = st.file_uploader(t("TXT 직접 업로드"),
@@ -3171,9 +3124,13 @@ def _render_wiki_length_slider(widget_key: str):
         min_value=_cw.WIKI_PCT_MIN, max_value=_cw.WIKI_PCT_MAX,
         step=1, format="%d%%", key=widget_key,
         on_change=_wiki_len_cb, args=(widget_key,),
-        help=t("설정 탭과 문서요약 탭이 같은 값을 공유합니다."))
-    st.caption(t("장별 요약 본문을 원문 글자수 대비 몇 %로 만들지 정합니다 (권장 15%). 짧은 장은 최소 분량을 보장합니다. 다음 요약부터 적용됩니다."))
-    st.caption(t(":material/info: 분량(%)이 커질수록 생성되는 요약이 길어져 **출력 토큰 소비·API 비용이 늘어납니다.** (원문을 보내는 입력 토큰은 분량과 무관하게 동일합니다.)"))
+        # ★설명은 캡션 두 줄로 늘어놓지 않고 ? 도움말로 접는다 (2026-08-26).
+        # 늘 보일 필요 없는 글이 바보다 길면 정작 바를 못 본다.
+        help=t("장별 요약 본문을 원문 글자수 대비 몇 %로 만들지 정합니다 (권장 15%). "
+               "짧은 장은 최소 분량을 보장합니다. 다음 요약부터 적용됩니다. "
+               "분량이 커질수록 요약이 길어져 출력 토큰 소비·API 비용이 늘어납니다 "
+               "(원문을 보내는 입력 토큰은 분량과 무관하게 동일합니다). "
+               "설정 탭과 문서요약 탭이 같은 값을 공유합니다."))
 
 
 if _active_view == "4_summary":
@@ -3261,15 +3218,13 @@ if _active_view == "4_summary":
     )
 
     # 요약 분량 조절 — 여기서도 바로 조절(설정 탭의 기본값과 동기화, 2026-07-23)
-    with st.expander(t(":material/tune: 요약 분량 조절"), expanded=False):
-        _render_wiki_length_slider("wiki_length_pct_sl4")
+    # 펼쳐 둔다 — 접어 두면 있는 줄도 모른다 (2026-08-26)
+    _render_wiki_length_slider("wiki_length_pct_sl4")
 
     _prov_ok4 = any(llm.has_key(p) for p in llm.PROVIDERS)
     if not _prov_ok4:
         st.warning(t("요약 API 없음 — :material/settings: 설정 탭에서 키를 입력하세요."),
                    icon=":material/warning:")
-    else:
-        _settings_ai_note()
 
         # TXT 직접 업로드 — 즉시 요약하지 않고 요약 대기 큐에 등록 (2026-07-09)
         _up4 = st.file_uploader(t("TXT 직접 업로드"),
@@ -3389,24 +3344,6 @@ if _active_view == "4_summary":
             if _f4c2.button(t("실패 목록 비우기"), icon=":material/delete_sweep:", key="summ4_clear_failed", use_container_width=True):
                 queue_clear("tab4_failed")
                 st.rerun()
-
-        # 수동 추가 expander
-        with st.expander(t("➕ 수동으로 추가 (기존 챕터에서 선택)")):
-            _mc4a, _mc4b = st.columns([3, 2])
-            _search4 = _mc4a.text_input(t("책/챕터 이름 검색"), key="summ4_search", placeholder=t("검색어 입력…"))
-            _sort4 = _mc4b.radio(t("정렬"), [t("최근 추가순"), t("이름순")], horizontal=True, key="summ4_sort")
-            _ch_root4m = cfg.CHAPTERS_DIR
-            _all_cfs4 = list(_ch_root4m.rglob("??_*.txt")) if _ch_root4m.exists() else []
-            _all_cfs4 = [f for f in _all_cfs4 if not f.stem.endswith(("_ko", "_wiki", "_bilingual", "_clean"))]
-            _all_cfs4 = sorted(_all_cfs4, key=lambda f: f.stat().st_mtime, reverse=True) \
-                        if _sort4 == t("최근 추가순") else sorted(_all_cfs4, key=lambda f: str(f))
-            _filt4 = [f for f in _all_cfs4 if _search4.lower() in str(f).lower()] if _search4 else _all_cfs4
-            _mitems4 = [{"key": str(f.relative_to(cfg.BASE_DIR)), "label": f"{f.parent.name}/{f.name}",
-                         "meta": f"{f.stat().st_size//1024}KB", "obj": str(f.relative_to(cfg.BASE_DIR))}
-                        for f in _filt4]
-            _msel4 = _checklist(_mitems4, "summ4m", height=200)
-            if st.button(tf("선택 항목 큐에 추가 (%d개)", len(_msel4)), icon=":material/add:", key="summ4m_add", disabled=len(_msel4)==0):
-                queue_add("tab4_ready", _msel4); st.rerun()
 
     st.info(t("💡 다음 단계: **📖 위키반영**으로 이동하세요"))
 
@@ -3603,28 +3540,21 @@ if _active_view == "5_wiki":
             _need5 = chapters_needing_clean(DEFAULT_WS, _cs5)
             if _need5:
                 _clean_targets5[_cs5] = len(_need5)
-        st.caption(t("한글 원문 책 다듬기 (선택) — 스캔 PDF의 줄바꿈으로 쪼개진 어절을 AI가 이어 붙입니다. "
-                      "한 번 해두면 결과가 _clean.txt로 남아 다시 걸리지 않습니다."))
-        if not _clean_targets5:
-            st.caption(t("✓ 대기 중인 책에 자간정리가 필요한 한글 원문 챕터가 없습니다."))
-        else:
-            st.caption(tf("자간정리 대상: %d권 · %d챕터",
-                           len(_clean_targets5), sum(_clean_targets5.values())))
-            _cb5a, _cb5b = st.columns([3, 2])
-            if _cb5a.button(tf("자간정리 먼저 실행 (%d권)", len(_clean_targets5)),
-                             icon=":material/format_align_left:", key="clean5_start",
-                             use_container_width=True, disabled=not _epub_engine5):
+        # ★설명 캡션과 "대상 N권 · M챕터" 요약은 뺐다 (2026-08-26 연구자 요청).
+        # 대신 **어떤 책을 돌리려는지 이름을 보여 준다** — 권수만 적어 두면 무엇에
+        # AI를 부르는지 모른 채 누르게 된다.
+        # 동시 실행 칸도 뺐다. 저장해 둔 값(clean_workers)을 그대로 쓴다.
+        if _clean_targets5:
+            for _b5, _n5 in _clean_targets5.items():
+                st.caption(f"　· {_b5} ({_n5}" + t("챕터") + ")")
+            if st.button(tf("자간정리 먼저 실행 (%d권)", len(_clean_targets5)),
+                         icon=":material/format_align_left:", key="clean5_start",
+                         disabled=not _epub_engine5,
+                         help=t("스캔 PDF에서 뽑은 한글 원문은 인쇄된 줄마다 어절이 쪼개져 있습니다. "
+                                "AI에 줄바꿈마다 '붙임/공백'만 물어 이어 붙입니다. 결과는 _clean.txt로 "
+                                "남아 다시 걸리지 않습니다. 선택 사항입니다 — 하지 않아도 EPUB은 "
+                                "만들어지며, 원문이 쪼개진 그대로 담깁니다.")):
                 _run_start("clean5", list(_clean_targets5))
-            # 판정 묶음을 동시에 몇 개까지 던질지. AI 호출 하나가 수십 초라 병렬이
-            # 그대로 배수로 붙지만, 너무 올리면 사용량 한도에 걸린다(2026-08-14).
-            _cw5 = _cb5b.number_input(t("동시 실행"), min_value=1, max_value=8,
-                                       value=translate_clean_workers(), step=1,
-                                       key="clean5_workers",
-                                       help=t("AI 판정 묶음을 동시에 몇 개까지 보낼지. "
-                                              "올리면 빨라지지만 사용량 한도에 걸릴 수 있습니다."))
-            if int(_cw5) != translate_clean_workers():
-                llm.set_pref("clean_workers", int(_cw5))
-                st.rerun()
             if not _epub_engine5:
                 st.caption(t("사용 가능한 AI가 없어 자간정리를 실행할 수 없습니다 — 설정 탭을 확인하세요."))
         # EPUB 전용 수동 추가 — 요약(_wiki.md) 없이 챕터만 있어도 대상이 된다.
@@ -3766,8 +3696,6 @@ if _active_view == "5_wiki":
     if not _wiki_prov_ok5:
         st.warning(t("Wiki 생성 API 없음 — :material/settings: 설정 탭에서 키를 입력하세요."),
                    icon=":material/warning:")
-    else:
-        _settings_ai_note()
 
     _fws5 = DEFAULT_WS
     _wiki_stems5 = {_nfc(p.stem) for p in _cur_wiki5_path.rglob("*.md")} if _cur_wiki5_path.exists() else set()
