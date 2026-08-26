@@ -399,6 +399,8 @@ _EN: dict[str, str] = {
     "위에 그 문구를 넣어 좁히세요.":
         "Showing %d of %d candidates, spread evenly - if the line you want is missing, "
         "type some of its text above to narrow the list.",
+    "전자책 폴더 열어보기": "Open the e-book folder",
+    "요약 문서 포맷": "Summary document formats",
     "본문 품질 검사": "Text quality check",
     "대상": "Targets",
     "자간정리 (%d권)": "Fix line breaks (%d books)",

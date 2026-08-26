@@ -3522,20 +3522,22 @@ if _active_view == "5_wiki":
     #    구분해서 보여준다. 옵시디언은 맨 아래에 두어 그 토글 바로 밑에 보관함
     #    설정이 이어지도록 한다 (2026-07-25, HWPX 2026-08-09, EPUB 2026-08-11,
     #    EPUB을 요약 그룹 위로·상시 자간정리 2026-08-11).
-    st.caption(t("전문 그대로 (요약 아님 — 챕터 원문·번역본 전체)"))
     _ep_new5 = st.toggle(
         t("EPUB 전자책 생성"), value=_use_ep, key="wiki5_use_epub",
         help=t(
             "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
             "번역본이나 자간정리본이 있으면 그걸 쓰고, 없으면 원문 그대로 담습니다 — "
             "AI를 부르지 않으므로 항상 즉시 끝납니다. 한글 원문 책의 OCR 줄바꿈을 다듬으려면 "
-            "아래 '자간정리 먼저 실행'을 한 번 돌려두세요. "
+            "아래 «자간정리»를 한 번 돌려두세요. "
             "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다."
         ),
     )
     if _use_ep:
-        st.caption(tf("전자책은 여기에 저장됩니다: `%s`", str(_epub_dir5)))
-        st.caption(t("⚠️ 저작권이 있는 책 전체 내용이 그대로 담깁니다 — 개인적인 사용 목적으로만 사용하세요."))
+        # 저장 위치와 저작권 주의는 위 토글 «?» 도움말에 그대로 있다 — 화면에는
+        # 만들어진 것을 바로 열어 볼 길만 둔다 (2026-08-26).
+        if st.button(t("전자책 폴더 열어보기"), icon=":material/folder_open:",
+                     key="epub5_open_dir", help=str(_epub_dir5)):
+            open_path(_epub_dir5)
 
         # ── 자간정리(선택) — EPUB 생성에서 떼어낸 별도 단계 (2026-08-14) ──────
         # 스캔 PDF에서 뽑은 한글 본문은 인쇄된 줄마다 어절이 쪼개져 있다. 그 자리를
@@ -3655,7 +3657,7 @@ if _active_view == "5_wiki":
                 queue_remove("tab5_ready", _epsel5); st.rerun()
     st.divider()
 
-    st.caption(t("요약 기반 (_wiki.md에서 생성)"))
+    st.caption(t("요약 문서 포맷"))
     _dx_new5 = st.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
                           help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
     if _use_dx:
@@ -3752,10 +3754,6 @@ if _active_view == "5_wiki":
         else:
             _wiki_pend5.append(_wiki_item5)
 
-    # 챕터 → (선택한 출력 방식) — 헤더가 실제 켜진 토글을 그대로 반영한다 (2026-08-11)
-    _sel_outputs5 = [nm for on, nm in [(_use_ep, "EPUB"), (_use_dx, "DOCX"), (_use_hx, "HWPX"), (_use_ob, "Wiki")] if on]
-    _outputs_label5 = "+".join(_sel_outputs5) if _sel_outputs5 else t("출력 선택")
-    st.markdown(tf("#### 챕터 → %s (%d권 대기)", _outputs_label5, len(_wiki_pend5)))
     if _wiki_pend5:
         # 전체 선택 / 해제 (분할 탭 체크리스트와 동일한 조작)
         _wk5_keys = [f"wiki5_{_it5['key']}" for _it5 in _wiki_pend5]
