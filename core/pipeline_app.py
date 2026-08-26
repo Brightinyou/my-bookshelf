@@ -1801,7 +1801,9 @@ def _current_epub_dir() -> Path:
     return cfg.EPUB_DIR
 
 
-_render_stage_completion_notice()
+# ★완료 알림은 **화면 맨 아래**에서 그린다 (2026-08-26 연구자 요청).
+# 위에 두면 처리를 마친 뒤 «다음 단계» 버튼을 보려고 스크롤을 되올려야 했다.
+# 방금 처리한 목록 바로 아래에 있어야 눈이 가는 자리에 있다.
 _render_ocr_notice()
 _render_update_notice()
 
@@ -2330,29 +2332,21 @@ if _active_view in {"1_txt", "all_run"}:
                             "낱말 유실(수·것·될 같은 한 글자 낱말이 통째로 빠짐, 정상 7~25%)과 "
                             "문자 깨짐(기合·디지!i처럼 글자가 뭉개짐). 실측상 둘은 서로 무관해서 "
                             "각자 기준으로 재고 나쁜 쪽을 따릅니다. 불량으로 나온 책은 여기서 "
-                            "AI로 다시 읽을 수 있습니다.")):
+                            "AI로 다시 읽을 수 있습니다. 다시 읽기는 쪽수에 따라 몇 분에서 수십 분까지 "
+                            "걸릴 수 있습니다.")):
             st.session_state["tq_rows"] = _scan_text_quality(None)
             st.session_state.pop("tq_dismissed", None)
             st.rerun()
     else:
-        st.markdown("#### 🔬 " + t("본문 품질 검사"))
+        # ★결과 요약 줄과 표를 뺐다 (2026-08-26 연구자 요청). 「🔴 0권 · 🟡 0권 ·
+        # 🟢 0권」과 진단표가 늘 자리를 차지했는데, 정작 필요한 것은 **형편없는 책을
+        # 다시 읽는 것** 하나였다. 좋으면 한 줄로 말하고 끝낸다.
         _bad_tq = [r for r in _rows_tq if r["verdict"] == "bad"]
         _sus_tq = [r for r in _rows_tq if r["verdict"] == "suspect"]
-        _shown_tq = [r for r in _rows_tq if r["verdict"] != "unknown"]
-        st.markdown(tf("🔴 재OCR 필요 **%d권** · 🟡 확인 권장 %d권 · 🟢 정상 %d권",
-                       len(_bad_tq), len(_sus_tq),
-                       sum(1 for r in _rows_tq if r["verdict"] == "ok")))
-        if _shown_tq:
-            st.dataframe(
-                pd.DataFrame([{"": r["badge"], t("책"): r["stem"],
-                               t("낱말 유실"): _AXIS_ICON.get(r["word_loss"], "⚪")
-                                              + f' {r["pct"]:.2f}%',
-                               t("문자 깨짐"): _AXIS_ICON.get(r["garble_v"], "⚪")
-                                              + f' {r["garble"]:.1f}/천자',
-                               t("진단"): r["summary"]}
-                              for r in _shown_tq]),
-                use_container_width=True, hide_index=True,
-                height=_df_height(len(_shown_tq)))
+        if not _bad_tq:
+            st.caption("🟢 " + (tf("본문 품질 확인함 — 다시 읽어야 할 책은 없습니다. (확인 권장 %d권)",
+                                   len(_sus_tq)) if _sus_tq
+                                else t("본문 품질 확인함 — 다시 읽어야 할 책은 없습니다.")))
         if st.button(t("다시 검사"), icon=":material/refresh:", key="tq_rescan"):
             st.session_state["tq_rows"] = _scan_text_quality(None)
             st.session_state.pop("tq_dismissed", None)
@@ -4192,6 +4186,8 @@ if _active_view == "settings":
             "생성된 번역·요약·위키 노트의 정확성·완전성은 보장되지 않습니다. "
             "출판·제출·인용·대외 배포 전에는 반드시 원문과 결과물을 직접 대조해 검토하세요."
         ))
+
+_render_stage_completion_notice()
 
 # 로딩 오버레이 제거 + 이후 재렌더링에서는 오버레이 건너뜀
 _loading_ph.empty()
