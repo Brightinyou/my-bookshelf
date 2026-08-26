@@ -1261,9 +1261,8 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
                 t("앞 장에 합치기"), help=t("이 장을 지우고 본문을 바로 앞 장 뒤에 붙입니다")),
         },
     )
-    b1, b2, b3 = st.columns([1.4, 1.4, 1.2]) if full else (st.columns([1.4, 1.4, 1.2]))
-    if b1.button(t("변경 적용"), icon=":material/save:", key=f"{key}_apply",
-                 use_container_width=True, type="primary"):
+    def _apply_edits() -> tuple[int, list[tuple[str, str]]]:
+        """표에서 고친 것을 실제 파일에 반영한다. (반영 건수, 이름이 바뀐 것들)"""
         recs = edited.to_dict("records")
         changed = 0
         adjusted: list[tuple[str, str]] = []
@@ -1293,20 +1292,42 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
             for i in sorted([i for i, r in enumerate(recs) if r.get("앞 장에 합치기")], reverse=True):
                 if cmap.merge_up(DEFAULT_WS, book, i):
                     changed += 1
+        return changed, adjusted
+
+    def _report(changed: int, adjusted: list[tuple[str, str]]) -> None:
         if adjusted:
             st.info("ℹ️ " + t("파일 이름에 쓸 수 없는 글자(`: / \\ * ? \" < > |`)를 «-»로 바꿔 저장했습니다:")
                     + "\n\n" + "\n\n".join(f"- 「{a}」 → **「{b}」**" for a, b in adjusted))
         st.success(tf("%d건 반영했습니다.", changed) if changed else t("바뀐 내용이 없습니다."))
-        if not adjusted:
-            st.rerun()
-    if b2.button(t("이대로 확정"), icon=":material/check_circle:", key=f"{key}_confirm",
-                 use_container_width=True):
+
+    # ★버튼을 둘로 줄이고, 확정하면 **다음 단계로 바로 넘어간다** (2026-08-26).
+    # 예전에는 «변경 적용» → «이대로 확정» 두 번을 눌러야 끝났고, 끝나도 같은
+    # 화면에 남아 있어 다음에 무엇을 할지가 보이지 않았다.
+    _next_view = "3_translate" if _route_translate(book) else "4_summary"
+    _next_name = t("번역") if _next_view == "3_translate" else t("문서요약")
+    b1, b2, b3 = st.columns([1.8, 1.2, 1.0])
+    if b1.button(tf("확정하고 %s(으)로", _next_name), icon=":material/check_circle:",
+                 key=f"{key}_confirm", use_container_width=True, type="primary",
+                 help=t("표에서 고친 것을 저장하고 장 구분을 확정한 뒤 다음 단계로 넘어갑니다.")):
+        _changed, _adjusted = _apply_edits()
         cmap.confirm(DEFAULT_WS, book)
-        st.success(tf("%s — 장 구분을 확정했습니다.", book))
-        st.rerun()
+        if _adjusted:
+            # 바뀐 이름을 알려야 하므로 이번에는 넘어가지 않는다 — 넘어가면 안내가 사라진다.
+            _report(_changed, _adjusted)
+            st.caption(t("확정했습니다. 위 안내를 확인하고 한 번 더 누르면 다음 단계로 넘어갑니다."))
+        else:
+            _goto_view(_next_view)
+    if b2.button(t("저장만"), icon=":material/save:", key=f"{key}_apply",
+                 use_container_width=True,
+                 help=t("고친 것만 저장하고 이 화면에 남습니다 — 계속 다듬을 때.")):
+        _changed, _adjusted = _apply_edits()
+        _report(_changed, _adjusted)
+        if not _adjusted:
+            st.rerun()
     if b3.button(t("폴더 열기"), icon=":material/folder_open:", key=f"{key}_open",
                  use_container_width=True):
         open_path(chapters_dir(DEFAULT_WS, book))
+
     if not full:
         return
 

@@ -369,6 +369,15 @@ _EN: dict[str, str] = {
     "이미 도착언어인 책은 **📝 문서요약**으로 이동하세요":
         "💡 Next: books not already in your target language (%s) go to "
         "**:material/translate: Translation**; the rest go to **📝 Summaries**",
+    # ── 장 구분 확인 버튼 (2026-08-26) ────────────────────
+    "확정하고 %s(으)로": "Confirm and go to %s",
+    "저장만": "Save only",
+    "표에서 고친 것을 저장하고 장 구분을 확정한 뒤 다음 단계로 넘어갑니다.":
+        "Saves your table edits, marks the chapter split as confirmed, and moves on.",
+    "고친 것만 저장하고 이 화면에 남습니다 — 계속 다듬을 때.":
+        "Saves your edits and stays here - for when you want to keep adjusting.",
+    "확정했습니다. 위 안내를 확인하고 한 번 더 누르면 다음 단계로 넘어갑니다.":
+        "Confirmed. Read the note above, then press again to move on.",
     "본문 품질 검사": "Text quality check",
     "대상": "Targets",
     "자간정리 (%d권)": "Fix line breaks (%d books)",
