@@ -32,6 +32,17 @@ from services.common import append_log
 
 MAP_NAME = "_chapters.json"
 LEAD_TITLE = "머리말"
+# 논문은 'Introduction' 표제 없이 초록 뒤로 곧장 본문이 온다. 그 덩어리엔 제목·저자·
+# 초록·서론이 함께 들어 있어서 '머리말'이라는 이름이 사실과 어긋난다
+# (2026-08-26 Dorobantu 논문에서 연구자 지적).
+LEAD_TITLE_PAPER = "제목·초록·서론"
+LEAD_TITLES = (LEAD_TITLE, LEAD_TITLE_PAPER)
+_ABSTRACT_RE = re.compile(r"^\s*Abstract\b|\bAbstract\s*[::]", re.M)
+
+
+def lead_title_for(lead: str) -> str:
+    """앞부분 덩어리의 이름 — 초록이 있으면 논문으로 본다."""
+    return LEAD_TITLE_PAPER if _ABSTRACT_RE.search(lead[:3000]) else LEAD_TITLE
 
 
 # ── 챕터 파일 목록 ────────────────────────────────────────────
@@ -115,7 +126,7 @@ def _apply_order(ws_name: str, stem: str,
             f.rename(tmp)
             rows.append((tmp, suffix))
         staged[k] = rows
-    is_lead = bool(items) and items[0][0] == LEAD_TITLE
+    is_lead = bool(items) and items[0][0] in LEAD_TITLES
     for k, (title, text, _src) in enumerate(items):
         new_stem, _n = _target_stem(k, title, is_lead)
         if text is None:
@@ -269,6 +280,65 @@ def confirm(ws_name: str, stem: str) -> None:
 
 # ── 이상 징후 채점 ────────────────────────────────────────────
 
+_HEAD_BAD_END = (".", ",", ";", ":", "!", "?")
+_HANGUL_ANY = re.compile(r"[가-힣]")
+
+
+def missed_headings(ws_name: str, stem: str, limit: int = 5) -> list[tuple[int, str]]:
+    """장 **안에** 제목처럼 홀로 선 문단들 — 새 장이 여기서 시작할 만하다.
+
+    ★2026-08-26. reflow가 라틴문자 제목을 제 문단으로 남기게 고쳤더니(reflowlib),
+    한 줄짜리 짧은 문단은 대개 절 제목이 됐다. 그런데 장 목록은 **시각 판독**이
+    만들고, 그것이 놓친 제목은 아무도 줍지 않았다 — Dorobantu 논문의 `Conclusion`이
+    본문에 제 줄로 서 있는데도 결론 장이 생기지 않았다.
+
+    자동으로 나누지는 않는다. 절 제목까지 장으로 삼으면 책이 잘게 부서진다
+    (실측: 『The Artifice of Intelligence』 100쪽에 후보 26개). **알려만 주고**
+    나눌지는 «✂️ 장 나누기»에서 사람이 고른다.
+
+    ★첫 판은 너무 시끄러웠다(2026-08-26 실측): 저자명·판권지·러닝헤더·문장 조각이
+    섞여 나왔다. 그래서 네 가지를 막는다.
+      · 앞부분 덩어리(00장)는 통째로 건너뛴다 — 거기가 판권지·초록·저자 자리다.
+      · 숫자가 든 줄은 뺀다 — 러닝헤더('AI and Ethics (2025) 5:5527–5533')와 인용.
+      · 40자를 넘으면 뺀다 — 'According to Kant, anyone who violates rights does not'
+        같은 문장 조각이 걸린다.
+      · 책 안에서 두 번 이상 나오는 줄은 뺀다 — 살아남은 러닝헤더."""
+    files = chapter_files(ws_name, stem)
+    # ★한글 책에서는 보지 않는다 (2026-08-26). 제목을 살려 두는 reflow 규칙 자체가
+    # 라틴 문서 전용이라, 한글 책의 한 줄짜리 라틴 문단은 제목이 아니라 미주의 인용
+    # 조각이다 — 실측에서 'Publishing Company'·'Doubleday'·'Books.)' 가 걸려 나왔다.
+    sample = "".join(f.read_text(encoding="utf-8", errors="ignore")[:2000] for f in files[:5])
+    if sample and len(_HANGUL_ANY.findall(sample)) / len(sample) > 0.15:
+        return []
+    seen: dict[str, int] = {}
+    found: list[tuple[int, str]] = []
+    for i, f in enumerate(files):
+        # 앞부분 덩어리(00_…)는 판권지·초록·저자 자리라 제목처럼 보이는 줄이 널려 있다.
+        # ★목록의 첫 항목이 아니라 **파일 이름**으로 가린다 — 앞부분 덩어리가 없는
+        # 책은 01부터 시작하는데, 첫 항목을 건너뛰면 멀쩡한 1장을 안 보게 된다.
+        if f.stem[:2] == "00":
+            continue
+        title = chapter_title(f).strip()
+        try:
+            body = f.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for para in body.split("\n\n"):
+            s = para.strip()
+            if "\n" in s or not (2 <= len(s) <= 40):
+                continue                       # 여러 줄이면 본문, 길면 문장 조각
+            if s.endswith(_HEAD_BAD_END) or _HANGUL_ANY.search(s):
+                continue                       # 한글 제목 규칙은 아직 없다
+            if any(c.isdigit() for c in s):
+                continue                       # 러닝헤더·인용
+            if not s[:1].isupper() or s == title:
+                continue
+            seen[s] = seen.get(s, 0) + 1
+            found.append((i, s))
+    out = [(i, s) for i, s in found if seen[s] == 1]
+    return out[:limit]
+
+
 def review_findings(ws_name: str, stem: str) -> list[str]:
     """장 구분이 수상한 이유들. 비어 있으면 그냥 넘어가도 되는 분할이다."""
     files = chapter_files(ws_name, stem)
@@ -291,6 +361,9 @@ def review_findings(ws_name: str, stem: str) -> list[str]:
     numeric = [f for f in files if re.fullmatch(r"제?\s*\d+\s*장|Chapter\s*\d+|\d+", chapter_title(f).strip(), re.I)]
     if numeric:
         out.append(f"제목이 번호뿐인 장이 {len(numeric)}개 있습니다 — 목차를 붙여넣으면 채워집니다")
+    for _i, _h in missed_headings(ws_name, stem):
+        out.append(f"{_i:02d}장 안에 제목처럼 보이는 줄이 있습니다: 「{_h}」"
+                   " — «✂️ 장 나누기»에서 여기부터 새 장으로 나눌 수 있습니다")
     return out
 
 
@@ -561,7 +634,7 @@ def _write_chapters(ws_name: str, stem: str, text: str,
     bounds = [p for p, _t in marks] + [len(text)]
     lead = text[:bounds[0]].strip()
     if lead and len(lead) >= 300:
-        (d / f"00_{_safe(LEAD_TITLE)}.txt").write_text(lead, encoding="utf-8")
+        (d / f"00_{_safe(lead_title_for(lead))}.txt").write_text(lead, encoding="utf-8")
     for i, (_p, title) in enumerate(marks):
         body = text[bounds[i]:bounds[i + 1]].strip()
         (d / f"{i + 1:02d}_{_safe(strip_redundant_number(title, i + 1))}.txt").write_text(
@@ -601,7 +674,7 @@ def apply_titles(ws_name: str, stem: str, titles: list[str]) -> tuple[bool, str]
     bounds = [p for p, _t in dedup] + [len(text)]
     lead = text[:bounds[0]].strip()
     if lead and len(lead) >= 300:
-        (d / f"00_{_safe(LEAD_TITLE)}.txt").write_text(lead, encoding="utf-8")
+        (d / f"00_{_safe(lead_title_for(lead))}.txt").write_text(lead, encoding="utf-8")
     for i, (_p, title) in enumerate(dedup):
         body = text[bounds[i]:bounds[i + 1]].strip()
         (d / f"{i + 1:02d}_{_safe(strip_redundant_number(title, i + 1))}.txt").write_text(

@@ -78,3 +78,65 @@ class ChapterSplitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissedHeadingsTest(unittest.TestCase):
+    """장 목록이 놓친 절 제목 찾기 — services/chapter_map.missed_headings.
+
+    2026-08-26에 실제로 났던 일: reflow가 `Conclusion`을 제 문단으로 남기게 고쳤는데,
+    장 목록은 시각 판독이 만들고 그것이 그 제목을 놓쳐서 결론 장이 끝내 생기지 않았다.
+    본문에 제 줄로 서 있는 제목을 **알려는 주어야** 한다.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="missed_"))
+        self._prev = cfg.CHAPTERS_DIR
+        cfg.CHAPTERS_DIR = self.tmp
+        self.d = self.tmp / BOOK
+        self.d.mkdir(parents=True)
+
+    def tearDown(self):
+        cfg.CHAPTERS_DIR = self._prev
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, name, *paras):
+        (self.d / name).write_text("\n\n".join(paras) + "\n", encoding="utf-8")
+
+    def test_홀로_선_영문_제목을_찾는다(self):
+        self._write("00_제목·초록·서론.txt", "Abstract: something. " * 20)
+        self._write("01_Some Chapter.txt", "Body text that runs on. " * 20,
+                    "Conclusion", "Although AI does not. " * 20)
+        self.assertEqual(cmap.missed_headings(WS, BOOK), [(1, "Conclusion")])
+
+    def test_앞부분_덩어리는_보지_않는다(self):
+        """00장은 판권지·초록·저자 자리라 제목처럼 보이는 줄이 널려 있다."""
+        self._write("00_머리말.txt", "Body. " * 20, "Mark Coeckelbergh", "More body. " * 20)
+        self._write("01_Some Chapter.txt", "Body. " * 20)
+        self.assertEqual(cmap.missed_headings(WS, BOOK), [])
+
+    def test_러닝헤더처럼_반복되는_줄은_뺀다(self):
+        for n in ("01_A.txt", "02_B.txt"):
+            self._write(n, "Body. " * 20, "Some Running Header", "More. " * 20)
+        self.assertEqual(cmap.missed_headings(WS, BOOK), [])
+
+    def test_숫자가_든_줄과_긴_문장_조각은_뺀다(self):
+        self._write("01_A.txt", "Body. " * 20,
+                    "AI and Ethics (2025) 5:5527",
+                    "According to Kant, anyone who violates rights does not",
+                    "More. " * 20)
+        self.assertEqual(cmap.missed_headings(WS, BOOK), [])
+
+    def test_한글_책에서는_보지_않는다(self):
+        """한글 책의 한 줄짜리 라틴 문단은 제목이 아니라 미주의 인용 조각이다."""
+        self._write("01_A.txt", "한국어 본문이 길게 이어집니다. " * 20,
+                    "Publishing Company", "계속 이어집니다. " * 20)
+        self.assertEqual(cmap.missed_headings(WS, BOOK), [])
+
+
+class LeadTitleForTest(unittest.TestCase):
+    def test_초록이_있으면_논문으로_본다(self):
+        self.assertEqual(cmap.lead_title_for("Title\n\nAbstract: Modern developments"),
+                         cmap.LEAD_TITLE_PAPER)
+
+    def test_초록이_없으면_머리말(self):
+        self.assertEqual(cmap.lead_title_for("어떤 책의 앞머리 글"), cmap.LEAD_TITLE)
