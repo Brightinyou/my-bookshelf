@@ -345,5 +345,5 @@ def pdf_to_pages(path):
 def pdf_to_text(path):
     """PDF → 다단 정렬 + 머리말 제거 + 문장 reflow 된 본문. 반환: (text, skipped_pages)"""
     pages, skipped = pdf_to_pages(path)
-    lines = reflowlib.strip_page_furniture(pages)
+    lines = reflowlib.separate_footnotes(reflowlib.strip_page_furniture(pages))
     return reflowlib.reflow("\n".join(lines)), skipped

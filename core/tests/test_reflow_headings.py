@@ -74,3 +74,49 @@ class ReflowHeadingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SeparateFootnotesTest(unittest.TestCase):
+    """쪽 아래 각주 떼어 내기 — services/reflowlib.separate_footnotes.
+
+    PDF 각주는 쪽 아래에 번호 순으로 모여 있는데 그 줄들 사이에 빈 줄이 없어서,
+    reflow가 앞 본문 문단에 통째로 이어 붙였다. 그래서 각주 40개짜리 논문에서
+    문단으로 남은 각주가 7개뿐이었고, EPUB 각주가 본문에 섞여 나왔다
+    (2026-08-26 연구자 지적). 실측: 그 논문이 0개 → 37개가 됐다.
+    """
+    MARK = reflowlib._PAGE_MARK
+
+    def _run(self, *pages):
+        lines = []
+        for i, pg in enumerate(pages):
+            if i:
+                lines.append(self.MARK)
+            lines.extend(pg)
+        out = reflowlib.separate_footnotes(lines)
+        return [p.strip() for p in reflowlib.reflow("\n".join(out)).split("\n\n") if p.strip()]
+
+    def test_쪽_아래_각주가_제_문단으로_선다(self):
+        body = ["Body line one that runs on and on.", "More body text here."]
+        paras = self._run(body + ["1 David Silver, “AlphaGo,” Nature, 2016.",
+                                  "2 Paul Harmon, “AI Plays Games,” Forbes, 2019."])
+        self.assertIn("1 David Silver, “AlphaGo,” Nature, 2016.", paras)
+        self.assertIn("2 Paul Harmon, “AI Plays Games,” Forbes, 2019.", paras)
+
+    def test_본문_한가운데_숫자는_각주가_아니다(self):
+        paras = self._run(["3 is a number in the middle of things.",
+                           "Body text follows here and keeps going.",
+                           "More body text that continues the paragraph."])
+        self.assertEqual(len(paras), 1, f"본문이 쪼개졌다: {paras}")
+
+    def test_한글_문서는_건드리지_않는다(self):
+        """한글 책에 그대로 걸었더니 문단이 2→259 로 터졌다."""
+        ko = ["한국어 본문이 길게 이어집니다. " * 5, "계속 이어집니다. " * 5,
+              "1 각주처럼 보이는 줄입니다.", "2 또 하나 있습니다."]
+        self.assertEqual(reflowlib.separate_footnotes(ko), ko)
+
+    def test_글자는_하나도_잃지_않는다(self):
+        pages = (["Body one.", "1 First note here."], ["Body two.", "2 Second note."])
+        lines = list(pages[0]) + [self.MARK] + list(pages[1])
+        before = "".join("".join(lines).split())
+        after = "".join("".join(reflowlib.separate_footnotes(lines)).split())
+        self.assertEqual(after, before)

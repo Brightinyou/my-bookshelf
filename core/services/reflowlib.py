@@ -93,6 +93,81 @@ def strip_page_furniture(pages):
     return out
 
 
+# ── 쪽 아래 각주 떼어 내기 (2026-08-26) ────────────────────────────────
+# PDF 각주는 쪽 아래에 번호 순으로 모여 있는데, 그 줄들 사이에 빈 줄이 없어서
+# reflow가 앞 본문 문단에 통째로 이어 붙였다. 그래서 EPUB 각주 변환기가 「연속 번호가
+# 늘어선 묶음」을 못 찾았다 — 각주 40개짜리 논문에서 7개만 문단으로 남았고, 그나마
+# '3 Psalm 8:4. 4 Genesis 1:26.' 처럼 둘이 한 문단에 뭉쳐 있었다.
+#
+# 규칙은 판면 구조를 그대로 쓴다: **쪽 끝에서 번호가 커지며 이어지는 줄들**이 각주다.
+# 본문 한가운데의 숫자 시작 줄은 이 조건에 안 걸린다.
+_FN_START = re.compile(r"^\s*(\d{1,3})[\s.)]")
+
+
+def _footnote_block_start(rows: list[str]) -> int | None:
+    """이 쪽에서 각주 묶음이 시작되는 줄 번호. 없으면 None.
+
+    쪽 안의 '번호로 시작하는 줄'을 모아, **끝까지 이어지며 번호가 커지는 구간**을
+    찾는다. 마지막 각주가 쪽 끝 가까이 있어야 한다 — 그래야 판면 아래의 각주다."""
+    marks = [(i, int(m.group(1)))
+             for i, r in enumerate(rows)
+             if (m := _FN_START.match(r)) and len(r.strip()) <= 300]
+    if not marks:
+        return None
+    # 마지막 각주가 쪽 끝에서 너무 멀면 본문 속 숫자다
+    if marks[-1][0] < len(rows) * 0.4:
+        return None
+    start = len(marks) - 1
+    while start > 0 and marks[start - 1][1] < marks[start][1]:
+        start -= 1
+    return marks[start][0]
+
+
+def separate_footnotes(lines: list[str]) -> list[str]:
+    """각주 줄 앞에 빈 줄을 넣어 **제 문단으로** 서게 한다.
+
+    strip_page_furniture 가 심어 둔 쪽 경계(_PAGE_MARK)로 쪽을 가른 뒤 쪽마다 본다."""
+    # ★라틴 문서에만 건다 (2026-08-26 실측). 한글 책에 그대로 걸었더니 문단이
+    # 2→259, 4→123 으로 터졌다 — 번호 매김 목록·쪽 아래 잔줄이 죄다 각주로 잡힌다.
+    # 한글 스캔본은 원래 ai_ocr → footnotes.reflow_pages 라는 다른 경로에서 각주를
+    # 다루므로 여기서 손댈 이유도 없다. 한글용 규칙은 실측한 뒤에 따로 넣는다.
+    _joined = "\n".join(lines)
+    if _joined and len(_HANGUL.findall(_joined)) / len(_joined) > 0.15:
+        return list(lines)
+    out: list[str] = []
+    seg: list[str] = []
+
+    def _flush(seg: list[str]) -> None:
+        rows = [r for r in seg if r.strip()]
+        s = _footnote_block_start(rows) if rows else None
+        if s is None:
+            out.extend(seg)
+            return
+        # rows 는 빈 줄을 뺀 목록이라, seg 안에서 몇 번째 줄인지 되짚는다
+        # (값이 같은 줄이 있을 수 있어 identity 로 찾으면 안 된다).
+        nth, begin = 0, len(seg)
+        for i, r in enumerate(seg):
+            if r.strip():
+                if nth == s:
+                    begin = i
+                    break
+                nth += 1
+        for i, r in enumerate(seg):
+            if i >= begin and _FN_START.match(r):
+                out.append("")            # 각주마다 제 문단으로
+            out.append(r)
+
+    for l in lines:
+        if l.strip() == _PAGE_MARK:
+            _flush(seg)
+            out.append(l)
+            seg = []
+        else:
+            seg.append(l)
+    _flush(seg)
+    return out
+
+
 def _is_vertical_noise(s: str) -> bool:
     """회전된 세로 텍스트는 글자마다 공백이 낀
     'V o l . : ( 0 1 2 )' 또는 한 글자짜리 줄로 나오는 경향이 있다."""
@@ -159,5 +234,5 @@ def reflow(text: str) -> str:
 def clean_default_text(raw: str) -> str:
     """폼피드(\\f)로 페이지가 나뉜 raw 텍스트 → 정리된 본문 (pdftotext 폴백용)."""
     pages = raw.split("\f")
-    lines = strip_page_furniture(pages)
+    lines = separate_footnotes(strip_page_furniture(pages))
     return reflow("\n".join(lines))
