@@ -3024,6 +3024,7 @@ if _active_view == "3_translate":
     if not _tr_eng3:
         st.warning(t("사용 가능한 AI 없음 — :material/settings: 설정 탭에서 API 키를 입력하세요."),
                    icon=":material/warning:")
+    else:
 
         # 번역 출력 방식 — 독립 토글(둘 다 켜도 됨), 최소 하나는 있어야 함 (2026-08-11)
         _wp_new3 = st.toggle(t("번역문만"), value=_want_plain3, key="tr3_want_plain",
@@ -3235,6 +3236,7 @@ if _active_view == "4_summary":
     if not _prov_ok4:
         st.warning(t("요약 API 없음 — :material/settings: 설정 탭에서 키를 입력하세요."),
                    icon=":material/warning:")
+    else:
 
         # TXT 직접 업로드 — 즉시 요약하지 않고 요약 대기 큐에 등록 (2026-07-09)
         _up4 = st.file_uploader(t("TXT 직접 업로드"),
