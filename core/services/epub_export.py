@@ -160,9 +160,14 @@ section.footnotes { margin-top: 2.5em; border-top: 1px solid #999; padding-top: 
 aside.footnote p { text-indent: 0; margin: 0 0 0.5em; }
 a.backref { text-decoration: none; margin-left: 0.3em; }
 /* 표지 면 — 제목·저자·서지정보 (2026-08-27) */
-.fm-title { margin: 3em 0 0.6em; font-size: 1.6em; line-height: 1.35; }
-.fm-author { margin: 0 0 1.2em; font-size: 1.05em; }
-.fm-cite { margin: 0; font-size: 0.9em; color: #555; line-height: 1.6; }
+.fm-title { margin: 3em 0 0.6em; font-size: 1.6em; line-height: 1.35;
+            text-align: center; }
+.fm-sub { margin: 0 0 0.8em; font-size: 1.15em;
+          text-align: center; text-indent: 0; }
+.fm-author { margin: 0 0 1.2em; font-size: 1.05em;
+             text-align: right; text-indent: 0; }
+.fm-cite { margin: 0; font-size: 0.9em; color: #555; line-height: 1.6;
+           text-align: center; text-indent: 0; }
 """
 
 
@@ -250,12 +255,22 @@ def _front_lines(text: str, limit: int = 5) -> list[str]:
 
 
 def _front_matter_xhtml(title: str, author: str, lines: list[str]) -> str:
-    """책 맨 앞에 놓을 표지 면 — 제목·저자·서지정보 (2026-08-27 연구자 요청)."""
+    """책 맨 앞에 놓을 표지 면 — 제목·저자·서지정보 (2026-08-27 연구자 요청).
+
+    줄 배치: 첫 줄이 제목, 마지막 줄이 저자, 가운데는 부제로 본다. 연도나 쪽 범위가
+    든 줄은 서지정보로 따로 표시한다.
+    제목·부제·서지는 가운데, 저자는 오른쪽 정렬(연구자 요청)."""
     parts: list[str] = []
     if lines:
         parts.append(f'<h1 class="fm-title">{html.escape(lines[0])}</h1>')
-        for s in lines[1:]:
-            cls = "fm-cite" if _CITATION_RE.search(s) else "fm-author"
+        rest = lines[1:]
+        for i, s in enumerate(rest):
+            if _CITATION_RE.search(s):
+                cls = "fm-cite"
+            elif i == len(rest) - 1:
+                cls = "fm-author"          # 마지막 줄 = 저자
+            else:
+                cls = "fm-sub"             # 가운데 = 부제
             parts.append(f'<p class="{cls}">{html.escape(s)}</p>')
     else:
         parts.append(f'<h1 class="fm-title">{html.escape(title)}</h1>')
