@@ -134,3 +134,14 @@ class PageBreakSurvivesTest(unittest.TestCase):
 
     def test_표식은_번역하지_않는다(self):
         self.assertTrue(tr.should_skip_translation(tr._PAGE_TOKEN))
+
+    def test_긴_각주도_홀로_둔다(self):
+        """연구자 지적: "각주에서 긴 문장이라 하더라도 마지막 마침표까지는 확인해야."
+        500자 제한이던 시절, 544자짜리 서지 각주(책 네 권 나열)가 각주로 인정받지
+        못하고 앞 본문 문단에 합쳐져 EPUB에서 통째로 사라졌다."""
+        long_note = ("5 imago Dei 해석 검토로는 "
+                     + "여러 책과 저자를 길게 나열한다. " * 120).strip()
+        self.assertGreater(len(long_note), 2000)   # 길이 조건이 아예 없어야 통과한다
+        self.assertTrue(tr._is_footnote_block(long_note))
+        txt = "\n\n".join(self.BODY[:2] + [long_note] + self.BODY[2:])
+        self.assertIn(long_note, tr._split_paragraphs_robust(txt))

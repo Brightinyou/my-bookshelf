@@ -342,7 +342,15 @@ def _is_footnote_block(b: str) -> bool:
     s = b.strip()
     if s == _PAGE_TOKEN:
         return True
-    return bool(s and len(s) < 500 and _FOOTNOTE_NUM_START.match(s))
+    # ★길이 조건은 없앴다 (2026-08-27 연구자: "각주의 길이는 문제가 되지 않아").
+    # 500자 제한이던 때 Dorobantu 논문의 5번 각주(544자, 책 네 권을 나열한 서지)가
+    # 각주로 인정받지 못하고 앞 본문 문단에 합쳐져 EPUB에서 통째로 사라졌다.
+    # 서지 각주는 책을 여러 권 나열하면 얼마든지 길어진다 — 길이는 각주 여부를 가르는
+    # 기준이 될 수 없다. **번호로 시작하는가**만 본다.
+    #
+    # 여기는 **문단 합치기를 막을지**만 정하므로 넉넉해도 손해가 없다. 본문 문단이
+    # 우연히 번호로 시작해 걸리더라도, 원래 제 문단이던 것을 그대로 두는 것뿐이다.
+    return bool(s and _FOOTNOTE_NUM_START.match(s))
 
 
 def _merge_short_blocks(blocks: list[str], min_len: int = 50) -> list[str]:

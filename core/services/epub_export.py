@@ -159,6 +159,10 @@ section.footnotes { margin-top: 2.5em; border-top: 1px solid #999; padding-top: 
                     font-size: 0.9em; }
 aside.footnote p { text-indent: 0; margin: 0 0 0.5em; }
 a.backref { text-decoration: none; margin-left: 0.3em; }
+/* 표지 면 — 제목·저자·서지정보 (2026-08-27) */
+.fm-title { margin: 3em 0 0.6em; font-size: 1.6em; line-height: 1.35; }
+.fm-author { margin: 0 0 1.2em; font-size: 1.05em; }
+.fm-cite { margin: 0; font-size: 0.9em; color: #555; line-height: 1.6; }
 """
 
 
@@ -214,6 +218,62 @@ def _chapter_xhtml(title: str, text: str) -> str:
         f"<head><title>{html.escape(title)}</title>"
         '<link rel="stylesheet" type="text/css" href="../styles/style.css"/></head>\n'
         f"<body>\n<h1>{html.escape(title)}</h1>\n{body}{notes}\n</body>\n</html>"
+    )
+
+
+_CITATION_RE = re.compile(
+    r"\(\s*(?:19|20)\d{2}\s*\)|"          # (2022)
+    r"(?:19|20)\d{2}\s*[),]|"             # 2022) · 2022,
+    r"\d{1,4}\s*[–—-]\s*\d{1,4}"          # 175–196 (쪽 범위)
+)
+
+
+def _front_lines(text: str, limit: int = 5) -> list[str]:
+    """논문·책 첫머리에서 **제목·저자·서지정보 줄들**을 뽑는다 (2026-08-27).
+
+    맨 앞 문단들 가운데 짧은 것이 곧 제목·부제·저자·저널 서지다. 초록이 시작되면
+    거기서 멈춘다 — 그 뒤는 본문이다. 파일명은 사람이 붙인 것이라 'ImagoDei-in-the-
+    Age-of-AI_CPOSAT2022' 처럼 읽기 나쁜 경우가 많아, 본문에서 뽑는 편이 낫다."""
+    out: list[str] = []
+    for para in text.split("\n\n"):
+        s = " ".join(para.split())
+        if not s:
+            continue
+        if re.match(r"^(초록|요약|Abstract|ABSTRACT)\b|^(초록|Abstract)\s*[::]", s):
+            break
+        if len(s) > 200:
+            break
+        out.append(s)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _front_matter_xhtml(title: str, author: str, lines: list[str]) -> str:
+    """책 맨 앞에 놓을 표지 면 — 제목·저자·서지정보 (2026-08-27 연구자 요청)."""
+    parts: list[str] = []
+    if lines:
+        parts.append(f'<h1 class="fm-title">{html.escape(lines[0])}</h1>')
+        for s in lines[1:]:
+            cls = "fm-cite" if _CITATION_RE.search(s) else "fm-author"
+            parts.append(f'<p class="{cls}">{html.escape(s)}</p>')
+    else:
+        parts.append(f'<h1 class="fm-title">{html.escape(title)}</h1>')
+        if author:
+            parts.append(f'<p class="fm-author">{html.escape(author)}</p>')
+    body = "\n    ".join(parts)
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<!DOCTYPE html>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">\n'
+        '  <head>\n'
+        f'    <title>{html.escape(title)}</title>\n'
+        '    <link rel="stylesheet" type="text/css" href="../styles/style.css"/>\n'
+        '  </head>\n'
+        '  <body epub:type="frontmatter">\n'
+        f'    {body}\n'
+        '  </body>\n'
+        '</html>\n'
     )
 
 
@@ -273,6 +333,15 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
         ncx_points.append(
             f'<navPoint id="np{i}" playOrder="{i}"><navLabel><text>{esc_title}</text></navLabel>'
             f'<content src="text/{fname}"/></navPoint>')
+
+    # ★표지 면을 맨 앞에 둔다 (2026-08-27 연구자 요청: "책/논문 제목, 저자,
+    # 서지정보까지 제일 처음에 표시해 주면 좋겠다").
+    text_entries.insert(0, ("OEBPS/text/front.xhtml",
+                            _front_matter_xhtml(title_disp, author,
+                                                _front_lines(first_text))))
+    manifest_items.insert(
+        0, '<item id="front" href="text/front.xhtml" media-type="application/xhtml+xml"/>')
+    spine_items.insert(0, '<itemref idref="front"/>')
 
     sample = first_text[:2000]
     lang = "ko" if len(_HANGUL_RE.findall(sample)) / max(len(sample), 1) >= 0.3 else "en"
