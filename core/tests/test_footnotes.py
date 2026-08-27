@@ -213,3 +213,36 @@ class 머리글오인Test(unittest.TestCase):
         md = footnotes.convert(page1 + "\f" + page2).markdown
         self.assertIn("[^1]:", md)
         self.assertIn("[^2]:", md)
+
+
+class 색인오인Test(unittest.TestCase):
+    """책 뒤 색인(索引)을 각주로 오인하던 것 (2026-08-27).
+
+    색인 쪽도 「45, 77, 99-100, … privacy, 22, 28, 55」처럼 «번호 + 글» 꼴이라
+    후보에 걸린다. 글자 비율로는 못 가른다 — 색인에도 표제어가 많아 0.44나 됐다.
+    **숫자 덩이의 개수**가 확실하다(실측: 색인 44개, 진짜 각주는 2~4개).
+    """
+
+    INDEX = ("45, 77, 99-100, 104-10, 117-18, 135, 154 in technomoral contexts, "
+             "140, 147, 162, 192, 196, 210, 213, 248 prajna (spiritual wisdom), "
+             "40, 72, 74, 89, 149 predictive policing, 193 privacy, 22, 28, 55, "
+             "148, 165, 173, 189-91, 194, 205, 211, 220")
+
+    def _page(self, note_body, num=2):
+        return (f"본문이 이어지는 쪽이다. 여기에 참조가 붙는다.{num} 그리고 문장이 더 있다."
+                f"\n\n{num} {note_body}")
+
+    def test_색인은_각주가_아니다(self):
+        md = footnotes.convert(self._page(self.INDEX)).markdown
+        self.assertEqual(re.findall(r"(?m)^\[\^[^\]]+\]:", md), [])
+        self.assertIn("predictive policing", md, "본문으로 되돌아와야 한다")
+
+    def test_DOI_주소가_든_서지는_각주로_남는다(self):
+        """주소 속 숫자 때문에 멀쩡한 서지가 색인으로 몰리면 안 된다 —
+        실측으로 Dorobantu 7번 각주가 이렇게 사라졌었다."""
+        doi = ('Joshua M. Moritz, "Evolution, the End of Human Uniqueness," '
+               'Theology and Science 9:3 (2011): 307-339, '
+               'https://doi.org/10.1080/14746700.2011.587665.')
+        md = footnotes.convert(self._page(doi)).markdown
+        self.assertIn("[^2]:", md)
+        self.assertIn("Moritz", md)

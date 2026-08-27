@@ -417,14 +417,24 @@ def _running_heads(pages: list[str], min_hits: int = 3) -> set[str]:
     """
     from collections import Counter
     c: Counter = Counter()
-    for p in pages:
-        s = re.sub(r"^\d+\s*", "", " ".join(p.split()))   # 쪽번호를 뗀다
-        w = s.split()
-        for n in range(2, min(8, len(w)) + 1):
-            c[" ".join(w[:n])] += 1
-    hits = {k for k, v in c.items() if v >= min_hits and len(k) >= 6}
-    # 가장 긴 것만 남긴다 — 짧은 앞머리는 흔한 말일 수 있다
-    return {k for k in hits if not any(o != k and o.startswith(k) for o in hits)}
+    for page in pages:
+        # 쪽 앞머리 12낱말 안에서 낱말 묶음을 모은다. **앞자리 고정이 아니라
+        # 안쪽까지 훑는 까닭**은 머리글 앞에 잡티가 붙기 때문이다 — 실측으로
+        # 「2 I 2 TECHNOLOGY AND THE VIRTUES …」처럼 쪽번호가 두 번 찍히고
+        # 사이에 낱글자가 낀 쪽이 있었다.
+        w = " ".join(page.split()).split()[:12]
+        seen = set()
+        for i in range(len(w)):
+            for n in range(1, 9):
+                if i + n > len(w):
+                    break
+                g = " ".join(w[i:i + n])
+                if len(g) >= 4 and not g[0].isdigit():
+                    seen.add(g)
+        c.update(seen)
+    hits = {k for k, v in c.items() if v >= min_hits}
+    # 가장 긴 것만 남긴다 — 짧은 조각은 흔한 말일 수 있다
+    return {k for k in hits if not any(o != k and k in o for o in hits)}
 
 
 def convert(text: str, has_notes: list[bool] | None = None) -> Result:
@@ -490,11 +500,24 @@ def convert(text: str, has_notes: list[bool] | None = None) -> Result:
     kept: list[Note] = []
     for nt in found:
         key = keys[id(nt)]
-        # 앞의 쪽번호를 떼고 견준다 — 「2 TECHNOLOGY AND THE VIRTUES …」처럼
-        # 번호가 한 번 더 붙어 오는 일이 있다.
-        _head_txt = re.sub(r"^\d+\s*", "", " ".join(nt.text.split()))
-        if any(_head_txt.startswith(f) for f in furniture):
+        # 앞머리 60자 안에 머리글이 들어 있으면 각주가 아니다. 앞자리만 보지
+        # 않는 까닭은 쪽번호·낱글자 같은 잡티가 머리글 앞에 붙기 때문이다.
+        _head_txt = " ".join(nt.text.split())[:60]
+        if any(f in _head_txt for f in furniture):
             rejected.append(nt)          # 머리글 — 본문으로 되돌린다
+            continue
+        # ★쪽번호가 줄줄이 나열되면 각주가 아니라 **색인**이다 (2026-08-27).
+        #   책 뒤 색인 쪽은 「45, 77, 99-100, 104-10, … privacy, 22, 28, 55」처럼
+        #   «번호 + 글» 꼴이라 후보에 걸린다. 글자 비율로는 못 가른다 — 색인에도
+        #   표제어가 많아 0.44나 됐다. **숫자 덩이의 개수**가 확실하다. 실측 —
+        #   색인 44개, 진짜 각주는 서지를 길게 늘어놓아도 2~4개였다.
+        #   ★세기 전에 인터넷 주소를 뺀다. DOI 주소 하나에 숫자가 잔뜩 들어 있어
+        #     (…/10.1080/14746700.2011.587665) 멀쩡한 서지 각주가 색인으로 몰렸다
+        #     — 실측으로 Dorobantu 7번 각주가 이렇게 사라졌다.
+        _groups = re.findall(r"\d+(?:[-–]\d+)?",
+                             re.sub(r"https?://\S+|doi\.org/\S+|\S+\.\w{2,4}/\S+", " ", nt.text))
+        if len(_groups) >= 10 and len(_groups) / max(len(nt.text), 1) >= 0.03:
+            rejected.append(nt)          # 색인 — 본문으로 되돌린다
             continue
         # 같은 쪽부터 앞뒤 PAIR_WINDOW쪽까지 훑어 본문 참조를 찾는다
         hit = False
