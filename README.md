@@ -3,8 +3,8 @@
 **책·논문·원고를 읽기 좋은 요약 노트와 전자책으로 바꾸는 개인 연구 도구.**
 PDF·DOCX·HWP·HWPX·TXT를 넣으면 번역과 요약을 거쳐 **EPUB·Word(.docx)·한글(.hwpx)·Obsidian 위키**로 내보냅니다.
 
-[![Windows 내려받기](https://img.shields.io/badge/%F0%9F%AA%9F%20Windows-Setup.exe-0078D4?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
-[![macOS 내려받기](https://img.shields.io/badge/%F0%9F%8D%8E%20macOS-.pkg-000000?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![Windows 내려받기](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjJ2OC4ySDNWM3ptOS44IDBIMjF2OC4yaC04LjJWM3pNMyAxMi44aDguMlYyMUgzdi04LjJ6bTkuOCAwSDIxVjIxaC04LjJ2LTguMnoiLz48L3N2Zz4K)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![macOS 내려받기](https://img.shields.io/badge/macOS-.pkg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
 
 > 🇬🇧 English manual: [README.en.md](README.en.md) · 📘 각 탭 상세: [사용 설명서](docs/MANUAL.md)
 
