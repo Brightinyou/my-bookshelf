@@ -276,6 +276,42 @@ def _split_note_lines(notes_text: str) -> str:
     return "\n".join(out)
 
 
+def _notes_text(page, ymin: float) -> str:
+    """각주 영역을 **읽기순서 정렬 없이** 그대로 읽는다 (2026-08-27).
+
+    ★각주는 늘 쪽 아래 한 단으로 놓이므로 다단 정렬이 필요 없다. 오히려 해가 된다 —
+    `_reading_order`에 넣었더니 각주 번호(내어쓰기라 x가 왼쪽 끝)를 다른 단으로 보고
+    본문과 떼어 놓아, '5' '6' '7' 이 먼저 몰려 나오고 각주 본문이 뒤에 따로 나왔다.
+
+    실제 판면은 **내어쓰기(hanging indent)** 다(실측):
+        x=51.0  '5 For reviews of imago Dei interpretations, see …'   ← 각주 시작
+        x=79.4  'Artificial Intelligence and the Human Spirit …'      ← 이어지는 줄
+        x=51.0  '6 Robert H. Waterson et al., …'                      ← 다음 각주
+    그래서 **줄의 시작 x가 가장 왼쪽이면 새 각주**다. 번호를 안 보므로, 각주가 쪽을
+    걸쳐 이어질 때(번호 없이 시작) 그 줄이 들여쓰기면 앞 각주에 그대로 이어진다.
+    """
+    w, h, gl, mh, mw = _glyphs(page)
+    ns = [g for g in gl if g[1] >= ymin]
+    if not ns:
+        return ""
+    rows = _group_rows(ns, mh * 0.5)
+    items = []
+    for row in rows:
+        cs = sorted(row, key=lambda c: (c[0], c[5]))
+        text = "".join(c[3] for c in cs).strip()
+        if text:
+            items.append((cs[0][0], text))
+    if not items:
+        return ""
+    left = min(x for x, _ in items)
+    out: list[str] = []
+    for x, text in items:
+        if x <= left + mw * 0.8 and out and out[-1].strip():
+            out.append("")               # 새 각주 — 문단을 끊는다
+        out.append(text)
+    return "\n".join(out)
+
+
 def _footnote_rule_y(page) -> float | None:
     """각주 구분선의 y 좌표. 없으면 None (2026-08-27).
 
@@ -431,7 +467,7 @@ def pdf_to_pages(path):
                 else:
                     # 위에서 아래로 재므로 본문이 선 '위'(작은 값), 각주가 '아래'다
                     _body = _reading_order(page, ymax=_ry)
-                    _notes = _split_note_lines(_reading_order(page, ymin=_ry))
+                    _notes = _notes_text(page, _ry)
                     _sep = "\n\n"
                     pages.append(_body + _sep + _notes if (_body and _notes)
                                  else (_body or _notes))
