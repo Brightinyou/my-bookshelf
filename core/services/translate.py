@@ -315,6 +315,12 @@ def _merge_dangling(paras: list[str], max_chunk: int = 3000) -> list[str]:
     _terminal = _re.compile(r'[.!?:;"”’)\]]\s*$')
     merged: list[str] = []
     for p in paras:
+        # ★각주는 앞 문단에 붙이지 않고, 각주 뒤 문단도 각주에 붙이지 않는다
+        # (2026-08-27). 변환 단계에서 떼어 낸 각주가 여기서 도로 본문에 먹혔다 —
+        # 실측: 한 챕터가 32문단 → 9문단, 각주 2개 → 0개.
+        if _is_footnote_block(p) or (merged and _is_footnote_block(merged[-1])):
+            merged.append(p)
+            continue
         if merged:
             prev = merged[-1]
             if (not prev.lstrip().startswith("#")          # 제목은 단독 유지
@@ -326,14 +332,32 @@ def _merge_dangling(paras: list[str], max_chunk: int = 3000) -> list[str]:
     return merged
 
 
+def _is_footnote_block(b: str) -> bool:
+    """이 블록이 각주 문단인가 — 번호로 시작하는 짧은 글."""
+    s = b.strip()
+    return bool(s and len(s) < 500 and _FOOTNOTE_NUM_START.match(s))
+
+
 def _merge_short_blocks(blocks: list[str], min_len: int = 50) -> list[str]:
     """min_len 이하인 블록을 뒤 블록과 이어 붙여 min_len을 넘을 때까지 합친다 —
     짧다고 통째로 버리지 않는다(2026-08-11). 사진촬영 OCR은 문단이 아니라 거의
-    줄 단위로 \\n\\n이 남발되는 경우가 많아, 예전처럼 50자 이하 블록을 그냥 버리면
-    책 내용의 상당 부분(실측: 어떤 책은 전체 글자 수의 70%)이 조용히 사라진다."""
+    줄 단위로 \n\n이 남발되는 경우가 많아, 예전처럼 50자 이하 블록을 그냥 버리면
+    책 내용의 상당 부분(실측: 어떤 책은 전체 글자 수의 70%)이 조용히 사라진다.
+
+    ★**각주는 짧아도 합치지 않는다** (2026-08-27 연구자 지적). 변환 단계에서 애써
+    제 문단으로 떼어 낸 각주가 여기서 도로 본문에 붙었다 — `3 Psalm 8:4.`(12자)가
+    앞 본문 문단에 먹히는 식이다. 실측: 원문 문단 162개가 번역을 거치며 57개로,
+    각주 문단 15개가 6개로 줄었고, 그래서 EPUB에서 각주가 본문과 섞여 나왔다.
+    각주는 어차피 번역하지 않으므로(should_skip_translation) 홀로 두는 편이 맞다."""
     merged: list[str] = []
     buf = ""
     for b in blocks:
+        if _is_footnote_block(b):
+            if buf:                       # 모아 두던 짧은 것들을 먼저 내보낸다
+                merged.append(buf)
+                buf = ""
+            merged.append(b)              # 각주는 제 문단 그대로
+            continue
         buf = (buf + "\n\n" + b).strip() if buf else b
         if len(buf) > min_len:
             merged.append(buf)

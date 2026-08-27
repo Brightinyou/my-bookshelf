@@ -84,3 +84,34 @@ class NeedsTranslationTargetTest(unittest.TestCase):
     def test_도착언어가_스페인어면_한국어_책도_번역_대상(self):
         tr.set_target_language("es")
         self.assertTrue(tr._needs_translation("기술신학"))
+
+
+class FootnoteBlockKeptTest(unittest.TestCase):
+    """번역 입력에서 각주 문단이 살아남는가 — services/translate.
+
+    2026-08-27. 변환 단계에서 각주를 제 문단으로 떼어 냈는데도 EPUB에서 여전히
+    본문과 섞여 나왔다. 범인은 번역 전처리였다 — `_merge_short_blocks`가 50자 미만
+    블록을 뒤에 붙이고(`3 Psalm 8:4.` 는 12자다), `_merge_dangling`이 종결부호 없는
+    앞 문단에 또 붙였다. 실측: 원문 162문단/각주 15개 → 번역입력 45문단/각주 4개.
+    각주는 어차피 번역하지 않으므로 홀로 두어야 한다.
+    """
+
+    # ★문단이 5개 미만이면 _split_paragraphs_robust 가 2차(줄 단위 청크)로 빠져
+    # 구조를 통째로 버린다. 실제 챕터는 수십 문단이므로 표본도 그만큼 준다.
+    BODY = ["본문이 길게 이어지는 %d번째 문단입니다. " % i * 4 for i in range(6)]
+
+    def test_짧은_각주가_앞_문단에_먹히지_않는다(self):
+        txt = "\n\n".join(self.BODY[:3] + ["3 Psalm 8:4.", "4 Genesis 1:26."] + self.BODY[3:])
+        paras = tr._split_paragraphs_robust(txt)
+        self.assertIn("3 Psalm 8:4.", paras)
+        self.assertIn("4 Genesis 1:26.", paras)
+
+    def test_각주_다음_문단도_각주에_붙지_않는다(self):
+        note = "1 David Silver, “AlphaGo,” Nature, 2016."
+        txt = "\n\n".join(self.BODY[:3] + [note] + self.BODY[3:])
+        self.assertIn(note, tr._split_paragraphs_robust(txt))
+
+    def test_각주가_아닌_짧은_블록은_예전대로_합친다(self):
+        """짧다고 버리면 본문이 사라진다 — 그 동작은 지켜야 한다."""
+        blocks = ["짧은 줄", "또 짧은 줄", "세 번째 짧은 줄"]
+        self.assertLess(len(tr._merge_short_blocks(blocks, 50)), len(blocks))
