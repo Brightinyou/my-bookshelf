@@ -60,6 +60,48 @@ class TranslationNameTest(unittest.TestCase):
         self.assertFalse(tr.is_derived("01_Some Chapter"))
 
 
+class 쪽을걸친문장Test(unittest.TestCase):
+    """쪽 경계에서 끊긴 문장을 하나로 이어 번역에 넘긴다 (2026-08-27 연구자 요청).
+
+    연구자 말 — "페이지와 페이지를 넘어갈 때 문장이 끊겨서 번역이 되다보니 어색한
+    곳이 곳곳에 보여. 다음페이지로 가기 전에 문장마침이 되지 않으면 다음 페이지의
+    문장까지 보고 번역한다라는 원칙이 있으면 좋겠는데".
+
+    _merge_dangling 은 예전부터 «종결부호 없이 끝나면 잇는다»를 했지만, 각주와
+    쪽표식을 만나면 그 자리에서 내보내 버려 **이을 기회가 오지 않았다.** 실제 논문
+    흐름이 «본문 … 각주 각주 각주 [[PAGEBREAK]] 다음쪽 본문» 이라 늘 막혔다.
+    """
+
+    def test_쪽표식을_건너뛰고_이어_붙인다(self):
+        P = tr._PAGE_TOKEN
+        out = tr._merge_dangling(["문장이 끊기고 우리의 기준이", P, "계속 이어진다."])
+        self.assertEqual(out[0], "문장이 끊기고 우리의 기준이 계속 이어진다.")
+        self.assertIn(P, out, "쪽표식은 남아야 한다 — 없으면 번역본에 \f 가 안 남는다")
+
+    def test_각주가_사이에_끼어도_이어_붙인다(self):
+        P = tr._PAGE_TOKEN
+        out = tr._merge_dangling(
+            ["왜냐하면 우리의 기준이",
+             "34 For example, Saint Gregory of Nyssa.",
+             "35 For a detailed argumentation.",
+             P,
+             "과연 지능이 무엇인지 묻게 된다."])
+        self.assertEqual(out[0], "왜냐하면 우리의 기준이 과연 지능이 무엇인지 묻게 된다.")
+        self.assertTrue(out[1].startswith("34 "), "각주는 홀로 서야 한다")
+        self.assertTrue(out[2].startswith("35 "))
+        self.assertIn(P, out)
+
+    def test_문장이_끝났으면_잇지_않는다(self):
+        P = tr._PAGE_TOKEN
+        out = tr._merge_dangling(["문장이 끝난다.", P, "새 문장이다."])
+        self.assertEqual(out, ["문장이 끝난다.", P, "새 문장이다."])
+
+    def test_제목은_단독으로_남는다(self):
+        P = tr._PAGE_TOKEN
+        out = tr._merge_dangling(["# 제목", P, "본문이 시작된다."])
+        self.assertEqual(out[0], "# 제목")
+
+
 if __name__ == "__main__":
     unittest.main()
 

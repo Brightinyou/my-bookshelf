@@ -314,21 +314,40 @@ def _merge_dangling(paras: list[str], max_chunk: int = 3000) -> list[str]:
     이전 단락이 종결부호 없이 끝났거나 현재 단락이 소문자로 시작하면 같은 문장으로 본다."""
     _terminal = _re.compile(r'[.!?:;"”’)\]]\s*$')
     merged: list[str] = []
+    # ★쪽을 넘는 문장을 잇기 위한 «미룸 상자» (2026-08-27 연구자 요청 — "다음
+    #   페이지로 가기 전에 문장마침이 되지 않으면 다음 페이지의 문장까지 보고
+    #   번역한다").
+    #
+    #   예전에는 각주·쪽표식을 만나면 그 자리에서 그대로 내보냈다. 그런데 실제 논문
+    #   흐름은 «본문 … 각주34 각주35 각주36 [[PAGEBREAK]] 다음쪽 본문» 이라,
+    #   문장 중간에서 끊긴 본문과 그 뒷부분 사이에 **각주 세 덩이와 쪽표식이 끼어**
+    #   있다. 그래서 이어 붙일 기회가 아예 오지 않았고, 한 문장이 두 조각으로 나뉘어
+    #   각각 번역돼 «어색한 곳이 곳곳에» 남았다.
+    #
+    #   이제 사이에 낀 것들은 상자에 담아 두었다가, 본문끼리 이어 붙인 **뒤에**
+    #   내보낸다. 각주는 여전히 홀로 서고 쪽표식도 그대로 남으므로(→  보존),
+    #   EPUB 각주 변환은 하던 대로 돌아간다. 달라지는 것은 쪽을 걸친 문장의 꼬리가
+    #   제 머리 쪽으로 따라붙는다는 것뿐이다 — 각주 번호도 제 쪽에 함께 남는다.
+    pending: list[str] = []
     for p in paras:
-        # ★각주는 앞 문단에 붙이지 않고, 각주 뒤 문단도 각주에 붙이지 않는다
-        # (2026-08-27). 변환 단계에서 떼어 낸 각주가 여기서 도로 본문에 먹혔다 —
-        # 실측: 한 챕터가 32문단 → 9문단, 각주 2개 → 0개.
-        if _is_footnote_block(p) or (merged and _is_footnote_block(merged[-1])):
+        if _is_footnote_block(p):
+            pending.append(p)          # 각주·쪽표식은 잠시 미룬다
+            continue
+        prev = merged[-1] if merged else ""
+        if (prev
+                and not _is_footnote_block(prev)
+                and not prev.lstrip().startswith("#")      # 제목은 단독 유지
+                and len(prev) + len(p) + 1 <= max_chunk
+                and (not _terminal.search(prev) or _re.match(r"^[a-z]", p))):
+            merged[-1] = prev.rstrip() + " " + p.lstrip()
+        else:
+            merged.extend(pending)     # 못 이으면 낀 것들을 먼저 제자리에
+            pending = []
             merged.append(p)
             continue
-        if merged:
-            prev = merged[-1]
-            if (not prev.lstrip().startswith("#")          # 제목은 단독 유지
-                    and len(prev) + len(p) + 1 <= max_chunk
-                    and (not _terminal.search(prev) or _re.match(r"^[a-z]", p))):
-                merged[-1] = prev.rstrip() + " " + p.lstrip()
-                continue
-        merged.append(p)
+        merged.extend(pending)         # 이었으면 그 뒤에 붙인다
+        pending = []
+    merged.extend(pending)
     return merged
 
 
