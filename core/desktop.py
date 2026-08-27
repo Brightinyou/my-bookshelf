@@ -435,12 +435,23 @@ def main() -> int:
     _win_h = max(640, min(1040, int(_sh * 0.92)))
     _min_w = min(900, _win_w)
     _min_h = min(720, _win_h)
-    # ★작업표시줄에 파이썬 아이콘이 뜨던 것을 고친다 (2026-08-26 연구자 지적).
-    # 창 아이콘(WM_SETICON)은 아래에서 제대로 붙이고 있어 **제목 표시줄**에는 올바른
-    # 아이콘이 나왔다. 그런데 작업표시줄은 창이 아니라 **프로세스의 신원**
-    # (AppUserModelID)으로 묶는데, 그 값이 없으면 호스트인 pythonw.exe 를 따라간다.
-    # 그래서 작업표시줄에만 파이썬 아이콘이 떴다. 창을 만들기 **전에** 신원을 밝힌다.
-    if sys.platform == "win32":
+    # 작업표시줄 신원(AppUserModelID) — **MyBookshelf.exe 로 돌 때는 손대지 않는다.**
+    #
+    # 2026-08-26에는 이 값을 밝히는 것이 옳았다. 그때는 프로세스가 pythonw.exe 라
+    # 작업표시줄이 다른 파이썬 앱과 한 덩어리가 됐기 때문이다. 그런데 지금은 앱이
+    # 제 이름을 가진 실행 파일로 돌므로 신원이 이미 또렷하고, **명시한 값이 오히려
+    # 고정을 망친다** (2026-08-27 연구자 지적 — "고정하면 파이선으로 아이콘이
+    # 바뀌어"). 까닭은 이렇다.
+    #
+    #   · 값을 밝히지 않으면 Windows 는 창을 **대상 경로가 같은 시작 메뉴
+    #     바로가기**에 맞춰 준다. 우리 바로가기는 IconLocation 이 MyBookshelf.ico
+    #     이므로 고정해도 그 아이콘이 그대로 간다.
+    #   · 값을 밝히면 그 맞춤이 **건너뛰어지고**, 같은 AppUserModelID 를 지닌
+    #     바로가기를 찾는다. 그런 바로가기가 없으니(.lnk 에 그 값을 넣으려면
+    #     IPropertyStore 를 써야 한다) 고정된 항목이 우리 바로가기를 놓친다.
+    #
+    # 그래서 낡은 설치본에서 여전히 pythonw 로 뜰 때만 예전처럼 신원을 밝힌다.
+    if sys.platform == "win32" and Path(sys.executable).name.lower() != OWN_EXE_NAME.lower():
         try:
             import ctypes
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
