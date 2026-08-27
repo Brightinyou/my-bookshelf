@@ -3,8 +3,8 @@
 **A personal research tool that turns books, papers and manuscripts into readable summary notes and e-books.**
 Feed it PDF/DOCX/HWP/HWPX/TXT and it translates, summarises, and exports to **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki**.
 
-[![Download for Windows](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjJ2OC4ySDNWM3ptOS44IDBIMjF2OC4yaC04LjJWM3pNMyAxMi44aDguMlYyMUgzdi04LjJ6bTkuOCAwSDIxVjIxaC04LjJ2LTguMnoiLz48L3N2Zz4K)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
-[![Download for macOS](https://img.shields.io/badge/macOS-.pkg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![Download for Windows](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjJ2OC4ySDNWM3ptOS44IDBIMjF2OC4yaC04LjJWM3pNMyAxMi44aDguMlYyMUgzdi04LjJ6bTkuOCAwSDIxVjIxaC04LjJ2LTguMnoiLz48L3N2Zz4K)](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe)
+[![Download for macOS](https://img.shields.io/badge/macOS-.pkg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)
 
 > 🇰🇷 한국어 설명서: [README.md](README.md) · 📘 Every tab in detail: [User manual](docs/MANUAL.en.md)
 
@@ -59,10 +59,10 @@ PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translatio
 
 | | File |
 |---|---|
-| <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
-| <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> **macOS** | [**MyBookshelf.pkg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **Windows** | [**Setup.exe** ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) |
+| <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> **macOS** | [**MyBookshelf.pkg** ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg) |
 
-Both are on the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page, under **Assets**.
+The links above **download the latest build directly.** Older builds and other files live on the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest).
 
 </div>
 
@@ -76,10 +76,8 @@ Both are on the [**latest release**](https://github.com/Brightinyou/my-bookshelf
 
 #### Step 1 — Download
 
-From the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page, under **Assets**:
-
-- **`Setup.exe`** — recommended. Just run it.
-- `MyBookshelf-Setup-vX.Y.Z.zip` — use this if your browser blocks `.exe` downloads. Unzipping gives the same `Setup.exe`.
+- **[Download `Setup.exe` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe)** — recommended. Just run it.
+- If your browser blocks `.exe` downloads, grab `MyBookshelf-Setup-vX.Y.Z.zip` from the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest) under **Assets**. Unzipping gives the same `Setup.exe`.
 
 #### Step 2 — Run it (one-time security prompt ⚠️)
 
@@ -121,10 +119,8 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 
 #### Step 1 — Download
 
-On the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page, under **Assets**, grab one of:
-
-- **`MyBookshelf.pkg`** — this is the only one you need. Double-click it and the installer places the app in **Applications** for you.
-- `MyBookshelf-vX.Y.Z-mac.zip` — only if you cannot use a Mac administrator password. Unzipping gives just the app file.
+- **[Download `MyBookshelf.pkg` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)** — this is the only one you need. Double-click it and the installer places the app in **Applications** for you.
+- If you cannot use a Mac administrator password, grab `MyBookshelf-vX.Y.Z-mac.zip` from the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest) under **Assets**. Unzipping gives just the app file.
 
 > The file is only a few hundred KB — **that is expected.** The Python environment is fetched on first launch.
 
@@ -156,7 +152,7 @@ The first launch **auto-installs** the Python environment and packages (**5–20
 > Requires Python 3.10+. If missing, install from [python.org](https://www.python.org/downloads/).
 > If setup seems stuck, check the log: `~/Library/Application Support/MyBookshelf/app.log`
 
-> <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **On Windows?** → Grab `Setup.exe` from the same [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page and run it. macOS and Windows share a single repository.
+> <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **On Windows?** → [Download `Setup.exe` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) and run it. macOS and Windows share a single repository.
 
 ---
 

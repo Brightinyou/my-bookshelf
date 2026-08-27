@@ -3,8 +3,8 @@
 **책·논문·원고를 읽기 좋은 요약 노트와 전자책으로 바꾸는 개인 연구 도구.**
 PDF·DOCX·HWP·HWPX·TXT를 넣으면 번역과 요약을 거쳐 **EPUB·Word(.docx)·한글(.hwpx)·Obsidian 위키**로 내보냅니다.
 
-[![Windows 내려받기](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjJ2OC4ySDNWM3ptOS44IDBIMjF2OC4yaC04LjJWM3pNMyAxMi44aDguMlYyMUgzdi04LjJ6bTkuOCAwSDIxVjIxaC04LjJ2LTguMnoiLz48L3N2Zz4K)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
-[![macOS 내려받기](https://img.shields.io/badge/macOS-.pkg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![Windows 내려받기](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjJ2OC4ySDNWM3ptOS44IDBIMjF2OC4yaC04LjJWM3pNMyAxMi44aDguMlYyMUgzdi04LjJ6bTkuOCAwSDIxVjIxaC04LjJ2LTguMnoiLz48L3N2Zz4K)](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe)
+[![macOS 내려받기](https://img.shields.io/badge/macOS-.pkg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)
 
 > 🇬🇧 English manual: [README.en.md](README.en.md) · 📘 각 탭 상세: [사용 설명서](docs/MANUAL.md)
 
@@ -59,10 +59,10 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 | | 받을 파일 |
 |---|---|
-| <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
-| <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> **macOS** | [**MyBookshelf.pkg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **Windows** | [**Setup.exe** ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) |
+| <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> **macOS** | [**MyBookshelf.pkg** ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg) |
 
-두 파일 모두 [**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지의 **Assets**에 함께 있습니다.
+위 링크를 누르면 **최신 판이 바로 내려받아집니다.** 예전 판이나 다른 파일은 [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)에 있습니다.
 
 </div>
 
@@ -76,10 +76,8 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 #### 1단계 — 내려받기
 
-[**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지 아래 **Assets**에서 받습니다:
-
-- **`Setup.exe`** — 권장. 바로 실행하면 됩니다.
-- `MyBookshelf-Setup-vX.Y.Z.zip` — 브라우저가 `.exe` 내려받기를 막을 때 쓰세요. 압축을 풀면 같은 `Setup.exe`가 나옵니다.
+- **[`Setup.exe` 내려받기 ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe)** — 권장. 바로 실행하면 됩니다.
+- 브라우저가 `.exe` 내려받기를 막으면, [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)의 **Assets**에서 `MyBookshelf-Setup-vX.Y.Z.zip` 을 받으세요. 압축을 풀면 같은 `Setup.exe`가 나옵니다.
 
 #### 2단계 — 실행 (처음 한 번만: 보안 경고 통과 ⚠️)
 
@@ -121,10 +119,8 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 #### 1단계 — 내려받기
 
-[**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지 아래 **Assets**에서 받습니다:
-
-- **`MyBookshelf.pkg`** — 이것만 받으면 됩니다. 더블클릭하면 설치 관리자가 **응용 프로그램** 폴더에 넣어 줍니다.
-- `MyBookshelf-vX.Y.Z-mac.zip` — 맥 관리자 암호를 쓸 수 없을 때만. 압축을 풀면 앱 파일만 나옵니다.
+- **[`MyBookshelf.pkg` 내려받기 ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)** — 이것만 받으면 됩니다. 더블클릭하면 설치 관리자가 **응용 프로그램** 폴더에 넣어 줍니다.
+- 맥 관리자 암호를 쓸 수 없다면, [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)의 **Assets**에서 `MyBookshelf-vX.Y.Z-mac.zip` 을 받으세요. 압축을 풀면 앱 파일만 나옵니다.
 
 > 파일 크기가 수백 KB로 작습니다 — **정상입니다.** 파이썬 환경은 첫 실행 때 내려받습니다.
 
