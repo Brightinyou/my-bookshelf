@@ -116,3 +116,53 @@ class 장을걸친각주Test(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 표지와서지Test(unittest.TestCase):
+    """표지 면의 제목·저자와 서지정보 (2026-08-27 연구자 지적).
+
+    연구자 말 — "이 책은 제목 아래 저자가 이름이 아니라 '기술'로 나와 있어.
+    그리고 아쉬운 것은 서지정보를 메타정보로 넣으면 더 좋겠다는 거야".
+
+    실측(『기술과 덕』) — 표제지 첫 줄이 저자였다. 첫 줄=제목, 마지막 줄=저자로
+    못박아 두어서 **제목과 저자가 통째로 뒤바뀌고**, 표제지에서 흘러나온 조각
+    "기술"이 저자로 찍혔다.
+    """
+
+    LINES = ["섀넌 밸러(Shannon Vallor)", "기술과 덕",
+             "바랄 만한 미래를 위한 철학적 안내", "기술과 덕목들", "기술"]
+
+    def test_저자가_첫_줄이어도_제목과_뒤바뀌지_않는다(self):
+        h = epub_export._front_matter_xhtml("Technology and the Virtues",
+                                            "Shannon Vallor", self.LINES)
+        self.assertIn('<h1 class="fm-title">기술과 덕</h1>', h)
+        self.assertIn('class="fm-author">섀넌 밸러(Shannon Vallor)', h)
+        self.assertNotIn('class="fm-author">기술<', h)
+
+    def test_제목을_되뇌는_표제지_조각은_버린다(self):
+        """"기술과 덕목들"·"기술"은 부제가 아니라 표제지가 되뇐 제목이다."""
+        h = epub_export._front_matter_xhtml("Technology and the Virtues",
+                                            "Shannon Vallor", self.LINES)
+        self.assertIn("바랄 만한 미래를 위한 철학적 안내", h)
+        self.assertNotIn("기술과 덕목들", h)
+
+    def test_저자를_모르면_마지막_줄을_저자로_본다(self):
+        """논문은 «제목 / 부제 / 지은이» 차례가 많다 — 예전 동작을 지킨다."""
+        h = epub_export._front_matter_xhtml("논문", "", [
+            "인공지능 시대의 Imago Dei:", "과학과 관여하는 신학을 위한 도전과 기회",
+            "마리우스 도로반투(Marius Dorobantu)"])
+        self.assertIn('<h1 class="fm-title">인공지능 시대의 Imago Dei:</h1>', h)
+        self.assertIn('class="fm-author">마리우스 도로반투(Marius Dorobantu)', h)
+
+    def test_서지정보_한_줄을_만든다(self):
+        self.assertEqual(
+            epub_export._citation_text({"publisher": "New York: Oxford University Press",
+                                        "published": "2018"}),
+            "New York: Oxford University Press, 2018.")
+        self.assertEqual(epub_export._citation_text({"published": "2018"}), "2018")
+        self.assertEqual(epub_export._citation_text({}), "")
+
+    def test_서지정보가_표지에_실린다(self):
+        h = epub_export._front_matter_xhtml("책", "저자", ["책", "부제"],
+                                            "New York: Oxford University Press, 2018.")
+        self.assertIn('class="fm-cite">New York: Oxford University Press, 2018.', h)

@@ -361,28 +361,97 @@ def _front_lines(text: str, limit: int = 5) -> list[str]:
     return out
 
 
-def _front_matter_xhtml(title: str, author: str, lines: list[str]) -> str:
-    """책 맨 앞에 놓을 표지 면 — 제목·저자·서지정보 (2026-08-27 연구자 요청).
+def _book_meta(ws_name: str, stem: str) -> dict:
+    """전체요약 파일 머리말에서 서지정보를 읽는다 — {author, published, publisher}.
 
-    줄 배치: 첫 줄이 제목, 마지막 줄이 저자, 가운데는 부제로 본다. 연도나 쪽 범위가
-    든 줄은 서지정보로 따로 표시한다.
+    ★앱은 이미 표제지·판권면에서 저자·출판일·출판사를 뽑아 «_전체요약.md» 머리말에
+    적어 둔다(chapters.build_overview). EPUB이 그걸 다시 짐작할 까닭이 없다
+    (2026-08-27 연구자 요청 — "서지정보를 메타정보로 넣으면 더 좋겠다").
+    요약을 아직 안 돌린 책은 이 파일이 없다 — 그러면 빈 dict 이고, 표지는 예전처럼
+    본문 앞머리에서 뽑는다."""
+    try:
+        from services.chapters import overview_file_for
+        p = overview_file_for(ws_name, stem)
+        if not p.exists():
+            return {}
+        head = p.read_text(encoding="utf-8", errors="ignore").split("---")
+        if len(head) < 2:
+            return {}
+        out = {}
+        for ln in head[1].splitlines():
+            m = re.match(r"^(author|published|publisher|category)\s*:\s*(.+)$", ln.strip())
+            if m:
+                out[m.group(1)] = m.group(2).strip().strip('"').strip("'")
+        return out
+    except Exception:
+        return {}
+
+
+def _citation_text(meta: dict) -> str:
+    """«뉴욕: 옥스퍼드 대학교 출판부, 2018.» 꼴의 서지 한 줄."""
+    pub, year = meta.get("publisher", ""), meta.get("published", "")
+    if pub and year:
+        return f"{pub}, {year}."
+    return (pub or year or "").strip()
+
+
+def _norm(s: str) -> str:
+    """견주기용 — 공백·괄호·구두점을 털어 낸다."""
+    return re.sub(r"[\s()\[\]{}·,.:;'\"“”‘’-]", "", s).lower()
+
+
+def _author_line(lines: list[str], author: str) -> tuple[str, list[str]]:
+    """앞머리 줄들에서 **저자 줄**을 골라내 (저자 줄, 나머지)로 돌려준다.
+
+    ★표제지의 첫 줄이 저자인 책이 많다 (2026-08-27 연구자 지적 — 『기술과 덕』
+    표지에 "제목 아래 저자가 이름이 아니라 '기술'로 나와 있어"). 예전에는 첫 줄을
+    제목, 마지막 줄을 저자로 못박아서, 첫 줄이 저자인 책은 **제목과 저자가 통째로
+    뒤바뀌고** 표제지에서 흘러나온 조각("기술")이 저자로 찍혔다.
+
+    파일 이름과 전체요약이 알려 주는 저자를 잣대로 삼아, 그 이름이 든 줄을
+    저자로 집어낸다. 원문 줄에는 "섀넌 밸러(Shannon Vallor)"처럼 두 표기가 함께
+    있는 일이 많아 그 줄을 그대로 쓰는 편이 낫다."""
+    if not author:
+        return "", lines
+    key = _norm(author)
+    if not key:
+        return "", lines
+    for i, s in enumerate(lines):
+        n = _norm(s)
+        if key and (key in n or n in key):
+            return s, lines[:i] + lines[i + 1:]
+    return "", lines
+
+
+def _front_matter_xhtml(title: str, author: str, lines: list[str],
+                        citation: str = "") -> str:
+    """책 맨 앞에 놓을 표지 면 — 제목·부제·저자·서지정보 (2026-08-27 연구자 요청).
+
     제목·부제·서지는 가운데, 저자는 오른쪽 정렬(연구자 요청)."""
     parts: list[str] = []
-    if lines:
-        parts.append(f'<h1 class="fm-title">{html.escape(lines[0])}</h1>')
-        rest = lines[1:]
-        for i, s in enumerate(rest):
-            if _CITATION_RE.search(s):
-                cls = "fm-cite"
-            elif i == len(rest) - 1:
-                cls = "fm-author"          # 마지막 줄 = 저자
-            else:
-                cls = "fm-sub"             # 가운데 = 부제
+    author_line, rest = _author_line(list(lines), author)
+    if not author_line and not author and len(rest) >= 2:
+        # 저자를 달리 알 길이 없으면 예전처럼 **마지막 줄**을 저자로 본다.
+        # 논문은 «제목 / 부제 / 지은이» 차례로 적히는 일이 많다.
+        author_line, rest = rest[-1], rest[:-1]
+    if rest:
+        head = rest[0]
+        parts.append(f'<h1 class="fm-title">{html.escape(head)}</h1>')
+        # 표제지가 제목을 여러 번 되뇌는 책이 많다("기술과 덕" → "기술과 덕목들" →
+        # "기술"). 제목에 먹히거나 제목을 머금은 줄은 부제가 아니므로 버린다.
+        hk = _norm(head)
+        for s in rest[1:]:
+            n = _norm(s)
+            if not n or n in hk or hk in n:
+                continue
+            cls = "fm-cite" if _CITATION_RE.search(s) else "fm-sub"
             parts.append(f'<p class="{cls}">{html.escape(s)}</p>')
     else:
         parts.append(f'<h1 class="fm-title">{html.escape(title)}</h1>')
-        if author:
-            parts.append(f'<p class="fm-author">{html.escape(author)}</p>')
+    if author_line or author:
+        parts.append(f'<p class="fm-author">{html.escape(author_line or author)}</p>')
+    if citation:
+        parts.append(f'<p class="fm-cite">{html.escape(citation)}</p>')
     body = "\n    ".join(parts)
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -415,6 +484,10 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
         return False, "챕터 없음"
 
     title_disp, author = _split_title_author(stem)
+    # 표제지·판권면에서 뽑아 둔 서지정보 — 있으면 파일 이름보다 정확하다
+    meta = _book_meta(ws_name, stem)
+    author = meta.get("author") or author
+    citation = _citation_text(meta)
     book_id = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_DNS, f'mybookshelf-epub-{stem}')}"
 
     manifest_items, spine_items, nav_items, ncx_points, text_entries = [], [], [], [], []
@@ -471,13 +544,25 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
     # 서지정보까지 제일 처음에 표시해 주면 좋겠다").
     text_entries.insert(0, ("OEBPS/text/front.xhtml",
                             _front_matter_xhtml(title_disp, author,
-                                                _front_lines(first_text))))
+                                                _front_lines(first_text), citation)))
     manifest_items.insert(
         0, '<item id="front" href="text/front.xhtml" media-type="application/xhtml+xml"/>')
     spine_items.insert(0, '<itemref idref="front"/>')
 
-    sample = first_text[:2000]
-    lang = "ko" if len(_HANGUL_RE.findall(sample)) / max(len(sample), 1) >= 0.3 else "en"
+    # ★언어는 **책 단위로** 본다 (2026-08-27). 예전에는 첫 장 앞 2,000자의 한글
+    #   비율만 봤는데, 그 자리는 표제지·판권면이라 영문 주소와 출판사 이름으로
+    #   가득하다. 실측(『기술과 덕』) — 본문이 한국어인데 0.28로 갈려 en 이 됐다.
+    #   여러 장을 골고루 뽑아 보는 detect_book 이 이미 있으니 그걸 쓴다.
+    lang = ""
+    try:
+        from services import langdetect as _ld
+        _texts = [find_translation(c) or c for c in chapters]
+        lang, _conf = _ld.detect_book(_texts)
+    except Exception:
+        lang = ""
+    if not lang:
+        sample = first_text[:2000]
+        lang = "ko" if len(_HANGUL_RE.findall(sample)) / max(len(sample), 1) >= 0.3 else "en"
 
     creator_tag = f"<dc:creator>{html.escape(author)}</dc:creator>" if author else ""
     # 저작권 있는 책 전문이 그대로 담기므로, 파일 자체에도 개인 사용 한정 안내를
@@ -492,7 +577,17 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
         f'    {creator_tag}\n'
         f'    <dc:language>{lang}</dc:language>\n'
         f'    <dc:rights>{html.escape(rights_text)}</dc:rights>\n'
-        '  </metadata>\n'
+        # 서지정보를 메타정보로 남긴다 (2026-08-27 연구자 요청 — "서지정보를
+        # 메타정보로 넣으면 더 좋겠다"). 읽개·서재 앱이 출판사·출판연도로 정렬하고
+        # 찾을 수 있고, 파일만 따로 돌아다녀도 출처가 함께 간다.
+        + (f'    <dc:publisher>{html.escape(meta["publisher"])}</dc:publisher>\n'
+           if meta.get("publisher") else "")
+        + (f'    <dc:date>{html.escape(meta["published"])}</dc:date>\n'
+           if meta.get("published") else "")
+        + (f'    <dc:source>{html.escape(citation)}</dc:source>\n' if citation else "")
+        + (f'    <dc:subject>{html.escape(meta["category"])}</dc:subject>\n'
+           if meta.get("category") else "")
+        + '  </metadata>\n'
         '  <manifest>\n'
         '    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n'
         '    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n'
