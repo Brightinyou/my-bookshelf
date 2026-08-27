@@ -297,15 +297,30 @@ def _notes_text(page, ymin: float) -> str:
     if not ns:
         return ""
     rows = _group_rows(ns, mh * 0.5)
-    items = []
+    items, ys = [], []
     for row in rows:
         cs = sorted(row, key=lambda c: (c[0], c[5]))
         text = "".join(c[3] for c in cs).strip()
         if text:
             items.append((cs[0][0], text))
+            ys.append(cs[0][1])          # 이 행의 y — 아래 여백 판정에 쓴다
     if not items:
         return ""
     left = min(x for x, _ in items)
+
+    # ★각주 아래 여백 다음에 오는 서지정보·쪽번호는 각주가 아니다 (2026-08-27
+    # 연구자 지적: "각주 하단에는 공백이 있고 서지정보가 있고 페이지가 있다").
+    # 각주 줄 간격보다 눈에 띄게 벌어진 자리에서 끊고, 그 아래는 버린다.
+    # 그대로 두면 각주 문단에 '…, Vol. 1 (2022), 175–196176' 처럼 쪽번호까지 붙어
+    # 들어오고, 쪽마다 번호가 달라 반복줄 제거에도 안 걸린다.
+    if len(ys) >= 3:
+        gaps = [b - a for a, b in zip(ys, ys[1:])]
+        line_gap = statistics.median(gaps)
+        for k, g in enumerate(gaps):
+            if g > line_gap * 1.8 and k >= 1:
+                items = items[:k + 1]
+                break
+
     out: list[str] = []
     for x, text in items:
         # ★본문 마지막 줄이 각주 첫 줄과 한 행으로 묶여 오는 일이 있다 (2026-08-27).
@@ -323,6 +338,9 @@ def _notes_text(page, ymin: float) -> str:
         if x <= left + mw * 0.8 and out and out[-1].strip():
             out.append("")               # 새 각주 — 문단을 끊는다
         out.append(text)
+    # ★마지막에 빈 줄을 둔다. 안 그러면 마지막 각주가 **다음 쪽 본문과 한 문단**이
+    # 된다 — 쪽 경계 표시는 빈 줄이 아니라서 reflow 가 문단을 안 끊는다.
+    out.append("")
     return "\n".join(out)
 
 
