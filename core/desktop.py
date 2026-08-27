@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -41,6 +42,70 @@ APP_ICON = _find_app_icon()
 OWN_EXE_NAME = "MyBookshelf.exe"
 
 
+def _stamp_icon(exe: Path, ico: Path) -> bool:
+    """복사한 실행 파일 안의 아이콘 리소스를 앱 아이콘으로 바꿔 넣는다.
+
+    ★2026-08-27. MyBookshelf.exe 는 파이썬 인터프리터를 그대로 복사한 것이라
+    **파이썬 아이콘과 «Python Software Foundation» 이라는 신원을 안고 있다.**
+    그래서 작업표시줄에 고정하면 파이썬으로 보였다(방화벽 창에도 «Python» 이라
+    떴다). 창 아이콘(WM_SETICON)은 창에만 붙으므로 고정된 바로가기까지는 못 간다.
+    실행 파일의 RT_ICON/RT_GROUP_ICON 자원 자체를 바꿔야 한다.
+
+    .ico 파일 구조 — 머리 6바이트(예약·형식·개수) + 항목 16바이트씩. 실행 파일
+    안에 넣을 때는 항목이 14바이트로 바뀐다(4바이트 오프셋 자리에 2바이트 자원
+    번호가 들어간다). 그 변환이 이 함수가 하는 일의 전부다.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        raw = ico.read_bytes()
+        if len(raw) < 6:
+            return False
+        reserved, kind, count = struct.unpack("<HHH", raw[:6])
+        if reserved != 0 or kind != 1 or count == 0:
+            return False
+
+        images: list[tuple[bytes, bytes]] = []      # (항목 12바이트, 그림 데이터)
+        for i in range(count):
+            off = 6 + i * 16
+            entry = raw[off:off + 16]
+            if len(entry) < 16:
+                return False
+            size, data_off = struct.unpack("<II", entry[8:16])
+            images.append((entry[:12], raw[data_off:data_off + size]))
+
+        grp = struct.pack("<HHH", 0, 1, count)
+        for i, (head, data) in enumerate(images, start=1):
+            grp += head + struct.pack("<H", i)      # 오프셋 자리에 자원 번호
+
+        k32 = ctypes.windll.kernel32
+        k32.BeginUpdateResourceW.restype = wintypes.HANDLE
+        k32.BeginUpdateResourceW.argtypes = [wintypes.LPCWSTR, wintypes.BOOL]
+        k32.UpdateResourceW.argtypes = [wintypes.HANDLE, wintypes.LPCWSTR, wintypes.LPCWSTR,
+                                        wintypes.WORD, wintypes.LPVOID, wintypes.DWORD]
+        k32.EndUpdateResourceW.argtypes = [wintypes.HANDLE, wintypes.BOOL]
+
+        h = k32.BeginUpdateResourceW(str(exe), False)
+        if not h:
+            return False
+        RT_ICON, RT_GROUP_ICON, LANG = 3, 14, 0
+        ok = True
+        for i, (_head, data) in enumerate(images, start=1):
+            if not k32.UpdateResourceW(h, wintypes.LPCWSTR(RT_ICON), wintypes.LPCWSTR(i),
+                                       LANG, data, len(data)):
+                ok = False
+                break
+        if ok:
+            ok = bool(k32.UpdateResourceW(h, wintypes.LPCWSTR(RT_GROUP_ICON),
+                                          wintypes.LPCWSTR(1), LANG, grp, len(grp)))
+        return bool(k32.EndUpdateResourceW(h, not ok)) and ok
+    except Exception:
+        return False
+
+
 def _relaunch_under_own_name() -> bool:
     """pythonw.exe로 떠 있으면 MyBookshelf.exe라는 이름으로 자신을 다시 띄운다.
 
@@ -68,13 +133,25 @@ def _relaunch_under_own_name() -> bool:
     if not _base.exists() or _base.samefile(exe):
         return False                            # 기본 인터프리터를 못 찾았다
     target = exe.with_name(OWN_EXE_NAME)
+    # ★어떤 인터프리터에서 떠 왔는지 표식으로 남긴다. 크기·시각으로 견주면 안 된다
+    #   — 아이콘을 박는 순간 둘 다 달라져서 **열 때마다 다시 복사**하게 된다.
+    #   파이썬을 판올림하면 표식이 어긋나 저절로 새로 만들어진다.
+    stamp = target.with_suffix(".exe.src")
     try:
-        # 파이썬을 판올림하면 인터프리터도 바뀌므로 다르면 다시 복사한다.
-        # 크기까지 견주는 까닭은 예전 판이 stub 을 복사해 둔 적이 있기 때문이다.
-        if (not target.exists()
-                or target.stat().st_size != _base.stat().st_size
-                or target.stat().st_mtime < _base.stat().st_mtime):
+        want = "%s|%d|%d" % (_base, _base.stat().st_size, int(_base.stat().st_mtime))
+    except OSError:
+        return False
+    try:
+        have = stamp.read_text(encoding="utf-8") if stamp.exists() else ""
+    except OSError:
+        have = ""
+    try:
+        if not target.exists() or have != want:
             shutil.copy2(_base, target)
+            # 파이썬 아이콘을 그대로 두면 작업표시줄에 고정할 때 파이썬으로 보인다
+            if os.path.exists(APP_ICON):
+                _stamp_icon(target, Path(APP_ICON))
+            stamp.write_text(want, encoding="utf-8")
     except OSError:
         return False                            # 못 만들면 그냥 예전처럼 뜬다
     try:
