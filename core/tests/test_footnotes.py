@@ -4,6 +4,7 @@
 본문 숫자를 잘못 각주로 바꾸면 되돌릴 수 없다. 그래서 '안 바꾸는 것'을 지키는
 시험이 '바꾸는 것'을 지키는 시험만큼 중요하다.
 """
+import re
 import unittest
 
 from services import footnotes
@@ -162,3 +163,53 @@ class SequenceAndPeriodTest(unittest.TestCase):
         """본문 참조는 가장 강한 신호라 마침표 없이도 통과한다."""
         t = "보게 된다.39 전통 신학에서는\n\n39 각주인데 마침표가 없다"
         self.assertEqual(len(footnotes.convert(t).notes), 1)
+
+
+class 머리글오인Test(unittest.TestCase):
+    """쪽머리글을 각주로 오인하던 것 (2026-08-27 연구자 보고).
+
+    연구자 말 — "각주와 본문이 혼재된 것 같아", "각주가 아니라 미주인데".
+
+    『기술과 덕』은 미주(尾註)를 쓰는 책이라 각주가 하나도 없어야 한다. 그런데
+    쪽머리글이 「2 TECHNOLOGY AND THE VIRTUES …」처럼 «번호 + 글» 꼴이라 각주
+    후보가 되고, 쪽번호가 각주 번호로, **그 쪽 본문 전체(1,600~2,000자)가 각주
+    본문으로** 빨려 들어갔다.
+
+    통과한 까닭은 판정의 마지막 관문이 «가까운 본문에 그 숫자가 있는가» 하나뿐이기
+    때문이다. 번호 중복도 구분선도 요구하지 않는다. 이 책엔 진짜 미주 표시
+    (…불과하다.2,6)가 있어 2·4·8이 마침표 뒤에 나왔고, 그래서 우연히 뚫렸다.
+    """
+
+    @staticmethod
+    def _book(n_pages=6):
+        """쪽마다 「<쪽번호> TECHNOLOGY AND THE VIRTUES <본문>」로 시작하는 책."""
+        pages = []
+        for i in range(1, n_pages + 1):
+            pages.append(
+                f"{i} TECHNOLOGY AND THE VIRTUES "
+                f"이것은 {i}쪽의 본문이다. 미주 표시가 문장 끝에 붙는다.2 "
+                "그리고 논의가 이어진다. 다시 한 문장을 더 쓴다. 충분히 길게 쓴다.")
+        return "\f".join(pages)
+
+    def test_머리글은_각주가_아니다(self):
+        md = footnotes.convert(self._book()).markdown
+        self.assertEqual(re.findall(r"(?m)^\[\^[^\]]+\]:", md), [],
+                         "미주만 있는 책에서 각주가 만들어지면 안 된다")
+
+    def test_본문을_한_글자도_잃지_않는다(self):
+        src = self._book()
+        md = footnotes.convert(src).markdown
+        squash = lambda s: re.sub(r"\s", "", s)
+        self.assertEqual(len(squash(md)), len(squash(src)),
+                         "각주로 잘못 떼면 본문이 사라진다 — 되돌릴 수 없다")
+        self.assertIn("TECHNOLOGY AND THE VIRTUES", md)
+
+    def test_진짜_각주는_그대로_잡는다(self):
+        """머리글 잣대가 멀쩡한 각주까지 물면 안 된다."""
+        page1 = ("TECHNOLOGY AND THE VIRTUES 본문이 이어진다. 여기에 각주가 붙는다.1 "
+                 "그리고 문장이 더 이어진다.\n\n1 Alasdair MacIntyre, After Virtue, 187.")
+        page2 = ("TECHNOLOGY AND THE VIRTUES 다음 쪽 본문이다. 또 각주가 붙는다.2 "
+                 "이어지는 문장.\n\n2 Shannon Vallor, Technology and the Virtues, 46.")
+        md = footnotes.convert(page1 + "\f" + page2).markdown
+        self.assertIn("[^1]:", md)
+        self.assertIn("[^2]:", md)

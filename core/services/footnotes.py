@@ -401,6 +401,32 @@ def recover_hint(page: str, missing: int, lexicon: str = "") -> dict | None:
     return None
 
 
+def _running_heads(pages: list[str], min_hits: int = 3) -> set[str]:
+    """쪽마다 되풀이되는 **머리글**을 찾는다 — 쪽번호를 뗀 알맹이.
+
+    ★2026-08-27. 『기술과 덕』에서 각주 세 개가 통째로 가짜였다. 쪽머리글이
+    「2 TECHNOLOGY AND THE VIRTUES …」처럼 «번호 + 글» 꼴이라 각주 후보가 되고,
+    쪽번호가 각주 번호로, **그 쪽 본문 전체(1,600~2,000자)가 각주 본문으로**
+    빨려 들어갔다. 그다음 관문은 «가까운 본문에 그 숫자가 있는가» 하나뿐인데,
+    이 책엔 진짜 미주 표시(…불과하다.2,6)가 있어 2·4·8이 마침표 뒤에 나왔다.
+    그래서 통과했다. 연구자 말 — "각주와 본문이 혼재된 것 같아".
+
+    번호 중복도 구분선도 요구하지 않는 판정이라 이런 우연이 뚫린다. 그래서 쪽마다
+    되풀이되는 앞머리 낱말을 모아 두고, 각주 후보가 그것으로 시작하면 물린다.
+    되돌리는 쪽이 안전하다 — 잘못 떼어낸 본문은 되찾을 수 없다.
+    """
+    from collections import Counter
+    c: Counter = Counter()
+    for p in pages:
+        s = re.sub(r"^\d+\s*", "", " ".join(p.split()))   # 쪽번호를 뗀다
+        w = s.split()
+        for n in range(2, min(8, len(w)) + 1):
+            c[" ".join(w[:n])] += 1
+    hits = {k for k, v in c.items() if v >= min_hits and len(k) >= 6}
+    # 가장 긴 것만 남긴다 — 짧은 앞머리는 흔한 말일 수 있다
+    return {k for k in hits if not any(o != k and o.startswith(k) for o in hits)}
+
+
 def convert(text: str, has_notes: list[bool] | None = None) -> Result:
     """쪽 구분(`\\f`)이 있는 본문을 Markdown으로. 각주는 `[^n]` / `[^n]: …`.
 
@@ -457,10 +483,19 @@ def convert(text: str, has_notes: list[bool] | None = None) -> Result:
             run_mates.add((prev.page, prev.num))   # 앞 것도 같이 확정된다
         prev = nt
 
+    # 쪽마다 되풀이되는 머리글로 시작하는 후보는 각주가 아니다 (2026-08-27)
+    furniture = _running_heads(pages)
+
     linked, orphan, rejected = 0, [], []
     kept: list[Note] = []
     for nt in found:
         key = keys[id(nt)]
+        # 앞의 쪽번호를 떼고 견준다 — 「2 TECHNOLOGY AND THE VIRTUES …」처럼
+        # 번호가 한 번 더 붙어 오는 일이 있다.
+        _head_txt = re.sub(r"^\d+\s*", "", " ".join(nt.text.split()))
+        if any(_head_txt.startswith(f) for f in furniture):
+            rejected.append(nt)          # 머리글 — 본문으로 되돌린다
+            continue
         # 같은 쪽부터 앞뒤 PAIR_WINDOW쪽까지 훑어 본문 참조를 찾는다
         hit = False
         for pi in range(max(0, nt.page - PAIR_WINDOW), min(len(bodies), nt.page + PAIR_WINDOW + 1)):
