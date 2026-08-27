@@ -8,6 +8,7 @@ dist/
 build/
 /dev/*
 !/dev/build_mac_app.sh
+!/dev/build_mac_pkg.sh
 !/dev/bump_version.py
 # dev/ 안의 **문서**는 함께 관리한다 (2026-08-25) — 버전 관리 밖에 두면 백업도 이력도
 # 없고, 무엇보다 **다른 기기에서 읽을 수 없다**(PC용 실행 순서 문서가 그렇다).

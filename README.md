@@ -4,7 +4,7 @@
 PDF·DOCX·HWP·HWPX·TXT를 넣으면 번역과 요약을 거쳐 **EPUB·Word(.docx)·한글(.hwpx)·Obsidian 위키**로 내보냅니다.
 
 [![Windows 내려받기](https://img.shields.io/badge/%F0%9F%AA%9F%20Windows-Setup.exe-0078D4?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
-[![macOS 내려받기](https://img.shields.io/badge/%F0%9F%8D%8E%20macOS-.dmg-000000?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![macOS 내려받기](https://img.shields.io/badge/%F0%9F%8D%8E%20macOS-.pkg-000000?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
 
 > 🇬🇧 English manual: [README.en.md](README.en.md) · 📘 각 탭 상세: [사용 설명서](docs/MANUAL.md)
 
@@ -16,7 +16,7 @@ Windows와 macOS 모두 지원합니다. 같은 코어(`core/`)를 쓰고 **설�
 
 | | 할 일 |
 |---|---|
-| **1. 설치** | 위 배지에서 🪟 `Setup.exe` 또는 🍎 `MyBookshelf.dmg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 첫 실행 준비에 **5~20분** 걸립니다. → [자세히](#2-설치) |
+| **1. 설치** | 위 배지에서 🪟 `Setup.exe` 또는 🍎 `MyBookshelf.pkg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 첫 실행 준비에 **5~20분** 걸립니다. → [자세히](#2-설치) |
 | **2. AI 연결** | 앱의 `⚙️ 설정` 탭에서 **AI 구독(CLI)** 을 켜거나 **API 키**를 넣습니다. ChatGPT·Claude 구독이 있으면 추가 요금 없이 씁니다. → [자세히](#3-첫-설정--ai-연결) |
 | **3. 문서 넣기** | `📄 텍스트 변환` 탭에 파일을 끌어다 놓고 **[▶ 시작]**. 이후 단계는 **팝업이 물어보는 대로** 이어집니다. |
 | **4. 결과 받기** | `📖 출력` 탭에서 EPUB·Word·한글·Obsidian 중 원하는 형식을 켜고 **[▶ 시작]**. |
@@ -60,7 +60,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 | | 받을 파일 |
 |---|---|
 | 🪟 **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
-| 🍎 **macOS** | [**MyBookshelf.dmg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| 🍎 **macOS** | [**MyBookshelf.pkg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
 
 두 파일 모두 [**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지의 **Assets**에 함께 있습니다.
 
@@ -117,23 +117,27 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 #### 1단계 — 내려받기
 
-[**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지 아래 **Assets**에서 둘 중 하나를 받습니다:
+[**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지 아래 **Assets**에서 받습니다:
 
-- **`MyBookshelf-vX.Y.Z.dmg`** — 권장. 익숙한 "드래그해서 설치" 창이 열립니다.
-- `MyBookshelf-vX.Y.Z-mac.zip` — 압축을 풀면 앱 파일만 나옵니다. (별도 설치 프로그램이 없는 것이 정상 — 앱 자체가 설치를 겸합니다.)
+- **`MyBookshelf.pkg`** — 권장. 더블클릭하면 설치 관리자가 **응용 프로그램** 폴더에 넣어 줍니다.
+- `MyBookshelf.dmg` — 드래그해서 설치하는 방식이 익숙하다면 이쪽을 써도 됩니다.
+- `MyBookshelf-vX.Y.Z-mac.zip` — 압축을 풀면 앱 파일만 나옵니다.
 
 > 파일 크기가 수백 KB로 작습니다 — **정상입니다.** 파이썬 환경은 첫 실행 때 내려받습니다.
 
 #### 2단계 — 응용 프로그램에 넣기
 
-- **DMG로 받은 경우**: `.dmg`를 더블클릭 → 열린 창에서 **`MyBookshelf.app` 아이콘을 옆의 `Applications` 폴더로 드래그**합니다.
+- **`.pkg`로 받은 경우**: 더블클릭 → [계속] → [설치] → 맥 암호. 끝입니다. 이 단계에서 따로 할 일이 없습니다.
+- **`.dmg`로 받은 경우**: `.dmg`를 더블클릭 → 열린 창에서 **`MyBookshelf.app` 아이콘을 `응용 프로그램` 폴더로 드래그**합니다.
 - **zip으로 받은 경우**: 압축을 풀고 나온 `MyBookshelf.app`을 **응용 프로그램** 폴더로 옮깁니다.
+
+> ⚠️ **`.dmg`·zip으로 받았다면, 앱을 응용 프로그램 폴더로 옮긴 뒤에 실행하세요.** dmg 창 안이나 내려받기 폴더에서 바로 더블클릭하면 macOS가 앱을 임시 폴더에 가둬 실행하는 탓에 **아무 반응 없이 멈춥니다**. `.pkg`는 이 문제가 없습니다.
 
 #### 3단계 — 처음 한 번만: 보안 경고 통과 ⚠️
 
 `MyBookshelf`를 처음 열면 macOS가 *"확인되지 않은 개발자"* 경고를 띄웁니다. 개인이 만들어 나누는 프로그램이라 **Apple 서명·공증을 거치지 않았을 때 뜨는 안내**입니다. 아래 절차로 한 번만 허용하면 됩니다.
 
-> DMG로 받아도 이 단계는 같습니다 — 서명에 관한 것이라 포장 방식과는 무관합니다.
+> `.pkg`·`.dmg` 어느 쪽으로 받아도 이 단계는 같습니다 — 서명에 관한 것이라 포장 방식과는 무관합니다. `.pkg`는 설치 관리자를 처음 열 때 이 경고가 뜹니다.
 
 - **먼저 시도**: 응용 프로그램 폴더의 `MyBookshelf` 아이콘을 **우클릭(또는 control-클릭) → 열기 → (경고창에서) 열기**.
 - **위 방법으로 안 열리면**(최신 macOS는 우클릭 우회가 막혀 있음):
@@ -321,4 +325,5 @@ dev/                 빌드 스크립트 (build_mac_app.sh, bump_version.py …)
 ```
 
 - macOS 빌드: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (Spotlight 검색 제외)
+- macOS 배포본: `dev/build_mac_pkg.sh` → `MyBookshelf-vX.Y.Z.pkg` + 고정 이름 `MyBookshelf.pkg` (.app이 없거나 버전이 다르면 알아서 먼저 빌드)
 - 개발 실행(레포 코드): 각 플랫폼의 `start` 스크립트 또는 `streamlit run core/pipeline_app.py`
