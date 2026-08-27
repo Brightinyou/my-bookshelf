@@ -333,8 +333,15 @@ def _merge_dangling(paras: list[str], max_chunk: int = 3000) -> list[str]:
 
 
 def _is_footnote_block(b: str) -> bool:
-    """이 블록이 각주 문단인가 — 번호로 시작하는 짧은 글."""
+    """이 블록을 **홀로 두어야** 하는가 — 각주 문단, 또는 쪽 구분 표식.
+
+    각주: 번호로 시작하는 짧은 글. 짧다는 이유로 앞뒤 문단에 합쳐지면 안 된다.
+    쪽 구분 표식(_PAGE_TOKEN): 13자뿐이라 그냥 두면 합쳐져 사라진다 — 그러면 번역본에
+     가 남지 않고, EPUB 각주 변환기가 쪽을 못 나눠 각주를 거의 못 잡는다
+    (2026-08-27)."""
     s = b.strip()
+    if s == _PAGE_TOKEN:
+        return True
     return bool(s and len(s) < 500 and _FOOTNOTE_NUM_START.match(s))
 
 
@@ -626,10 +633,18 @@ def _paragraph_already_target(paragraph: str, threshold: float = 0.6,
     return langdetect.looks_like(p, target)
 
 
+# ★쪽 구분자()를 번역 너머로 실어 나르는 표식 (2026-08-27).
+# EPUB 각주 변환기(services/footnotes)는 **쪽 단위**로 각주 묶음을 찾는데, 번역본에는
+#  가 하나도 없어서 문서 전체를 한 쪽으로 보고 각주를 거의 못 잡았다 — 그래서 1번
+# 각주 뒤에 본문이 통째로 이어져 보였다. 번역 전에 제 문단으로 세워 두고, 번역이
+# 끝나면 다시  로 되돌린다.
+_PAGE_TOKEN = "[[PAGEBREAK]]"
+
+
 def should_skip_translation(paragraph: str) -> bool:
     """단락 번역 생략 조건: 인용·각주 (이미 목표 언어 단락은 캐시로 별도 처리)."""
     p = paragraph.strip()
-    if not p:
+    if not p or p == _PAGE_TOKEN:
         return True
     if _FOOTNOTE_DAGGER.match(p):
         return True
@@ -859,6 +874,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
     (.md인 이유: .txt면 챕터 목록 glob(??_*.txt)에 원문으로 오인된다.)"""
     try:
         text = ch_path.read_text(encoding="utf-8", errors="ignore")
+        text = text.replace("\f", "\n\n" + _PAGE_TOKEN + "\n\n")
         _suf = out_suffix()                       # 도착언어에 따라 _ko·_es …
         ko_path = ch_path.with_name(ch_path.stem + _suf + ".txt")
         bilingual_path = ch_path.with_name(ch_path.stem + "_bilingual.txt")
@@ -866,7 +882,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         progress_path = ch_path.with_name(ch_path.stem + _suf + ".progress.json")
         if not needs_translation(ch_path):
             if want_plain:
-                ko_path.write_text(text, encoding="utf-8")
+                ko_path.write_text(text.replace(_PAGE_TOKEN, "\f"), encoding="utf-8")
             partial_path.unlink(missing_ok=True)
             progress_path.unlink(missing_ok=True)
             return True, f"이미 {target_language_name()} — 그대로 복사"
@@ -963,9 +979,13 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             partial_path.unlink(missing_ok=True)
             return False, detail + f" — 유효한 {target_language_name()} 번역 결과가 없습니다"
         if want_plain:
-            ko_path.write_text("\n\n".join(out), encoding="utf-8")
+            ko_path.write_text("\n\n".join(out).replace(_PAGE_TOKEN, "\f"),
+                               encoding="utf-8")
         if want_bilingual:
-            _save_bilingual_atomic(bilingual_path, [f"{src}\n\n{tgt}" for src, tgt in bilingual_pairs])
+            _save_bilingual_atomic(
+                bilingual_path,
+                [(src + "\n\n" + tgt).replace(_PAGE_TOKEN, "\f")
+                 for src, tgt in bilingual_pairs])
         # 챕터 제목도 번역해 사이드카로 저장 — 본문은 번역돼도 파일명에서 뽑는 장 제목은
         # 그대로 영문으로 남아있던 문제(EPUB 등에서 노출) 수정 (2026-08-11).
         # 파일명이 언어 접미사로 끝나서, 챕터 목록의 파생물 필터(is_derived)에 걸린다.

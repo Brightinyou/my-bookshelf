@@ -115,3 +115,22 @@ class FootnoteBlockKeptTest(unittest.TestCase):
         """짧다고 버리면 본문이 사라진다 — 그 동작은 지켜야 한다."""
         blocks = ["짧은 줄", "또 짧은 줄", "세 번째 짧은 줄"]
         self.assertLess(len(tr._merge_short_blocks(blocks, 50)), len(blocks))
+
+
+class PageBreakSurvivesTest(unittest.TestCase):
+    """쪽 구분자(\f)가 번역을 넘어 살아남는가 — services/translate.
+
+    2026-08-27. EPUB 각주 변환기(services/footnotes)는 **쪽 단위**로 각주 묶음을
+    찾는데, 번역본에 \f 가 하나도 없어 문서 전체를 한 쪽으로 보고 각주를 거의 못
+    잡았다 — 1번 각주 뒤에 본문이 통째로 이어져 보였다. 챕터 원문에는 \f 가 있었다.
+    """
+
+    BODY = ["본문 문단이 충분히 깁니다. " * 5 for _ in range(5)]
+
+    def test_표식이_제_문단으로_살아남는다(self):
+        txt = ("\n\n".join(self.BODY[:2]) + "\n\n" + tr._PAGE_TOKEN + "\n\n"
+               + "\n\n".join(self.BODY[2:]))
+        self.assertIn(tr._PAGE_TOKEN, tr._split_paragraphs_robust(txt))
+
+    def test_표식은_번역하지_않는다(self):
+        self.assertTrue(tr.should_skip_translation(tr._PAGE_TOKEN))

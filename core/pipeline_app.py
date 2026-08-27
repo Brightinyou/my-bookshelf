@@ -1140,50 +1140,6 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
                        toc_svc.printed_label(_pdf, _pages)))
 
 
-def _render_chapter_split(key: str, book: str) -> None:
-    """장 나누기 — **보면서 고른다** (2026-08-26, 채팅을 대신한다).
-
-    ★예전에는 말로 시켰다: "'정든 인공지능과' 앞에서 나눠줘". 화면에 보이지도 않는
-    본문 문구를 외워서 정확히 쳐야 했고, AI가 해석해 제안을 내면 그걸 또 확인해야
-    했다 — 타이핑·해석·제안·실행 네 단계. 채팅이 할 수 있던 나머지(제목 바꾸기·앞
-    장에 합치기)는 위 표에서 이미 더 빠르게 되고, '다시 나누기'는 실행조차 안 했다.
-    그래서 채팅을 걷어내고 **유일하게 표에 없던 '나누기'만** 여기로 옮겼다.
-
-    후보 줄은 chapter_map.split_candidates가 고른다 — 문장부호로 끝나지 않는 짧은
-    줄, 곧 '제목처럼 생긴 줄'이다. 수백 개가 나오면 고르게 솎아 내므로 필요한 줄이
-    빠질 수 있다. 그때는 검색어로 좁힌다(솎아 내지 않는다)."""
-    files = cmap.chapter_files(DEFAULT_WS, book)
-    if not files:
-        return
-    with st.expander("✂️ " + t("장 나누기 — 한 장이 둘 이상 붙어 있을 때")):
-        _labels = {i: f"{f.stem[:2]}. {cmap.chapter_title(f)} "
-                      f"({len(f.read_text(encoding='utf-8', errors='ignore')):,}자)"
-                   for i, f in enumerate(files)}
-        _idx = st.selectbox(t("나눌 장"), list(range(len(files))),
-                            format_func=lambda i: _labels[i], key=f"{key}_sp_ch_{book}")
-        _q = st.text_input(t("찾는 문구 (선택 — 후보가 많을 때 좁히기)"),
-                           key=f"{key}_sp_q_{book}", placeholder=t("예: 정든 인공지능과"))
-        _cands, _total = cmap.split_candidates(DEFAULT_WS, book, _idx, query=_q)
-        if not _cands:
-            st.caption(t("나눌 만한 자리를 찾지 못했습니다 — 검색어를 바꿔 보세요.")
-                       if _q else t("이 장에서는 새 장이 시작될 만한 줄을 찾지 못했습니다."))
-            return
-        if _total > len(_cands):
-            st.caption(tf("후보 %d개 중 %d개를 고르게 뽑아 보여 줍니다 — 찾는 줄이 없으면 "
-                          "위에 그 문구를 넣어 좁히세요.", _total, len(_cands)))
-        _pick = st.radio(t("여기서부터 새 장이 시작됩니다"), [p for p, _ in _cands],
-                         format_func=lambda p: dict(_cands)[p][:70],
-                         key=f"{key}_sp_at_{book}")
-        _title = st.text_input(t("새 장 제목 (비우면 그 줄을 제목으로)"),
-                               key=f"{key}_sp_t_{book}")
-        if st.button(t("여기서 나누기"), icon=":material/content_cut:",
-                     key=f"{key}_sp_go_{book}", type="primary"):
-            if cmap.split_chapter(DEFAULT_WS, book, _idx, _pick, _title.strip()):
-                st.success(t("장을 나눴습니다."))
-                st.rerun()
-            st.error(t("나누지 못했습니다 — 다른 자리를 골라 보세요."))
-
-
 def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = None) -> None:
     """장 목록을 보여주고 고치는 화면 (2026-08-17).
 
@@ -1304,7 +1260,7 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
     # 화면에 남아 있어 다음에 무엇을 할지가 보이지 않았다.
     _next_view = "3_translate" if _route_translate(book) else "4_summary"
     _next_name = t("번역") if _next_view == "3_translate" else t("문서요약")
-    b1, b2, b3 = st.columns([1.8, 1.2, 1.0])
+    b1, b2, b3 = st.columns([2, 1, 1])
     if b1.button(tf("확정하고 %s(으)로", _next_name), icon=":material/check_circle:",
                  key=f"{key}_confirm", use_container_width=True, type="primary",
                  help=t("표에서 고친 것을 저장하고 장 구분을 확정한 뒤 다음 단계로 넘어갑니다.")):
@@ -1330,124 +1286,12 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
     if not full:
         return
 
+    # ★«✂️ 장 나누기»는 뺐다 (2026-08-27 연구자 요청 — "복잡해서 어려울 것 같다").
+    # 나누기가 필요하면 목차를 붙여넣어 다시 나누는 아래 방법이 더 쉽다.
     st.divider()
-    _render_chapter_split(key, book)
-    st.divider()
 
-    # ── 📖 PDF 차례에서 가져오기 (2026-08-17) ────────────────────
-    # 앞부분 40~55쪽을 통째로 AI에 던지는 대신, 사람이 차례 쪽을 짚어 주고 그 쪽만
-    # 읽힌다. 결과는 아래 "목차 붙여넣기" 칸에 채워져 그대로 이어진다.
-    _pdf_p = cfg.PDF_DIR / f"{book}.pdf"
-    with st.expander("📖 " + t("PDF 차례에서 가져오기 — 차례 쪽을 짚어 주세요")):
-        if not _pdf_p.exists():
-            st.info(t("이 책의 원본 PDF를 찾지 못했습니다.") + f"  ({_pdf_p})")
-        else:
-            _src_txt = ""
-            for _c in (cfg.TXT_ARCHIVE_DIR / f"{book}.txt", cfg.TXT_DIR / f"{book}.txt"):
-                if _c.exists():
-                    _src_txt = _c.read_text(encoding="utf-8", errors="ignore")
-                    break
-            _sugg = toc_svc.toc_page_candidates(_src_txt) if _src_txt else []
-            _n_show = st.slider(t("앞에서 몇 쪽까지 볼까요"), 8, 40, 24, key=f"{key}_pgn_{book}")
-            _sel_key = f"{key}_pgsel_{book}"
-            _opts = list(range(1, _n_show + 1))
-            if _sel_key not in st.session_state:
-                st.session_state[_sel_key] = [i + 1 for i in _sugg[:2] if i + 1 in _opts]
-            else:   # 보는 범위를 줄이면 범위 밖 선택은 떨어뜨린다 (위젯 오류 방지)
-                st.session_state[_sel_key] = [p for p in st.session_state[_sel_key] if p in _opts]
-            _picked = st.multiselect(
-                t("차례가 있는 쪽 (1-기반)"), _opts, key=_sel_key,
-                help=t("보통 한두 쪽입니다. 차례가 여러 쪽에 걸쳐 있으면 모두 고르세요"))
-            if _sugg:
-                st.caption("💡 " + tf("텍스트에서 '차례'를 찾은 쪽: %s",
-                                      ", ".join(str(i + 1) for i in _sugg)))
-            try:
-                _thumbs = toc_svc.page_previews(_pdf_p, list(range(_n_show)))
-            except Exception as _e_th:
-                _thumbs = []
-                st.warning(t("미리보기를 만들지 못했습니다.") + f" ({type(_e_th).__name__})")
-            if _thumbs:
-                for _r0 in range(0, len(_thumbs), 6):
-                    _tc = st.columns(6)
-                    for _ci, (_pi, _png) in enumerate(_thumbs[_r0:_r0 + 6]):
-                        with _tc[_ci]:
-                            st.image(_png, use_container_width=True)
-                            _mark = "✅" if (_pi + 1) in _picked else ("💡" if _pi in _sugg else "")
-                            st.caption(f"{_mark} {_pi + 1}" + t("쪽"))
-            _rc1, _rc2 = st.columns(2)
-            _idxs = [p - 1 for p in sorted(_picked)]
-            if _rc1.button(t("텍스트로 읽기"), icon=":material/description:",
-                           key=f"{key}_readtxt_{book}", use_container_width=True,
-                           disabled=not _idxs or not _src_txt):
-                st.session_state[f"{key}_toc_{book}"] = toc_svc.toc_page_text(_pdf_p, _src_txt, _idxs)
-                st.rerun()
-            if _rc2.button(t("AI로 이미지 판독"), icon=":material/visibility:", type="primary",
-                           key=f"{key}_readai_{book}", use_container_width=True, disabled=not _idxs):
-                with st.spinner(t("차례를 읽는 중…")):
-                    _titles_ai, _msg_ai = toc_svc.read_toc_pages_ai(_pdf_p, _idxs)
-                if _titles_ai:
-                    st.session_state[f"{key}_toc_{book}"] = "\n".join(_titles_ai)
-                    st.success(_msg_ai)
-                    st.rerun()
-                else:
-                    st.error(_msg_ai)
-            st.caption(t("스캔본이라 글자가 깨져 있으면 «AI로 이미지 판독»을 쓰세요. "
-                         "읽어낸 목차는 아래 «목차 붙여넣기» 칸에 채워집니다."))
-
-    with st.expander("📋 " + t("목차 붙여넣기 — 장을 한 번에 다시 나눕니다")):
-        st.caption(t("책 앞의 차례를 그대로 붙여넣으세요. 쪽번호·점선은 알아서 뗍니다. "
-                     "제목을 본문에서 찾아 그 자리에서 자릅니다."))
-        toc_raw = st.text_area(t("차례"), key=f"{key}_toc_{book}", height=180,
-                               placeholder="제1장 유럽에서의 정의 이념의 붕괴 … 23\n제2장 연구의 의의 … 37")
-        toc_entries = cmap.parse_toc_entries(toc_raw)
-        _n_pg = sum(1 for _t, _p in toc_entries if _p)
-        if toc_entries:
-            st.caption(tf("제목 %d개를 읽었습니다:", len(toc_entries))
-                       + " " + " · ".join(x for x, _ in toc_entries[:8])
-                       + (" …" if len(toc_entries) > 8 else "")
-                       + (f"  ·  {t('쪽번호가 있는 항목')} {_n_pg}" if _n_pg else ""))
-        # 쪽번호가 있으면 보정값(앵커)을 스스로 구해 제목을 못 찾은 장까지 자리를 잡는다.
-        # 자동 추정이 어긋나면 여기서 손으로 지정한다.
-        _man_off = None
-        if _n_pg >= 2:
-            _use_man = st.checkbox(t("쪽 보정값을 직접 지정"), key=f"{key}_manoff_on_{book}",
-                                   help=t("차례의 쪽번호와 PDF 쪽이 얼마나 어긋나는지. "
-                                          "보통은 비워 두면 앱이 알아서 맞춥니다"))
-            if _use_man:
-                _man_off = st.number_input(t("보정값 (PDF 쪽 − 차례 쪽)"), -200, 200, 0,
-                                           key=f"{key}_manoff_{book}")
-        if st.button(t("이 목차로 다시 나누기"), icon=":material/format_list_numbered:",
-                     key=f"{key}_tocgo_{book}", disabled=len(toc_entries) < 2):
-            ok_t, msg_t = cmap.apply_toc(DEFAULT_WS, book, toc_entries, manual_offset=_man_off)
-            (st.success if ok_t else st.error)(msg_t)
-            if ok_t:
-                st.rerun()
-
-    with st.expander("✂️ " + t("여기서 나누기 — 두 장이 한 덩어리로 붙었을 때")):
-        sp_idx = st.selectbox(
-            t("나눌 장"), list(range(len(files))), key=f"{key}_spch_{book}",
-            format_func=lambda i: f"{files[i].stem[:2]}. {cmap.chapter_title(files[i])}")
-        sp_q = st.text_input(
-            t("줄 검색 (새 장 제목의 한 토막)"), key=f"{key}_spq_{book}",
-            placeholder=t("예: 인공지능 — 비워 두면 문서 전체에서 고르게 보여 줍니다"),
-            help=t("목록은 고르게 솎아 낸 것이라 원하는 줄이 빠질 수 있습니다. "
-                   "새 장 첫 줄에 있을 만한 말을 넣어 찾으세요."))
-        cands, sp_total = cmap.split_candidates(DEFAULT_WS, book, sp_idx, query=sp_q)
-        if not cands:
-            st.info(t("이 장에서는 새 장이 시작될 만한 줄을 찾지 못했습니다."))
-        else:
-            if sp_total > len(cands):
-                st.caption(t("후보 {total}줄 중 {shown}줄만 보입니다 — 검색어를 좁혀 보세요.")
-                           .format(total=f"{sp_total:,}", shown=len(cands)))
-            pick = st.selectbox(t("새 장이 시작되는 줄"), cands, key=f"{key}_spline_{book}",
-                                format_func=lambda c: f"{c[0]:>7,}자 · {c[1][:60]}")
-            sp_title = st.text_input(t("새 장 제목"), value=pick[1][:50], key=f"{key}_sptitle_{book}")
-            if st.button(t("이 줄에서 나누기"), icon=":material/content_cut:", key=f"{key}_spgo_{book}"):
-                if cmap.split_chapter(DEFAULT_WS, book, sp_idx, pick[0], sp_title):
-                    st.success(t("장을 나눴습니다.")); st.rerun()
-                else:
-                    st.error(t("나누지 못했습니다 — 다른 줄을 골라 보세요."))
-
+    # ★«📖 PDF 차례에서 가져오기»·«📋 목차 붙여넣기»는 뺐다 (2026-08-27 연구자 요청).
+    # 장을 다시 나눌 일이 있으면 분할 탭에서 그 책을 다시 처리하는 편이 단순하다.
 
 def _queue_book_chapters_for_next_stage(ws_name: str, stem: str) -> list[str]:
     chapter_rels = _chapter_rel_paths(ws_name, stem)
