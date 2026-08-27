@@ -13,13 +13,13 @@ Runs on both Windows and macOS. The same core (`core/`) is shared and **only the
 
 ## 1. What it does
 
-Feed a book or paper as PDF/DOCX/HWP/HWPX/TXT, and it produces **readable summary Wiki notes** saved into your Obsidian vault through these stages:
+Feed in a book, paper, or manuscript as PDF/DOCX/HWP/HWPX/TXT, and it produces **readable summary Wiki notes** through these stages. (They can be saved into your Obsidian vault.)
 
 ```
 PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translation (when source differs from target)  →  Summaries  →  EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki
 ```
 
-- **PDF** must be text-based (has a text layer), not a raw scan (scanned PDFs need OCR first). **DOCX, HWP, HWPX and TXT** are processed as-is.
+- **PDF** works directly when it has a text layer. **Scanned PDFs, and PDFs with poor OCR, also work** — the «🔬 Text quality check» in the Text conversion tab flags them and **re-reads them with AI** (a few minutes to tens of minutes, depending on page count). **DOCX, HWP, HWPX and TXT** are processed as-is.
 - Translation, summarization and Wiki generation use **AI**: enter an API key, or enable a Claude/ChatGPT subscription CLI.
 - Notes include the **author, a key summary, per-chapter overview, key quotes and key keywords** (with explanations); dense source texts are made readable by glossing terms in the original language and paraphrasing in plain language.
 
@@ -281,7 +281,7 @@ Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`).
 
 - **"No AI available"** — enter an API key or enable a CLI subscription (Claude/Codex) in `⚙️ Settings`.
 - **Old screen after an update** — fully quit the app and reopen it (a server may still be running).
-- **Scanned PDFs** — OCR scans into a text PDF/TXT first, then feed them in.
+- **Scanned PDFs** — feed them in as they are. If the text comes out badly, use «🔬 Text quality check» in the Text conversion tab to re-read them with AI.
 - (Windows) For install/launch errors, check `install.log` / `launch-error.log` in the install folder.
 
 ---
