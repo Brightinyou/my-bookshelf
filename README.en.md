@@ -2,9 +2,12 @@
 
 **A personal research tool that turns PDF/DOCX/HWP/HWPX/TXT documents into EPUB e-books, Word documents, Hangul (HWPX) documents, and Obsidian Wiki notes** — Text conversion → Chapter split → Translation → Summaries → **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki**, in one flow.
 
+[![Download for Windows](https://img.shields.io/badge/%F0%9F%AA%9F%20Windows-Setup.exe-0078D4?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![Download for macOS](https://img.shields.io/badge/%F0%9F%8D%8E%20macOS-.dmg-000000?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+
 > 🇰🇷 한국어 설명서: [README.md](README.md)
 
-This repository shares one core (`core/`) across macOS and Windows. Only the installation differs by platform.
+Runs on both Windows and macOS. The same core (`core/`) is shared and **only the installation differs** — in [2. Installation](#2-installation), read the part for your operating system.
 
 ---
 

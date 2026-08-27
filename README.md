@@ -2,8 +2,8 @@
 
 **PDF·DOCX·HWP·HWPX·TXT 문서를 Word·한글(HWPX) 문서·Obsidian 위키 노트로 바꾸는 개인 연구 도구** — 텍스트 변환 → 챕터 분할 → (도착언어가 아닌 문서) 번역 → 문서 요약 → **EPUB·Word(.docx)·한글(.hwpx) 내보내기·Obsidian Wiki 반영(모두 가능)**을 한 흐름으로 처리합니다.
 
-[![Windows 내려받기](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
-[![macOS 내려받기](https://img.shields.io/badge/macOS-.dmg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![Windows 내려받기](https://img.shields.io/badge/%F0%9F%AA%9F%20Windows-Setup.exe-0078D4?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![macOS 내려받기](https://img.shields.io/badge/%F0%9F%8D%8E%20macOS-.dmg-000000?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
 
 > 🇬🇧 English manual: [README.en.md](README.en.md)
 
