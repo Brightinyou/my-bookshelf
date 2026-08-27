@@ -185,38 +185,140 @@ def _with_footnotes(text: str) -> tuple[str, str]:
 
     각주를 찾는 일은 services/footnotes.convert가 이미 한다 — 그 결과(Markdown)를
     받아 표시만 바꾼다. **찾는 규칙을 두 벌로 만들지 않는다.**"""
+    body_md, defs = _footnote_parts(text)
+    body, used = _link_body(_body_html(body_md), defs)
+    # 정의 순서를 지키고, 표시를 못 찾은 각주는 되돌아가기 화살표만 뺀다
+    return body, _notes_section([(k, v, k in used) for k, v in defs.items()])
+
+
+def _fid(k: str) -> str:
+    """각주 번호를 XML id로 쓸 수 있게 다듬는다."""
+    return re.sub(r"[^0-9A-Za-z_-]", "_", k)
+
+
+def _footnote_parts(text: str) -> tuple[str, dict]:
+    """(각주를 걷어낸 본문 Markdown, {번호: 각주 본문})."""
     try:
         from services import footnotes as _fn
         md = _fn.convert(text).markdown
     except Exception:
         md = text
     defs = {k: v.strip() for k, v in _FN_DEF.findall(md)}
-    body_md = _FN_DEF.sub("", md).strip()
+    return _FN_DEF.sub("", md).strip(), defs
 
+
+def _body_html(body_md: str) -> str:
     paras = [html.escape(p.strip()).replace("\n", "<br/>")
              for p in re.split(r"\n\s*\n", body_md) if p.strip()]
-    body = "\n".join(f"<p>{p}</p>" for p in paras) or "<p></p>"
+    return "\n".join(f"<p>{p}</p>" for p in paras) or "<p></p>"
+
+
+def _link_body(body: str, defs: dict) -> tuple[str, list[str]]:
+    """본문의 [^N]을 각주 링크로 바꾼다. (바뀐 본문, 실제로 쓰인 번호들 — 나온 순서)"""
+    used: list[str] = []
 
     def _ref(m):
         k = m.group(1)
         if k not in defs:
             return m.group(0)
-        kid = re.sub(r"[^0-9A-Za-z_-]", "_", k)
-        return (f'<a epub:type="noteref" href="#fn-{kid}" id="ref-{kid}" '
+        if k not in used:
+            used.append(k)
+        return (f'<a epub:type="noteref" href="#fn-{_fid(k)}" id="ref-{_fid(k)}" '
                 f'class="noteref"><sup>{html.escape(k)}</sup></a>')
-    body = _FN_REF.sub(_ref, body)
+    return _FN_REF.sub(_ref, body), used
 
+
+def _notes_section(items: list[tuple[str, str, bool]]) -> str:
+    """[(번호, 본문, 되돌아가기 화살표를 달까)] → 각주 구역 HTML."""
+    if not items:
+        return ""
     notes = "\n".join(
-        f'<aside epub:type="footnote" id="fn-{re.sub(r"[^0-9A-Za-z_-]", "_", k)}" '
-        f'class="footnote"><p><sup>{html.escape(k)}</sup> {html.escape(v)} '
-        f'<a href="#ref-{re.sub(r"[^0-9A-Za-z_-]", "_", k)}" class="backref">↩</a></p></aside>'
-        for k, v in defs.items())
-    return body, (f'\n<section epub:type="footnotes" class="footnotes">\n{notes}\n</section>'
-                  if notes else "")
+        f'<aside epub:type="footnote" id="fn-{_fid(k)}" class="footnote">'
+        f'<p><sup>{html.escape(k)}</sup> {html.escape(v)}'
+        + (f' <a href="#ref-{_fid(k)}" class="backref">↩</a>' if back else "")
+        + "</p></aside>"
+        for k, v, back in items)
+    return f'\n<section epub:type="footnotes" class="footnotes">\n{notes}\n</section>'
 
 
-def _chapter_xhtml(title: str, text: str) -> str:
-    body, notes = _with_footnotes(text)
+# 다른 장에 정의가 있는 각주 번호를 본문에서 찾아낼 때 쓰는 잣대.
+# services/footnotes._REF_IN_TEXT 와 같되 **뒤에 한글이 와도 인정**한다 — 번역본은
+# 「…강함이라.”36라고 선택한」처럼 번호 뒤에 곧바로 한글이 붙는 일이 흔하다.
+_ADOPT_REF = re.compile(r"(?<=[.,!?)\]”’\"'가-힣])(\d{1,3})(?=[\s.,)\]”’가-힣]|$)")
+
+
+def _adopt_missing_refs(parts: list[tuple[str, dict]],
+                        defs_all: dict) -> list[tuple[str, dict]]:
+    """어느 장에서도 표시를 못 찾은 각주를, 본문에서 그 번호를 찾아 이어 준다.
+
+    ★services/footnotes.convert 는 **같은 글 안에 정의가 있는 번호만** 표시로
+    바꾼다. 논문 PDF는 쪽 아래 각주가 다음 장 제목 뒤로 밀려 나오는 일이 흔해서
+    표시는 앞 장에, 정의는 뒷 장에 갈리곤 한다. Dorobantu 논문이 그랬다 —
+    「…우리를 동물과 구별한다.34」는 03장에, 그 정의는 04장에 있었다.
+
+    책 전체를 한 덩어리로 변환해 보기도 했는데 본문이 뒤섞여 못 쓴다(실측: 49k →
+    25k자). 그래서 장별 변환은 그대로 두고, **정의는 있는데 표시가 어디에도 없는
+    번호**만 골라 본문에서 그 자리를 찾아 붙인다. 대상이 좁아 오검출 위험이 적다 —
+    이미 각주로 확인된 번호이고, 번호마다 첫 자리 한 곳에만 붙인다.
+    """
+    marked = set()
+    for body_md, _defs in parts:
+        marked.update(_FN_REF.findall(body_md))
+    want = {k for k in defs_all if k not in marked}
+    if not want:
+        return parts
+
+    out: list[tuple[str, dict]] = []
+    for body_md, defs in parts:
+        def _sub(m):
+            k = m.group(1)
+            if k in want:
+                want.discard(k)             # 번호마다 첫 자리 한 곳만
+                return f"[^{k}]"
+            return m.group(0)
+        out.append((_ADOPT_REF.sub(_sub, body_md), defs))
+    return out
+
+
+def _book_chapter_bodies(parts: list[tuple[str, dict]]) -> list[tuple[str, str]]:
+    """책 전체를 한꺼번에 보고 장별 (본문 HTML, 각주 HTML)을 만든다.
+
+    ★각주를 **제 표시가 있는 장으로 데려온다** (2026-08-27 연구자 보고 —
+    "이펍책의 23, 33, 34, 35, 36번이 각주와 연결안되어 있어").
+
+    지금까지는 장마다 따로 각주를 맞췄다. 그런데 논문 PDF는 쪽 아래 각주가
+    **다음 장 제목 뒤로 밀려** 나오는 일이 흔하다. Dorobantu 논문이 그랬다 —
+    34·35·36번 표시는 03장 끝에 있는데 그 정의는 04장 첫머리에 실렸다. 장별로
+    맞추니 서로 만나지 못해 표시는 [^34] 그대로 남고 각주는 홀로 떠 있었다.
+
+    이제 정의는 책 전체에서 모으고, 각주는 **표시를 만난 장에** 싣는다. 그러면
+    링크가 같은 파일 안에서 닫히므로 되돌아가기 화살표도 제대로 걸린다.
+    어느 장에서도 표시를 못 찾은 정의는 제가 실렸던 장에 그대로 남겨 둔다 —
+    내용을 잃지 않기 위해서다(화살표만 뺀다).
+    """
+    defs_all: dict = {}
+    for _body_md, defs in parts:
+        for k, v in defs.items():
+            defs_all.setdefault(k, v)
+    # 장이 갈리며 표시를 잃은 각주를 본문에서 찾아 이어 준다
+    parts = _adopt_missing_refs(parts, defs_all)
+
+    bodies, used_per_ch, claimed = [], [], set()
+    for body_md, _defs in parts:
+        body, used = _link_body(_body_html(body_md), defs_all)
+        bodies.append(body)
+        used_per_ch.append(used)
+        claimed.update(used)
+
+    out: list[tuple[str, str]] = []
+    for idx, (_body_md, defs) in enumerate(parts):
+        items = [(k, defs_all[k], True) for k in used_per_ch[idx]]
+        items += [(k, v, False) for k, v in defs.items() if k not in claimed]
+        out.append((bodies[idx], _notes_section(items)))
+    return out
+
+
+def _chapter_xhtml_parts(title: str, body: str, notes: str) -> str:
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">\n'
@@ -224,6 +326,11 @@ def _chapter_xhtml(title: str, text: str) -> str:
         '<link rel="stylesheet" type="text/css" href="../styles/style.css"/></head>\n'
         f"<body>\n<h1>{html.escape(title)}</h1>\n{body}{notes}\n</body>\n</html>"
     )
+
+
+def _chapter_xhtml(title: str, text: str) -> str:
+    body, notes = _with_footnotes(text)
+    return _chapter_xhtml_parts(title, body, notes)
 
 
 _CITATION_RE = re.compile(
@@ -311,6 +418,8 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
     book_id = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_DNS, f'mybookshelf-epub-{stem}')}"
 
     manifest_items, spine_items, nav_items, ncx_points, text_entries = [], [], [], [], []
+    chapter_parts: list[tuple[str, dict]] = []   # 장별 (본문 md, 각주 정의)
+    chapter_slots: list[tuple[str, str]] = []    # 장별 (파일 이름, 제목)
     first_text = ""
     for i, ch_path in enumerate(chapters, 1):
         # 부(部)가 지정된 책은 "제1부 원리론 · 정의와 평등"처럼 앞에 부를 붙인다
@@ -339,7 +448,10 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
         if i == 1:
             first_text = text
         fname = f"chap{i:03d}.xhtml"
-        text_entries.append((f"OEBPS/text/{fname}", _chapter_xhtml(ch_title, text)))
+        # ★각주는 책 전체를 본 뒤에 붙인다 — 표시와 정의가 다른 장에 갈릴 수 있어서
+        #   (아래 _book_chapter_bodies 주석 참고). 여기서는 재료만 모아 둔다.
+        chapter_parts.append(_footnote_parts(text))
+        chapter_slots.append((f"OEBPS/text/{fname}", ch_title))
         manifest_items.append(
             f'<item id="chap{i:03d}" href="text/{fname}" media-type="application/xhtml+xml"/>')
         spine_items.append(f'<itemref idref="chap{i:03d}"/>')
@@ -348,6 +460,12 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
         ncx_points.append(
             f'<navPoint id="np{i}" playOrder="{i}"><navLabel><text>{esc_title}</text></navLabel>'
             f'<content src="text/{fname}"/></navPoint>')
+
+    # 책 전체를 본 뒤에 장별 본문·각주를 만든다 — 표시와 정의가 다른 장에 갈려도
+    # 이어 붙기 위해서다.
+    for (fname, ch_title), (body, notes) in zip(chapter_slots,
+                                                _book_chapter_bodies(chapter_parts)):
+        text_entries.append((fname, _chapter_xhtml_parts(ch_title, body, notes)))
 
     # ★표지 면을 맨 앞에 둔다 (2026-08-27 연구자 요청: "책/논문 제목, 저자,
     # 서지정보까지 제일 처음에 표시해 주면 좋겠다").
