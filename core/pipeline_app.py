@@ -1105,7 +1105,9 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
     # ── 긴 책: 차례 쪽을 짚는다 ────────────────────────────────────────
     _sugg = toc_svc.toc_page_candidates(_book_source_text(book)) or []
     _skey = f"{key}_tocpg_{book}"
-    _default = [i + 1 for i in _sugg[:2] if i + 1 <= 40]      # 못 찾으면 비워 둔다
+    # ★후보 전부를 연다 (2026-08-27). [:2] 로 잘라 두어서 차례가 세 쪽 이상인 책은
+    #   마지막 쪽이 안 열렸고, 장 구분을 끝까지 견줄 수가 없었다.
+    _default = [i + 1 for i in _sugg if i + 1 <= 40]          # 못 찾으면 비워 둔다
     with st.expander("📖 " + t("차례 쪽 고르기") + (
             tf(" — 차례로 보이는 쪽: %s", ", ".join(str(i + 1) for i in _sugg)) if _sugg else ""),
             expanded=not _sugg):

@@ -68,3 +68,45 @@ class PagesPdfTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 여러쪽차례Test(unittest.TestCase):
+    """차례가 두 쪽을 넘으면 이어지는 쪽까지 올린다 (2026-08-27 연구자 지적).
+
+    연구자 말 — "Technology and the Virtues_셰넌 발러 책의 경우는 목차페이지가
+    2페이지 이상이라 마지막을 눈으로 검증하지 못했어".
+
+    예전 _add() 는 (i, i+1) 딱 두 쪽만 올렸다. 표제(CONTENTS)는 첫 쪽에만 있으므로
+    이어짐은 «쪽번호로 끝나는 줄이 여럿» 으로 판정한다.
+    """
+
+    @staticmethod
+    def _page(lines):
+        return "\n".join(lines)
+
+    def _doc(self, pages):
+        return "\f".join(pages)
+
+    def test_세쪽짜리_차례를_끝까지_올린다(self):
+        toc_pg = self._page(["CONTENTS", "Introduction ... 1", "Chapter One ... 11",
+                             "Chapter Two ... 33", "Chapter Three ... 55"])
+        cont = self._page(["Chapter Four ... 77", "Chapter Five ... 99",
+                           "Chapter Six ... 120", "Notes ... 145", "Index ... 190"])
+        cont2 = self._page(["Appendix A ... 201", "Appendix B ... 210",
+                            "Bibliography ... 220", "Credits ... 240", "More ... 250"])
+        body = self._page(["본문이 시작된다. 아주 긴 문장이 이어진다.", "두 번째 문단이다."])
+        got = toc_svc.toc_page_candidates(self._doc(["표지", toc_pg, cont, cont2, body, body]))
+        self.assertEqual(got, [1, 2, 3], "차례 세 쪽이 모두 올라와야 한다")
+
+    def test_본문에서_멈춘다(self):
+        """차례가 한 쪽뿐이면 본문까지 끌어오지 않는다 — 바로 다음 쪽만 덤으로."""
+        toc_pg = self._page(["CONTENTS", "Introduction ... 1", "Chapter One ... 11",
+                             "Chapter Two ... 33"])
+        body = self._page(["본문이 시작된다. 아주 긴 문장이 이어진다.", "두 번째 문단이다.",
+                           "세 번째 문단."])
+        got = toc_svc.toc_page_candidates(self._doc(["표지", toc_pg, body, body, body]))
+        self.assertEqual(got, [1, 2], "차례 쪽과 그 다음 쪽까지만")
+
+
+if __name__ == "__main__":
+    unittest.main()

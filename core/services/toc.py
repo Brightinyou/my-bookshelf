@@ -698,10 +698,33 @@ def toc_page_candidates(txt: str, limit: int = 6) -> list[int]:
     pages = txt.split("\f")
     hits: list[int] = []
 
+    def _looks_like_toc(page: str) -> bool:
+        """쪽번호로 끝나는 줄이 여럿 모여 있으면 차례(의 이어짐)로 본다."""
+        lines = [ln for ln in page.splitlines() if ln.strip()]
+        return len(lines) >= 4 and sum(1 for ln in lines if _TOC_LINE.search(ln)) >= 4
+
     def _add(i: int) -> None:
-        for j in (i, i + 1):
-            if 0 <= j < len(pages) and j not in hits:
+        """차례 첫 쪽과 **이어지는 쪽 전부**를 올린다.
+
+        ★예전에는 (i, i+1) 딱 두 쪽만 올렸다 (2026-08-27 연구자 지적 —
+        "차례페이지가 2페이지 이상이라 마지막을 눈으로 검증하지 못했어").
+        『Technology and the Virtues』처럼 차례가 세 쪽을 넘으면 마지막 쪽이 아예
+        안 열려 장 구분을 끝까지 견줄 수가 없었다. 이제 다음 쪽이 차례처럼 보이는
+        동안 계속 붙인다 — 표제(차례·CONTENTS)는 첫 쪽에만 있으므로 이어짐은
+        «쪽번호로 끝나는 줄» 로 판정한다.
+        """
+        if 0 <= i < len(pages) and i not in hits:
+            hits.append(i)
+        j, extra = i + 1, 0
+        while 0 <= j < len(pages) and extra < 4:
+            # 바로 다음 쪽은 늘 붙인다 — 표제 쪽에 항목이 거의 없는 차례가 있다.
+            # 그 뒤로는 차례처럼 보이는 동안만 이어 간다.
+            if j not in hits and (extra == 0 or _looks_like_toc(pages[j])):
                 hits.append(j)
+                extra += 1
+                j += 1
+                continue
+            break
 
     for i, p in enumerate(pages[:40]):
         if re.search(r"차례|목차|CONTENTS", re.sub(r"\s+", "", p[:400]), re.I):
