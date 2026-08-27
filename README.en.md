@@ -3,8 +3,8 @@
 **A personal research tool that turns books, papers and manuscripts into readable summary notes and e-books.**
 Feed it PDF/DOCX/HWP/HWPX/TXT and it translates, summarises, and exports to **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki**.
 
-[![Download for Windows](https://img.shields.io/badge/%F0%9F%AA%9F%20Windows-Setup.exe-0078D4?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
-[![Download for macOS](https://img.shields.io/badge/%F0%9F%8D%8E%20macOS-.dmg-000000?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![Download for Windows](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjJ2OC4ySDNWM3ptOS44IDBIMjF2OC4yaC04LjJWM3pNMyAxMi44aDguMlYyMUgzdi04LjJ6bTkuOCAwSDIxVjIxaC04LjJ2LTguMnoiLz48L3N2Zz4K)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![Download for macOS](https://img.shields.io/badge/macOS-.pkg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
 
 > 🇰🇷 한국어 설명서: [README.md](README.md) · 📘 Every tab in detail: [User manual](docs/MANUAL.en.md)
 
@@ -16,7 +16,7 @@ Runs on both Windows and macOS. The same core (`core/`) is shared and **only the
 
 | | What to do |
 |---|---|
-| **1. Install** | Grab 🪟 `Setup.exe` or 🍎 `MyBookshelf.dmg` from the badges above and run it. You clear a **security warning once**, and the first launch takes **5–20 minutes** to prepare. → [details](#2-installation) |
+| **1. Install** | Grab <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` or <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg` from the badges above and run it. You clear a **security warning once**, and the first launch takes **5–20 minutes** to prepare. → [details](#2-installation) |
 | **2. Connect an AI** | In the app's `⚙️ Settings` tab, switch on an **AI subscription (CLI)** or paste an **API key**. A ChatGPT or Claude subscription works at no extra cost. → [details](#3-first-time-setup--connect-an-ai) |
 | **3. Add documents** | Drop files onto the `📄 Text conversion` tab and press **[▶ Start]**. From there, **the popups walk you through** each following stage. |
 | **4. Collect results** | In the `📖 Output` tab, switch on EPUB, Word, Hangul, or Obsidian and press **[▶ Start]**. |
@@ -26,7 +26,7 @@ Runs on both Windows and macOS. The same core (`core/`) is shared and **only the
 ## Contents
 
 1. [What it does](#1-what-it-does)
-2. [Installation](#2-installation) — [🪟 Windows](#windows) · [🍎 macOS](#macos)
+2. [Installation](#2-installation) — [<img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows](#windows) · [<img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS](#macos)
 3. [First-time setup — connect an AI](#3-first-time-setup--connect-an-ai)
 4. [The workflow](#4-the-workflow)
 5. [Start · Stop · Resume](#5-start--stop--resume)
@@ -59,8 +59,8 @@ PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translatio
 
 | | File |
 |---|---|
-| 🪟 **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
-| 🍎 **macOS** | [**MyBookshelf.dmg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> **macOS** | [**MyBookshelf.pkg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
 
 Both are on the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page, under **Assets**.
 
@@ -70,7 +70,9 @@ Both are on the [**latest release**](https://github.com/Brightinyou/my-bookshelf
 
 <a id="windows"></a>
 
-### 🪟 Windows
+<a id="windows"></a>
+
+### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows
 
 #### Step 1 — Download
 
@@ -113,27 +115,31 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 
 <a id="macos"></a>
 
-### 🍎 macOS
+<a id="macos"></a>
+
+### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS
 
 #### Step 1 — Download
 
 On the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page, under **Assets**, grab one of:
 
-- **`MyBookshelf-vX.Y.Z.dmg`** — recommended. Opens the familiar "drag to install" window.
-- `MyBookshelf-vX.Y.Z-mac.zip` — unzipping gives just the app file. (Having no separate installer is normal — the app installs itself.)
+- **`MyBookshelf.pkg`** — this is the only one you need. Double-click it and the installer places the app in **Applications** for you.
+- `MyBookshelf-vX.Y.Z-mac.zip` — only if you cannot use a Mac administrator password. Unzipping gives just the app file.
 
 > The file is only a few hundred KB — **that is expected.** The Python environment is fetched on first launch.
 
 #### Step 2 — Put it in Applications
 
-- **DMG**: double-click the `.dmg`, then **drag `MyBookshelf.app` onto the `Applications` folder** in the window.
+- **`.pkg`**: double-click → [Continue] → [Install] → your Mac password. That's it; nothing else to do in this step.
 - **zip**: unzip and move the resulting `MyBookshelf.app` into your **Applications** folder.
+
+> ⚠️ **If you took the zip, move the app into Applications before running it.** Double-clicking it straight from your Downloads folder makes macOS run it from a locked temporary folder, and it **hangs with no visible response**. The `.pkg` does not have this problem.
 
 #### Step 3 — First time only: pass the security warning ⚠️
 
 Opening `MyBookshelf` for the first time shows an *"unidentified developer"* warning. This is the notice macOS shows for software that **has not gone through Apple signing/notarization** — common for programs shared by an individual. Allow it once as follows.
 
-> The DMG does **not** remove this step — it's about signing, not packaging.
+> Neither the `.pkg` nor the zip removes this step — it's about signing, not packaging. With the `.pkg` the warning appears when you first open the installer.
 
 - **Try first**: **right-click (or control-click)** the `MyBookshelf` icon in Applications → **Open** → **Open** in the dialog.
 - **If that doesn't open it** (recent macOS blocks the right-click bypass):
@@ -150,7 +156,7 @@ The first launch **auto-installs** the Python environment and packages (**5–20
 > Requires Python 3.10+. If missing, install from [python.org](https://www.python.org/downloads/).
 > If setup seems stuck, check the log: `~/Library/Application Support/MyBookshelf/app.log`
 
-> 🪟 **On Windows?** → Grab `Setup.exe` from the same [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page and run it. macOS and Windows share a single repository.
+> <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **On Windows?** → Grab `Setup.exe` from the same [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page and run it. macOS and Windows share a single repository.
 
 ---
 

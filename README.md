@@ -16,7 +16,7 @@ Windows와 macOS 모두 지원합니다. 같은 코어(`core/`)를 쓰고 **설�
 
 | | 할 일 |
 |---|---|
-| **1. 설치** | 위 배지에서 🪟 `Setup.exe` 또는 🍎 `MyBookshelf.pkg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 첫 실행 준비에 **5~20분** 걸립니다. → [자세히](#2-설치) |
+| **1. 설치** | 위 배지에서 <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` 또는 <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 첫 실행 준비에 **5~20분** 걸립니다. → [자세히](#2-설치) |
 | **2. AI 연결** | 앱의 `⚙️ 설정` 탭에서 **AI 구독(CLI)** 을 켜거나 **API 키**를 넣습니다. ChatGPT·Claude 구독이 있으면 추가 요금 없이 씁니다. → [자세히](#3-첫-설정--ai-연결) |
 | **3. 문서 넣기** | `📄 텍스트 변환` 탭에 파일을 끌어다 놓고 **[▶ 시작]**. 이후 단계는 **팝업이 물어보는 대로** 이어집니다. |
 | **4. 결과 받기** | `📖 출력` 탭에서 EPUB·Word·한글·Obsidian 중 원하는 형식을 켜고 **[▶ 시작]**. |
@@ -26,7 +26,7 @@ Windows와 macOS 모두 지원합니다. 같은 코어(`core/`)를 쓰고 **설�
 ## 목차
 
 1. [이 프로그램은 무엇인가](#1-이-프로그램은-무엇인가)
-2. [설치](#2-설치) — [🪟 Windows](#windows) · [🍎 macOS](#macos)
+2. [설치](#2-설치) — [<img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows](#windows) · [<img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS](#macos)
 3. [첫 설정 — AI 연결](#3-첫-설정--ai-연결)
 4. [작업 흐름](#4-작업-흐름)
 5. [시작 · 중단 · 이어하기](#5-시작--중단--이어하기)
@@ -59,8 +59,8 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 | | 받을 파일 |
 |---|---|
-| 🪟 **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
-| 🍎 **macOS** | [**MyBookshelf.pkg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> **macOS** | [**MyBookshelf.pkg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
 
 두 파일 모두 [**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지의 **Assets**에 함께 있습니다.
 
@@ -70,7 +70,9 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 <a id="windows"></a>
 
-### 🪟 Windows
+<a id="windows"></a>
+
+### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows
 
 #### 1단계 — 내려받기
 
@@ -113,37 +115,37 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 <a id="macos"></a>
 
-### 🍎 macOS
+<a id="macos"></a>
+
+### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS
 
 #### 1단계 — 내려받기
 
 [**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지 아래 **Assets**에서 받습니다:
 
-- **`MyBookshelf.pkg`** — 권장. 더블클릭하면 설치 관리자가 **응용 프로그램** 폴더에 넣어 줍니다.
-- `MyBookshelf.dmg` — 드래그해서 설치하는 방식이 익숙하다면 이쪽을 써도 됩니다.
-- `MyBookshelf-vX.Y.Z-mac.zip` — 압축을 풀면 앱 파일만 나옵니다.
+- **`MyBookshelf.pkg`** — 이것만 받으면 됩니다. 더블클릭하면 설치 관리자가 **응용 프로그램** 폴더에 넣어 줍니다.
+- `MyBookshelf-vX.Y.Z-mac.zip` — 맥 관리자 암호를 쓸 수 없을 때만. 압축을 풀면 앱 파일만 나옵니다.
 
 > 파일 크기가 수백 KB로 작습니다 — **정상입니다.** 파이썬 환경은 첫 실행 때 내려받습니다.
 
 #### 2단계 — 응용 프로그램에 넣기
 
 - **`.pkg`로 받은 경우**: 더블클릭 → [계속] → [설치] → 맥 암호. 끝입니다. 이 단계에서 따로 할 일이 없습니다.
-- **`.dmg`로 받은 경우**: `.dmg`를 더블클릭 → 열린 창에서 **`MyBookshelf.app` 아이콘을 `응용 프로그램` 폴더로 드래그**합니다.
 - **zip으로 받은 경우**: 압축을 풀고 나온 `MyBookshelf.app`을 **응용 프로그램** 폴더로 옮깁니다.
 
-> ⚠️ **`.dmg`·zip으로 받았다면, 앱을 응용 프로그램 폴더로 옮긴 뒤에 실행하세요.** dmg 창 안이나 내려받기 폴더에서 바로 더블클릭하면 macOS가 앱을 임시 폴더에 가둬 실행하는 탓에 **아무 반응 없이 멈춥니다**. `.pkg`는 이 문제가 없습니다.
+> ⚠️ **zip으로 받았다면, 앱을 응용 프로그램 폴더로 옮긴 뒤에 실행하세요.** 내려받기 폴더에서 바로 더블클릭하면 macOS가 앱을 임시 폴더에 가둬 실행하는 탓에 **아무 반응 없이 멈춥니다**. `.pkg`는 이 문제가 없습니다.
 
 #### 3단계 — 처음 한 번만: 보안 경고 통과 ⚠️
 
 `MyBookshelf`를 처음 열면 macOS가 *"확인되지 않은 개발자"* 경고를 띄웁니다. 개인이 만들어 나누는 프로그램이라 **Apple 서명·공증을 거치지 않았을 때 뜨는 안내**입니다. 아래 절차로 한 번만 허용하면 됩니다.
 
-> `.pkg`·`.dmg` 어느 쪽으로 받아도 이 단계는 같습니다 — 서명에 관한 것이라 포장 방식과는 무관합니다. `.pkg`는 설치 관리자를 처음 열 때 이 경고가 뜹니다.
+> `.pkg`·zip 어느 쪽으로 받아도 이 단계는 같습니다 — 서명에 관한 것이라 포장 방식과는 무관합니다. `.pkg`는 설치 관리자를 처음 열 때 이 경고가 뜹니다.
 
 - **먼저 시도**: 응용 프로그램 폴더의 `MyBookshelf` 아이콘을 **우클릭(또는 control-클릭) → 열기 → (경고창에서) 열기**.
 - **위 방법으로 안 열리면**(최신 macOS는 우클릭 우회가 막혀 있음):
   1. 그냥 한 번 더블클릭해 경고가 뜨게 둡니다(경고는 닫아도 됨).
   2. **화면 왼쪽 위 Apple 메뉴 → 시스템 설정 → 개인정보 보호 및 보안**으로 들어갑니다.
-  3. 아래로 스크롤하면 *"'MyBookshelf'이(가) 차단되었습니다"* 문구와 **[확인 없이 열기]** 버튼이 있습니다. 이 버튼을 누르고 나오는 창에서 다시 **열기**.
+  3. 아래로 스크롤하면 *"'MyBookshelf'이(가) 차단되었습니다"* 문구와 **[그래도 열기]** 버튼이 있습니다(판올림에 따라 **[확인 없이 열기]**). 이 버튼을 누르고 나오는 창에서 다시 **열기**.
 
 > 한 번 허용하면 그다음부터는 **아이콘을 그냥 더블클릭**하면 됩니다.
 
