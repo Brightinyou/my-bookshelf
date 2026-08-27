@@ -101,7 +101,9 @@ On the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases
 
 #### Step 3 — First time only: pass the security warning ⚠️
 
-This app is a **personal build that has not gone through Apple signing/notarization**, so the first launch shows an *"unidentified developer"* warning. This is a common notice for software shared by an individual; allow it once as follows. (The DMG does **not** remove this step — it's a signing matter, independent of packaging.)
+Opening `MyBookshelf` for the first time shows an *"unidentified developer"* warning. This is the notice macOS shows for software that **has not gone through Apple signing/notarization** — common for programs shared by an individual. Allow it once as follows.
+
+> The DMG does **not** remove this step — it's about signing, not packaging.
 
 - **Try first**: **right-click (or control-click)** the `MyBookshelf` icon in Applications → **Open** → **Open** in the dialog.
 - **If that doesn't open it** (recent macOS blocks the right-click bypass):
