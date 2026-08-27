@@ -781,8 +781,8 @@ _EN.update({
         "You are responsible for confirming the source document's copyright, translation, summary and redistribution rights. ",
     "AI API 또는 CLI 구독 도구를 활성화하면 문서 일부 또는 전체가 외부 AI 서비스로 전송됩니다. ":
         "Enabling an AI API or CLI tool sends part or all of the document to an external AI service. ",
-    "**My Bookshelf** · © 2026 저작자 — 개인·비상업 연구 보조 용도. ":
-        "**My Bookshelf** · © 2026 the author — for personal, non-commercial research use. ",
+    "**My Bookshelf** · © 2026 Brightinyou — 개인·비상업 연구 보조 용도. ":
+        "**My Bookshelf** · © 2026 Brightinyou — for personal, non-commercial research use. ",
     # AI 없음 경고 (아이콘 모노톤화, 2026-07-10)
     "사용 가능한 AI가 없습니다 — :material/settings: 설정 탭에서 API 키를 입력하거나 CLI 구독 도구를 활성화하세요.":
         "No AI available — enter an API key or enable a CLI tool in the :material/settings: Settings tab.",

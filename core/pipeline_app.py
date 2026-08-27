@@ -4017,8 +4017,8 @@ if _active_view == "settings":
     st.divider()
     with st.expander(t("저작권 및 사용 주의"), expanded=False):
         st.markdown(t(
-            "**My Bookshelf** · © 2026 저작자 — 개인·비상업 연구 보조 용도. "
-            "이 프로그램의 저작권은 저작자에게 있으며, 개인적·학술적 용도로 사용할 수 있으나 "
+            "**My Bookshelf** · © 2026 Brightinyou — 개인·비상업 연구 보조 용도. "
+            "이 프로그램의 저작권은 Brightinyou에게 있으며, 개인적·학술적 용도로 사용할 수 있으나 "
             "서면 동의 없는 재판매·상업적 배포는 허용되지 않습니다. 프로그램은 '있는 그대로' 제공되며 "
             "정확성·무결성을 보증하지 않습니다."
         ))

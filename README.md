@@ -2,9 +2,12 @@
 
 **PDF·DOCX·HWP·HWPX·TXT 문서를 Word·한글(HWPX) 문서·Obsidian 위키 노트로 바꾸는 개인 연구 도구** — 텍스트 변환 → 챕터 분할 → (도착언어가 아닌 문서) 번역 → 문서 요약 → **EPUB·Word(.docx)·한글(.hwpx) 내보내기·Obsidian Wiki 반영(모두 가능)**을 한 흐름으로 처리합니다.
 
+[![Windows 내려받기](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+[![macOS 내려받기](https://img.shields.io/badge/macOS-.dmg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
+
 > 🇬🇧 English manual: [README.en.md](README.en.md)
 
-이 저장소는 macOS와 Windows 양쪽에서 같은 코어(`core/`)를 사용합니다. 설치 방법만 플랫폼별로 다릅니다.
+Windows와 macOS 모두 지원합니다. 같은 코어(`core/`)를 쓰고 **설치 방법만 다릅니다** — 아래 [2. 설치](#2-설치)에서 쓰시는 운영체제 부분만 보시면 됩니다.
 
 ---
 
@@ -24,7 +27,63 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 ## 2. 설치
 
-### macOS
+<div align="center">
+
+### ⬇️ 내려받기
+
+| | 받을 파일 |
+|---|---|
+| 🪟 **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| 🍎 **macOS** | [**MyBookshelf.dmg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+
+두 파일 모두 [**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지의 **Assets**에 함께 있습니다.
+
+</div>
+
+---
+
+### 🪟 Windows
+
+#### 1단계 — 내려받기
+
+[**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지 아래 **Assets**에서 받습니다:
+
+- **`Setup.exe`** — 권장. 바로 실행하면 됩니다.
+- `MyBookshelf-Setup-vX.Y.Z.zip` — 브라우저가 `.exe` 내려받기를 막을 때 쓰세요. 압축을 풀면 같은 `Setup.exe`가 나옵니다.
+
+#### 2단계 — 실행 (처음 한 번만: 보안 경고 통과 ⚠️)
+
+`Setup.exe`를 더블클릭하면 Windows가 *"PC를 보호했습니다"* 라는 파란 창을 띄웁니다. **바이러스가 아니라 코드 서명 인증서(연 수십만 원)를 쓰지 않았기 때문**입니다.
+
+1. 파란 창에서 **[추가 정보]** 를 누릅니다.
+2. 아래에 나타나는 **[실행]** 버튼을 누릅니다.
+
+#### 3단계 — 설치 언어 고르기
+
+한국어 / English 중 고릅니다. 앱 화면에 쓰이는 언어이며, 나중에 **설정 탭에서 언제든 바꿀 수 있습니다.**
+
+#### 4단계 — 파이썬 (자동)
+
+파이썬 3.14가 없으면 설치 프로그램이 *"자동으로 받아 설치할까요?"* 라고 묻습니다. **[예]** 를 누르면 알아서 내려받아 깝니다. 이미 3.10 이상이 깔려 있으면 이 단계는 건너뜁니다.
+
+#### 5단계 — 첫 실행 준비 (자동)
+
+설치 마지막에 *"Preparing Python environment"* 가 뜨고 **몇 분간 멈춘 듯 보입니다 — 정상입니다.** 필요한 패키지를 받는 중입니다(네트워크에 따라 **5~20분**).
+
+- 설치 위치: `C:\Users\<사용자>\AppData\Local\My Bookshelf`
+- 진행 기록: 그 폴더의 `install.log`
+- 실행이 안 되면: 같은 폴더의 `launch-error.log`
+
+#### 6단계 — 실행
+
+바탕화면 또는 시작 메뉴의 **My Bookshelf** 아이콘을 누릅니다. 두 번째 실행부터는 몇 초면 창이 뜹니다.
+
+> **업데이트**: 앱의 **설정 탭 → 업데이트 확인**으로 새 판을 받을 수 있습니다.
+> 다만 **v1.2.33 이전 판을 쓰고 계셨다면 이번 한 번은 직접 받아 설치**해야 합니다(저장소가 통합되기 전 판이라 옛 주소를 보고 있습니다).
+
+---
+
+### 🍎 macOS
 
 #### 1단계 — 내려받기
 
@@ -32,6 +91,8 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 - **`MyBookshelf-vX.Y.Z.dmg`** — 권장. 익숙한 "드래그해서 설치" 창이 열립니다.
 - `MyBookshelf-vX.Y.Z-mac.zip` — 압축을 풀면 앱 파일만 나옵니다. (별도 설치 프로그램이 없는 것이 정상 — 앱 자체가 설치를 겸합니다.)
+
+> 파일 크기가 수백 KB로 작습니다 — **정상입니다.** 파이썬 환경은 첫 실행 때 내려받습니다.
 
 #### 2단계 — 응용 프로그램에 넣기
 
@@ -57,20 +118,74 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 > Python 3.10 이상이 필요합니다. 없으면 [python.org](https://www.python.org/downloads/)에서 설치하세요.
 > 설치가 오래 걸리거나 멈춘 것 같으면 로그를 확인하세요: `~/Library/Application Support/MyBookshelf/app.log`
 
-> 🪟 **Windows 사용자는?** → 같은 [**최신 릴리스**](https://github.com/Brightinyou/my-bookshelf/releases/latest) 페이지에서 `Setup.exe`를 받아 실행하세요. macOS와 Windows가 저장소 하나를 함께 씁니다.
-
 ---
 
 ## 3. 첫 설정 — AI 연결
 
 앱의 `⚙️ 설정` 탭에서 **둘 중 하나**를 준비합니다. **AI 모델은 설정에서 한 번만 고르면** 모든 단계가 그 모델을 씁니다.
 
-- **AI 구독(CLI)** — API 키 없이 구독으로 사용 (권장). 우선순위가 API 키보다 높습니다.
-  - **Claude**: Claude(Pro/Max) 구독자. `claude` CLI 설치·로그인 후 토글을 켜세요.
-  - **Codex**: ChatGPT(Plus/Pro) 구독자. `codex` CLI 설치·로그인 후 토글을 켜세요.
-- **AI API 키** — Gemini / OpenAI / Anthropic 키를 직접 입력.
+- **AI 구독(CLI)** — API 키 없이 구독으로 사용 (**권장**). 우선순위가 API 키보다 높습니다.
+- **AI API 키** — Gemini / OpenAI / Anthropic 키를 직접 입력. 쓴 만큼 과금됩니다.
 
-설치·로그인 후 앱을 재시작하면 설정 탭에 인식됩니다. 로그인은 브라우저 인증이라 한 번만 하면 됩니다.
+---
+
+### 처음이신가요? — CLI 설치하기
+
+이미 **ChatGPT Plus/Pro** 나 **Claude Pro/Max** 를 쓰고 계시다면, **추가 요금 없이** 그 구독으로 이 앱을 돌릴 수 있습니다. 둘 중 하나만 있으면 됩니다.
+
+#### 준비물 — Node.js
+
+두 CLI 모두 Node.js가 필요합니다. 한 번만 깔면 됩니다.
+
+- [**Node.js 내려받기**](https://nodejs.org/) — **LTS** 라고 적힌 쪽을 받아 설치하세요.
+- 설치 확인: 터미널(Windows는 **PowerShell**, macOS는 **터미널**)을 열고
+  ```
+  node --version
+  ```
+  `v20.x` 처럼 나오면 준비된 것입니다.
+
+#### ① ChatGPT를 쓰신다면 — Codex CLI
+
+```
+npm install -g @openai/codex
+codex
+```
+
+`codex` 를 처음 실행하면 브라우저가 열리며 ChatGPT 로그인을 묻습니다. 한 번만 하면 됩니다.
+
+- 안내: [Codex CLI 문서](https://developers.openai.com/codex/cli/)
+
+#### ② Claude를 쓰신다면 — Claude Code CLI
+
+```
+npm install -g @anthropic-ai/claude-code
+claude
+```
+
+`claude` 를 처음 실행하면 브라우저가 열리며 Claude 로그인을 묻습니다. 한 번만 하면 됩니다.
+
+- 안내: [Claude Code 설치 문서](https://docs.claude.com/en/docs/claude-code/setup)
+
+#### 마지막 — 앱에서 켜기
+
+설치·로그인을 마쳤으면 **My Bookshelf를 껐다 켜고**, `⚙️ 설정` 탭에서 해당 토글을 켜면 됩니다. 앱이 알아서 찾습니다.
+
+> 잘 안 되면: 터미널에서 `codex` 또는 `claude` 를 쳤을 때 실행되는지 먼저 확인하세요.
+> 그 명령이 실행되지 않으면 앱도 찾지 못합니다.
+
+---
+
+### API 키로 쓰시려면
+
+`⚙️ 설정` 탭에 키를 붙여 넣으면 됩니다.
+
+- [Google AI Studio (Gemini)](https://aistudio.google.com/apikey)
+- [OpenAI Platform](https://platform.openai.com/api-keys)
+- [Anthropic Console](https://console.anthropic.com/settings/keys)
+
+> 구독(CLI)과 API 키가 둘 다 있으면 **구독이 우선**입니다.
+
+---
 
 또한 `⚙️ 설정 → 옵시디언(Obsidian) 보관함 설정`에서 위키 노트를 저장할 폴더(Vault)를 확인·변경합니다.
 
@@ -173,11 +288,11 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 ## 9. 저작권 및 면책
 
-**My Bookshelf** — © 2026 저작자. 개인·비상업 연구 보조 용도로 제공됩니다.
+**My Bookshelf** — © 2026 Brightinyou. 개인·비상업 연구 보조 용도로 제공됩니다.
 
 **프로그램에 대하여**
-- 이 프로그램의 저작권은 저작자에게 있습니다. 개인적·학술적 용도로 사용·복제할 수 있으나, 저작자의 서면 동의 없이 재판매하거나 상업적으로 배포할 수 없습니다.
-- 프로그램은 "있는 그대로(as-is)" 제공되며, 특정 목적 적합성이나 무결성을 보증하지 않습니다. 사용으로 인한 데이터 손실·손해에 대해 저작자는 책임지지 않습니다.
+- 이 프로그램의 저작권은 Brightinyou에게 있습니다. 개인적·학술적 용도로 사용·복제할 수 있으나, Brightinyou의 서면 동의 없이 재판매하거나 상업적으로 배포할 수 없습니다.
+- 프로그램은 "있는 그대로(as-is)" 제공되며, 특정 목적 적합성이나 무결성을 보증하지 않습니다. 사용으로 인한 데이터 손실·손해에 대해 Brightinyou는 책임지지 않습니다.
 
 **이용자 문서·생성 결과에 대하여**
 - 이 프로그램은 **이용자가 이미 적법하게 이용할 권한을 가진 문서**를 변환·번역·요약하기 위한 개인용 도구입니다. 이 프로그램을 사용한다고 해서 원래 없던 권한이 생기지는 않으며, 생성된 EPUB·번역본·요약본을 제3자에게 배포·공유할 권한도 부여되지 않습니다. 어디까지 허용되는지는 나라와 그 문서를 얻은 경위에 따라 다릅니다.

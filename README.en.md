@@ -24,7 +24,63 @@ PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translatio
 
 ## 2. Installation
 
-### macOS
+<div align="center">
+
+### ⬇️ Download
+
+| | File |
+|---|---|
+| 🪟 **Windows** | [**Setup.exe**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+| 🍎 **macOS** | [**MyBookshelf.dmg**](https://github.com/Brightinyou/my-bookshelf/releases/latest) |
+
+Both are on the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page, under **Assets**.
+
+</div>
+
+---
+
+### 🪟 Windows
+
+#### Step 1 — Download
+
+From the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases/latest) page, under **Assets**:
+
+- **`Setup.exe`** — recommended. Just run it.
+- `MyBookshelf-Setup-vX.Y.Z.zip` — use this if your browser blocks `.exe` downloads. Unzipping gives the same `Setup.exe`.
+
+#### Step 2 — Run it (one-time security prompt ⚠️)
+
+Double-clicking `Setup.exe` brings up a blue *"Windows protected your PC"* screen. **This is not a virus** — the app simply is not code-signed (a certificate costs a few hundred dollars a year).
+
+1. Click **[More info]**.
+2. Click the **[Run anyway]** button that appears.
+
+#### Step 3 — Choose the interface language
+
+Korean or English. You can change it any time later in the **Settings** tab.
+
+#### Step 4 — Python (automatic)
+
+If Python 3.14 is missing, the installer offers to download and install it for you — click **[Yes]**. If you already have 3.10 or newer, this step is skipped.
+
+#### Step 5 — First-run preparation (automatic)
+
+At the end of the install you'll see *"Preparing Python environment"*, and it will appear to hang for a few minutes — **that is normal.** It is fetching packages (**5–20 min** depending on your network).
+
+- Install location: `C:\Users\<you>\AppData\Local\My Bookshelf`
+- Progress log: `install.log` in that folder
+- If it will not start: `launch-error.log` in the same folder
+
+#### Step 6 — Launch
+
+Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open in seconds.
+
+> **Updates**: use **Settings → Check for updates** in the app.
+> If you were running a version older than v1.2.33, download this one manually just once — older builds point at the pre-merge repository.
+
+---
+
+### 🍎 macOS
 
 #### Step 1 — Download
 
@@ -32,6 +88,8 @@ On the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases
 
 - **`MyBookshelf-vX.Y.Z.dmg`** — recommended. Opens the familiar "drag to install" window.
 - `MyBookshelf-vX.Y.Z-mac.zip` — unzipping gives just the app file. (Having no separate installer is normal — the app installs itself.)
+
+> The file is only a few hundred KB — **that is expected.** The Python environment is fetched on first launch.
 
 #### Step 2 — Put it in Applications
 
@@ -63,16 +121,72 @@ The first launch **auto-installs** the Python environment and packages (**5–20
 
 ## 3. First-time setup — connect an AI
 
-In the app's `⚙️ Settings` tab, set up **one of two** options. **You choose the AI model once in Settings** and every stage uses it.
+In the app's `⚙️ Settings` tab, set up **one of these two**. **Pick the AI model once in Settings** and every stage uses it.
 
-- **AI subscription (CLI)** — use via subscription without an API key (recommended). Takes priority over API keys.
-  - **Claude**: Claude (Pro/Max) subscribers. Install & log in to the `claude` CLI, then turn on the toggle.
-  - **Codex**: ChatGPT (Plus/Pro) subscribers. Install & log in to the `codex` CLI, then turn on the toggle.
-- **AI API keys** — enter a Gemini / OpenAI / Anthropic key directly.
+- **AI subscription (CLI)** — use your existing subscription, no API key (**recommended**). Takes priority over API keys.
+- **AI API key** — paste a Gemini / OpenAI / Anthropic key. Billed per use.
 
-After installing and logging in, restart the app so Settings detects it. Login is browser-based and only needed once.
+---
 
-Also confirm/choose the folder (vault) where Wiki notes are saved in `⚙️ Settings → Obsidian vault settings`.
+### New here? — Installing a CLI
+
+If you already pay for **ChatGPT Plus/Pro** or **Claude Pro/Max**, you can run this app on that subscription at **no extra cost**. You only need one of them.
+
+#### Prerequisite — Node.js
+
+Both CLIs need Node.js. You only install it once.
+
+- [**Download Node.js**](https://nodejs.org/) — take the one marked **LTS**.
+- Check it: open a terminal (**PowerShell** on Windows, **Terminal** on macOS) and run
+  ```
+  node --version
+  ```
+  Something like `v20.x` means you're set.
+
+#### ① If you use ChatGPT — Codex CLI
+
+```
+npm install -g @openai/codex
+codex
+```
+
+The first run of `codex` opens a browser and asks you to sign in to ChatGPT. Once is enough.
+
+- Docs: [Codex CLI](https://developers.openai.com/codex/cli/)
+
+#### ② If you use Claude — Claude Code CLI
+
+```
+npm install -g @anthropic-ai/claude-code
+claude
+```
+
+The first run of `claude` opens a browser and asks you to sign in to Claude. Once is enough.
+
+- Docs: [Claude Code setup](https://docs.claude.com/en/docs/claude-code/setup)
+
+#### Last step — turn it on in the app
+
+Once installed and signed in, **restart My Bookshelf** and flip the matching toggle in `⚙️ Settings`. The app finds it on its own.
+
+> Not working? First check that typing `codex` or `claude` in a terminal actually runs.
+> If the command doesn't run there, the app won't find it either.
+
+---
+
+### Prefer an API key?
+
+Paste it into the `⚙️ Settings` tab.
+
+- [Google AI Studio (Gemini)](https://aistudio.google.com/apikey)
+- [OpenAI Platform](https://platform.openai.com/api-keys)
+- [Anthropic Console](https://console.anthropic.com/settings/keys)
+
+> If you have both a subscription (CLI) and an API key, **the subscription wins**.
+
+---
+
+Also open `⚙️ Settings → Obsidian vault` to check or change the folder where wiki notes are saved.
 
 ---
 
@@ -171,11 +285,11 @@ Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`).
 
 ## 9. Copyright and disclaimer
 
-**My Bookshelf** — © 2026 the author. Provided for personal, non-commercial research use.
+**My Bookshelf** — © 2026 Brightinyou. Provided for personal, non-commercial research use.
 
 **About the program**
-- Copyright in this program belongs to the author. You may use and copy it for personal and academic purposes, but you may not resell or commercially distribute it without the author's written consent.
-- The program is provided "as-is", with no warranty of fitness for a particular purpose or integrity. The author is not liable for any data loss or damage from its use.
+- Copyright in this program belongs to Brightinyou. You may use and copy it for personal and academic purposes, but you may not resell or commercially distribute it without Brightinyou's written consent.
+- The program is provided "as-is", with no warranty of fitness for a particular purpose or integrity. Brightinyou is not liable for any data loss or damage from its use.
 
 **About your documents and generated output**
 - This is a personal tool for converting, translating, and summarizing documents **you already have the right to use**. Using it does not grant you any right you did not already have, and it does not authorize you to distribute or share the resulting EPUB, translation, or summary with third parties. What is permitted varies by country and by how you obtained the document. In particular, there is no general "personal copying" exemption in every jurisdiction — do not assume that private use is automatically lawful where you live.
