@@ -51,6 +51,17 @@ def _is_latin_heading(s: str, prev: str, nxt: str, med: float) -> bool:
     return _FOOTNOTE_TAIL.sub(r"\1", prev).rstrip().endswith(_CLOSERS)
 
 
+def _furniture_key(s: str) -> str:
+    """반복 판정용 열쇠 — **숫자를 뺀 형태** (2026-08-27).
+
+    러닝헤더·꼬리말에는 쪽번호가 붙어 있어 쪽마다 문자열이 달라진다:
+        '…, New Series, Vol. 1 (2022), 175–196176'
+        '…, New Series, Vol. 1 (2022), 175–196177'
+    그대로 세면 각각 1회씩이라 반복으로 안 잡히고, 그래서 본문·각주에 그대로 남았다
+    (연구자 지적). 숫자를 빼면 같은 줄로 모여 반복이 드러난다."""
+    return re.sub(r"\d+", "", s).strip()
+
+
 def strip_page_furniture(pages):
     """반복 머리말/꼬리말·쪽번호·세로(회전) 텍스트를 제거한 라인 리스트.
     페이지 경계마다 _PAGE_MARK를 심어 이후 reflow에서도 원본 쪽 경계가 살아남게 한다."""
@@ -59,16 +70,25 @@ def strip_page_furniture(pages):
     for pg in pages:
         ne = [l.strip() for l in pg.split("\n") if l.strip()]
         for l in ne[:2] + ne[-2:]:
-            edges[l] += 1
+            edges[_furniture_key(l)] += 1
     thr = max(3, len(pages) // 2)
-    repeated = {l for l, n in edges.items() if n >= thr and len(l) < 90}
+    repeated = {k for k, n in edges.items() if n >= thr and 0 < len(k) < 90}
 
     flat = []
     for pg in pages:
         flat.extend(pg.split("\n"))
 
     # 2) 전체 스트림에서 다시 드러난 반복 줄 집계(컬럼분리·회전으로 조각난 것 포함)
+    # ★여기는 **정확히 같은 줄**만 센다. 숫자를 빼고 세면 한국어 각주의 '위의 책, .'
+    # '같은 책, .' 류가 서로 같아져 무더기로 지워진다 — 실측에서 『호모파베르의 미래』
+    # 각주가 492개에서 330개로 줄고 5,693자가 사라졌다 (2026-08-27).
+    # 숫자를 무시하는 판정은 **쪽 가장자리**(러닝헤더·꼬리말)에만 쓴다.
     freq = Counter(l.strip() for l in flat if l.strip())
+    # ★긴 줄은 숫자를 빼고도 따로 센다. 러닝헤더는 쪽번호가 붙어 매번 달라지는데,
+    # 40자 넘게 똑같은 문장이 세 번 이상 나오는 것은 본문일 수 없다. 한국어 각주의
+    # '위의 책, .' 류는 짧아서 여기 안 걸린다.
+    freq_key = Counter(_furniture_key(l) for l in flat
+                       if len(_furniture_key(l)) > 40)
 
     out = []
     seen = set()   # 반복 콘텐츠 줄은 '첫 등장만' 유지 → 제목/저자가 러닝헤더로도
@@ -83,10 +103,15 @@ def strip_page_furniture(pages):
                 continue
             if _is_vertical_noise(s):                       # 세로(회전) 텍스트 흔적
                 continue
-            if (s in repeated) or (len(s) < 90 and freq[s] >= 3):
-                if s in seen:
+            key = _furniture_key(s)
+            hit = ((len(key) > 10 and key in repeated)
+                   or (len(s) < 90 and freq[s] >= 3)
+                   or (len(key) > 40 and freq_key[key] >= 3))
+            if hit:
+                mark = key if (len(key) > 10 and (key in repeated or freq_key[key] >= 3)) else s
+                if mark in seen:
                     continue                                # 두 번째 이후 = 러닝헤더/꼬리말
-                seen.add(s)                                 # 첫 등장 = 실제 콘텐츠로 유지
+                seen.add(mark)                              # 첫 등장 = 실제 콘텐츠로 유지
             out.append(l)
         if pi < len(pages) - 1:
             out.append(_PAGE_MARK)
