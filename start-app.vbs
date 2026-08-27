@@ -21,6 +21,13 @@ If Not fso.FileExists(dir_ & "\.venv\Scripts\pythonw.exe") Then
     WScript.Quit
 End If
 
-' Launch the native window app (desktop.py). pythonw = no console window.
+' Launch the native window app (desktop.py). No console window either way.
 ' desktop.py starts the Streamlit server hidden, waits for it, then shows the window.
-sh.Run """.venv\Scripts\pythonw.exe"" core\desktop.py", 0, False
+' Prefer .venv\Scripts\MyBookshelf.exe - it is a copy of the interpreter carrying our
+' own name and icon, so the taskbar shows "My Bookshelf" instead of grouping the
+' window under Python. desktop.py makes that copy on first run if it is missing.
+If fso.FileExists(dir_ & "\.venv\Scripts\MyBookshelf.exe") Then
+    sh.Run """.venv\Scripts\MyBookshelf.exe"" core\desktop.py", 0, False
+Else
+    sh.Run """.venv\Scripts\pythonw.exe"" core\desktop.py", 0, False
+End If

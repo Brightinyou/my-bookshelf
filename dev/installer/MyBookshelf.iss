@@ -57,17 +57,31 @@ Source: "..\..\install-obsidian.bat";    DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\vendor\poppler\*";        DestDir: "{app}\poppler"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\MyBookshelf.exe"; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"
-Name: "{userprograms}\{#MyAppName} (Folder)\Start {#MyAppName}"; Filename: "{app}\MyBookshelf.exe"; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"
+; ★{app}\MyBookshelf.exe(PyInstaller 통짜 실행 파일)를 더 이상 거치지 않는다
+;   (2026-08-27 연구자 보고 — "Failed to remove temporary directory" 창이 계속 뜸).
+;   그것은 열 때마다 _MEI…\ 에 압축을 풀고 끝날 때 지우는데, 그 정리가 실패하면
+;   경고 창이 뜬다. venv 안의 MyBookshelf.exe 를 곧장 가리키면 임시 폴더가 아예
+;   생기지 않고, 프로세스도 한 겹 줄며, 작업표시줄 신원도 그 파일이 된다.
+Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\.venv\Scripts\MyBookshelf.exe"; Parameters: """{app}\core\desktop.py"""; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"
+Name: "{userprograms}\{#MyAppName} (Folder)\Start {#MyAppName}"; Filename: "{app}\.venv\Scripts\MyBookshelf.exe"; Parameters: """{app}\core\desktop.py"""; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"
 Name: "{userprograms}\{#MyAppName} (Folder)\Stop {#MyAppName}"; Filename: "{app}\stop-app.bat"; WorkingDir: "{app}"
 Name: "{userprograms}\{#MyAppName} (Folder)\Uninstall"; Filename: "{uninstallexe}"; IconFilename: "{app}\MyBookshelf.ico"
-Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\MyBookshelf.exe"; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\.venv\Scripts\MyBookshelf.exe"; Parameters: """{app}\core\desktop.py"""; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"; Tasks: desktopicon
 Name: "{userdesktop}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; IconFilename: "{app}\MyBookshelf.ico"; Tasks: uninstallicon
 
 [Run]
 Filename: "cmd.exe"; \
     Parameters: "/c cd /d ""{app}"" && ""{app}\setup.bat"" --installer > ""{app}\install.log"" 2>&1"; \
     StatusMsg: "Preparing Python environment. This may take a few minutes."; \
+    Flags: waituntilterminated runhidden
+
+; venv 가 만들어진 **뒤에** 실행 파일 복사본을 마련한다. 위 바로가기들이 이 파일을
+; 가리키므로 첫 실행 전에 있어야 한다. 앱도 없으면 스스로 만들지만, 그러면 첫
+; 실행만 pythonw 로 떠서 작업표시줄이 잠깐 «Python» 으로 보인다.
+Filename: "{app}\.venv\Scripts\pythonw.exe"; \
+    Parameters: "-c ""import sys; sys.path.insert(0, r'{app}\core'); import desktop; desktop.prepare_own_exe()"""; \
+    WorkingDir: "{app}"; \
+    StatusMsg: "Preparing the application shortcut."; \
     Flags: waituntilterminated runhidden
 
 Filename: "{sys}\wscript.exe"; \

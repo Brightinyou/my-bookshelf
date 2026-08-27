@@ -106,9 +106,54 @@ def _stamp_icon(exe: Path, ico: Path) -> bool:
         return False
 
 
+def prepare_own_exe(exe: Path | None = None) -> Path | None:
+    """venv 안에 «MyBookshelf.exe»(아이콘까지 박은 인터프리터 복사본)를 마련한다.
+
+    설치 프로그램도 이 함수를 부른다 — 바로가기가 이 파일을 가리키기 때문에
+    **첫 실행 전에 이미 있어야** 한다. 없으면 앱이 스스로 만들어 쓴다.
+    Returns: 쓸 수 있는 실행 파일 경로, 못 만들었으면 None.
+    """
+    if sys.platform != "win32":
+        return None
+    exe = exe or Path(sys.executable)
+    # ★venv의 pythonw.exe 를 복사하면 안 된다 (2026-08-27 실측). 그것은 **중계
+    #   stub**(251KB)이라 기본 인터프리터(105KB)를 자식 프로세스로 다시 띄운다.
+    #   그래서 stub 이름만 바꿔 봐야 정작 창을 든 프로세스는 여전히 pythonw.exe
+    #   였고 작업표시줄은 그대로 «Python» 이었다. **기본 인터프리터**를 Scripts    #   안에 복사해야 한다. 그 자리에 두면 한 단계 위의 pyvenv.cfg 를 읽어 venv 가
+    #   그대로 살아난다(venv 의 원래 구조다).
+    _base = Path(getattr(sys, "_base_executable", None) or sys.executable)
+    _want = _base.with_name("pythonw.exe")
+    if _want.exists():
+        _base = _want
+    if not _base.exists():
+        return None
+    target = exe.parent / OWN_EXE_NAME
+    if _base.resolve() == target.resolve():
+        return target
+    # ★어떤 인터프리터에서 떠 왔는지 표식으로 남긴다. 크기·시각으로 견주면 안 된다
+    #   — 아이콘을 박는 순간 둘 다 달라져서 **열 때마다 다시 복사**하게 된다
+    #   (실측: 104,672 → 496,640바이트). 파이썬을 판올림하면 표식이 어긋나
+    #   저절로 새로 만들어진다.
+    stamp = target.with_suffix(".exe.src")
+    try:
+        want = "%s|%d|%d" % (_base, _base.stat().st_size, int(_base.stat().st_mtime))
+        have = stamp.read_text(encoding="utf-8") if stamp.exists() else ""
+        if not target.exists() or have != want:
+            shutil.copy2(_base, target)
+            # 파이썬 아이콘을 그대로 두면 작업표시줄에 고정할 때 파이썬으로 보인다
+            if os.path.exists(APP_ICON):
+                _stamp_icon(target, Path(APP_ICON))
+            stamp.write_text(want, encoding="utf-8")
+    except OSError:
+        return target if target.exists() else None
+    return target
+
+
 def _relaunch_under_own_name() -> bool:
     """pythonw.exe로 떠 있으면 MyBookshelf.exe라는 이름으로 자신을 다시 띄운다.
 
+    바로가기가 이미 MyBookshelf.exe 를 가리키면 이 길은 그냥 지나간다 — 설치본이
+    낡아 여전히 pythonw 로 뜰 때를 위한 안전망이다.
     Returns: 다시 띄웠으면 True (그러면 이 프로세스는 조용히 끝나야 한다).
     """
     if sys.platform != "win32":
@@ -120,40 +165,9 @@ def _relaunch_under_own_name() -> bool:
         return False                            # 이미 우리 이름으로 돌고 있다
     if exe.stem.lower() not in ("python", "pythonw"):
         return False                            # 얼린 실행 파일 등 — 건드리지 않는다
-    # ★venv의 pythonw.exe 를 복사하면 안 된다 (2026-08-27 실측). 그것은 **중계
-    #   stub**(251KB)이라 기본 인터프리터(C:\PythonXX\pythonw.exe, 105KB)를 자식
-    #   프로세스로 다시 띄운다. 그래서 stub 이름만 바꿔 봐야 정작 창을 든
-    #   프로세스는 여전히 pythonw.exe 였고 작업표시줄은 그대로 «Python» 이었다.
-    #   **기본 인터프리터**를 Scripts\ 안에 복사해야 한다. 그 자리에 두면 한 단계
-    #   위의 pyvenv.cfg 를 읽어 venv 가 그대로 살아난다(venv 의 원래 구조다).
-    _base = Path(getattr(sys, "_base_executable", None) or sys.executable)
-    _want = _base.with_name(exe.name)           # python ↔ pythonw 짝을 맞춘다
-    if _want.exists():
-        _base = _want
-    if not _base.exists() or _base.samefile(exe):
-        return False                            # 기본 인터프리터를 못 찾았다
-    target = exe.with_name(OWN_EXE_NAME)
-    # ★어떤 인터프리터에서 떠 왔는지 표식으로 남긴다. 크기·시각으로 견주면 안 된다
-    #   — 아이콘을 박는 순간 둘 다 달라져서 **열 때마다 다시 복사**하게 된다.
-    #   파이썬을 판올림하면 표식이 어긋나 저절로 새로 만들어진다.
-    stamp = target.with_suffix(".exe.src")
-    try:
-        want = "%s|%d|%d" % (_base, _base.stat().st_size, int(_base.stat().st_mtime))
-    except OSError:
+    target = prepare_own_exe(exe)
+    if target is None or target.resolve() == exe.resolve():
         return False
-    try:
-        have = stamp.read_text(encoding="utf-8") if stamp.exists() else ""
-    except OSError:
-        have = ""
-    try:
-        if not target.exists() or have != want:
-            shutil.copy2(_base, target)
-            # 파이썬 아이콘을 그대로 두면 작업표시줄에 고정할 때 파이썬으로 보인다
-            if os.path.exists(APP_ICON):
-                _stamp_icon(target, Path(APP_ICON))
-            stamp.write_text(want, encoding="utf-8")
-    except OSError:
-        return False                            # 못 만들면 그냥 예전처럼 뜬다
     try:
         # ★os.execv 를 쓰면 안 된다 (2026-08-27 실측). Windows의 execv 는 argv 를
         #   그대로 이어 붙여 명령줄을 만들 뿐 인용을 하지 않아서, 설치 경로

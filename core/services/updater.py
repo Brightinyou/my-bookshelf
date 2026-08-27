@@ -164,14 +164,17 @@ def download_installer(asset_url: str, progress_cb=None) -> tuple[Path | None, s
 
 
 _HELPER_PS1 = r"""
-param([string]$Root, [string]$Setup, [string]$Relaunch)
+param([string]$Root, [string]$Setup, [string]$Relaunch, [string]$RelaunchArgs)
 $ErrorActionPreference = 'SilentlyContinue'
 $Log = Join-Path $env:TEMP 'mybookshelf_update.log'
 function Log($m) { "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $m" | Out-File -FilePath $Log -Append -Encoding utf8 }
 Log "helper start (Root=$Root)"
 function AppProcs {
+  # ★'mybookshelf'도 봐야 한다 (2026-08-27). 앱은 이제 venv 안의 MyBookshelf.exe로
+  #   도는데, 'python'만 찾으면 **앱이 떠 있는데도 없는 줄 알고** 파일 잠금이
+  #   풀리기 전에 설치를 시작하고, 나중엔 «안 떴다»며 하나를 더 띄운다.
   Get-CimInstance Win32_Process | Where-Object {
-    $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($Root.ToLower()) -and $_.Name -match 'python'
+    $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($Root.ToLower()) -and $_.Name -match 'python|mybookshelf'
   }
 }
 # 1) 앱(설치 폴더의 python) 종료 대기 — 파일 잠금 해제 목적 (짧게)
@@ -209,8 +212,13 @@ if ($cameUp) {
 } else {
   Log "app did not come up on its own within 20s - launching it as a fallback"
   if (Test-Path $Relaunch) {
-    Start-Process -FilePath $Relaunch -WorkingDirectory $Root
-    Log "fallback relaunch: $Relaunch"
+    # MyBookshelf.exe는 인터프리터 복사본이라 스크립트를 함께 줘야 한다
+    if ($RelaunchArgs) {
+      Start-Process -FilePath $Relaunch -ArgumentList $RelaunchArgs -WorkingDirectory $Root
+    } else {
+      Start-Process -FilePath $Relaunch -WorkingDirectory $Root
+    }
+    Log "fallback relaunch: $Relaunch $RelaunchArgs"
   } else {
     Log "fallback relaunch target missing: $Relaunch"
   }
@@ -315,9 +323,15 @@ def launch_helper_and_exit(installer_path: Path) -> bool:
     if sys.platform == "darwin":
         return _mac_launch_helper_and_exit(installer_path)
     root = _app_root()
-    relaunch = root / "MyBookshelf.exe"
+    # ★venv 안의 MyBookshelf.exe 를 먼저 본다 (2026-08-27). 루트의 같은 이름은
+    #   PyInstaller 통짜 실행 파일이라 열 때마다 _MEI…\ 에 압축을 풀고, 그 정리가
+    #   실패하면 "Failed to remove temporary directory" 창이 뜬다.
+    relaunch = root / ".venv" / "Scripts" / "MyBookshelf.exe"
+    relaunch_args = str(root / "core" / "desktop.py")
     if not relaunch.exists():
-        relaunch = root / "start-app.vbs"
+        relaunch, relaunch_args = root / "MyBookshelf.exe", ""
+    if not relaunch.exists():
+        relaunch, relaunch_args = root / "start-app.vbs", ""
     try:
         helper = _write_helper()
         # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP.
@@ -327,7 +341,8 @@ def launch_helper_and_exit(installer_path: Path) -> bool:
         subprocess.Popen(
             ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
              "-ExecutionPolicy", "Bypass", "-File", str(helper),
-             "-Root", str(root), "-Setup", str(installer_path), "-Relaunch", str(relaunch)],
+             "-Root", str(root), "-Setup", str(installer_path), "-Relaunch", str(relaunch),
+             "-RelaunchArgs", relaunch_args],
             creationflags=flags, close_fds=True,
         )
         append_log(f"업데이트 헬퍼 실행: {installer_path.name}")
