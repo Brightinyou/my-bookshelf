@@ -1895,7 +1895,7 @@ if _active_view in {"1_txt", "all_run"}:
     _pdf_dir1 = cfg.PDF_DIR
     _stage_flow_panel(
         ":material/description: 텍스트 변환",
-        "PDF·DOCX·HWP·HWPX에서 텍스트를 추출해 TXT로 저장합니다 (스캔 PDF는 OCR 사전 처리 필요).",
+        "PDF·DOCX·HWP·HWPX에서 텍스트를 추출해 TXT로 저장합니다 (스캔본은 «🔬 본문 품질 검사»로 AI에 다시 읽힐 수 있습니다).",
         [
             ("① 처리전 · 업로드 대기", UPLOAD_TMP,
              tf("%d개 대기", _count_files(UPLOAD_TMP, ['*.pdf', '*.docx', '*.hwp', '*.hwpx', '*.txt', '*.md']))),
@@ -2659,7 +2659,7 @@ if _active_view == "2_split":
         if _split_short2:
             st.warning(t("⚠️ 짧은 문서가 감지되었습니다. 아래 '짧은 문서 확인'에서 분할 처리 또는 다음단계로 이동을 선택하세요."))
         else:
-            st.info(t("분할 대기 없음 — 📄 텍스트 변환에서 TXT를 먼저 생성하거나 아래에서 수동 추가하세요"))
+            st.info(t("분할 대기 없음 — 📄 텍스트 변환에서 TXT를 먼저 만들거나, 위에 TXT를 바로 올리세요"))
 
     if _split_short2:
         st.divider()

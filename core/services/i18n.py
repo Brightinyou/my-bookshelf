@@ -307,6 +307,11 @@ _EN: dict[str, str] = {
         "Download complete — closing the app to install. It will reopen automatically shortly.",
     "업데이트 실행에 실패했습니다.": "Failed to start the update.",
     "OCR 필요": "OCR required",
+    "PDF·DOCX·HWP·HWPX에서 텍스트를 추출해 TXT로 저장합니다 (스캔본은 «🔬 본문 품질 검사»로 AI에 다시 읽힐 수 있습니다).":
+        "Extracts text from PDF/DOCX/HWP/HWPX and saves it as TXT "
+        "(for scans, use «🔬 Text quality check» to re-read them with AI).",
+    "분할 대기 없음 — 📄 텍스트 변환에서 TXT를 먼저 만들거나, 위에 TXT를 바로 올리세요":
+        "Nothing queued - create a TXT in Text conversion first, or drop a TXT above.",
     "OCR 사전 처리가 필요합니다": "OCR preprocessing required",
     "다음 문서는 이미지로만 되어 있어, TXT 분리를 위해서는 OCR 사전 처리 작업이 필요합니다:":
         "These documents are image-only. OCR preprocessing is required before text extraction:",
