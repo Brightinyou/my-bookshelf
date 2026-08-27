@@ -240,12 +240,62 @@ def _cluster(positions, tol):
     return [(statistics.median(g), len(g)) for g in groups]
 
 
-def _reading_order(page):
+def _footnote_rule_y(page) -> float | None:
+    """각주 구분선의 y 좌표. 없으면 None (2026-08-27).
+
+    ★조판자가 "여기부터 각주"라고 그어 둔 선이다. 논문 14편 실측에서 선각주 문서
+    7편을 **전부** 찾아냈다 — 글자 크기·이탤릭 같은 간접 신호는 절반도 못 갈랐다.
+
+    ★**form XObject 안까지 내려가야 한다.** 한글 논문 두 편은 쪽 내용 전체가 form
+    하나에 싸여 있어 최상위 객체 목록에는 글자조차 안 보였고, 그래서 1차 측정에서
+    "선 없음"으로 잘못 판정했다.
+
+    쪽 아래 절반에 있는 얇고 가로로 긴 도형만 본다. 여럿이면 가장 위(=본문에 가까운
+    쪽)를 쓴다 — 그 아래가 통째로 각주다."""
+    try:
+        import ctypes
+        import pypdfium2.raw as pr
+    except Exception:
+        return None
+    L, B, R, T = (ctypes.c_float() for _ in range(4))
+    h = page.get_height()
+    found: list[float] = []
+
+    def walk(get, count, depth=0):
+        if depth > 3:                       # 중첩 form 방어
+            return
+        for k in range(count):
+            o = get(k)
+            try:
+                t = pr.FPDFPageObj_GetType(o)
+            except Exception:
+                continue
+            if t == 5:                      # form — 안으로
+                walk(lambda i, _o=o: pr.FPDFFormObj_GetObject(_o, i),
+                     pr.FPDFFormObj_CountObjects(o), depth + 1)
+            elif t == 2 and pr.FPDFPageObj_GetBounds(o, L, B, R, T):
+                if (R.value - L.value) > 40 and (T.value - B.value) < 3 and B.value < h * 0.5:
+                    found.append(B.value)
+
+    try:
+        walk(lambda i: pr.FPDFPage_GetObject(page.raw, i),
+             pr.FPDFPage_CountObjects(page.raw))
+    except Exception:
+        return None
+    return max(found) if found else None
+
+
+def _reading_order(page, ymin=None, ymax=None):
     """페이지 → 읽기순서 텍스트.
     전체폭(제목·초록)과 2단 본문이 한 페이지에 섞여도, 페이지 전역이 아니라
     '여러 행이 공유하는 넓은 세로 간격'으로 거터를 찾아 그 행들만 컬럼 분리한다.
     세로 간격이 크면 문단 경계로 보고 빈 줄을 넣어 문단 구조를 보존한다."""
     w, h, gl, mh, mw = _glyphs(page)
+    # ymin/ymax 로 쪽의 한 구간만 읽는다 — 각주 구분선 위아래를 따로 읽을 때 쓴다.
+    if ymin is not None:
+        gl = [g for g in gl if g[1] >= ymin]
+    if ymax is not None:
+        gl = [g for g in gl if g[1] < ymax]
     if not gl:
         return ""
     rows = _group_rows(gl, mh * 0.5)
@@ -333,7 +383,17 @@ def pdf_to_pages(path):
     try:
         for page in pdf:
             try:
-                pages.append(_reading_order(page))
+                # 각주 구분선이 있으면 위(본문)·아래(각주)를 따로 읽고 빈 줄로 나눈다.
+                # 그래야 reflow 가 각주를 본문 문단에 이어 붙이지 않는다 (2026-08-27).
+                _ry = _footnote_rule_y(page)
+                if _ry is None:
+                    pages.append(_reading_order(page))
+                else:
+                    _body = _reading_order(page, ymin=_ry)
+                    _notes = _reading_order(page, ymax=_ry)
+                    _sep = "\n\n"
+                    pages.append(_body + _sep + _notes if (_body and _notes)
+                                 else (_body or _notes))
             except Exception:
                 pages.append("")
                 skipped += 1
