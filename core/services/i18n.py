@@ -312,6 +312,11 @@ _EN: dict[str, str] = {
         "(for scans, use «🔬 Text quality check» to re-read them with AI).",
     "분할 대기 없음 — 📄 텍스트 변환에서 TXT를 먼저 만들거나, 위에 TXT를 바로 올리세요":
         "Nothing queued - create a TXT in Text conversion first, or drop a TXT above.",
+    "쓸 수 있는 AI가 없어 다시 읽을 수 없습니다 — :material/settings: 설정 탭에서 API 키를 넣거나 CLI 구독을 켜 주세요.":
+        "No AI is available, so pages cannot be re-read - add an API key or turn on a "
+        "CLI subscription in the :material/settings: Settings tab.",
+    "판독에 쓸 AI: **%s** — 바꾸시려면 :material/settings: 설정 탭에서.":
+        "Reading with: **%s** - change it in the :material/settings: Settings tab.",
     "OCR 사전 처리가 필요합니다": "OCR preprocessing required",
     "다음 문서는 이미지로만 되어 있어, TXT 분리를 위해서는 OCR 사전 처리 작업이 필요합니다:":
         "These documents are image-only. OCR preprocessing is required before text extraction:",

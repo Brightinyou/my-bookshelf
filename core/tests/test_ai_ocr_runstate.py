@@ -71,6 +71,47 @@ class RunStateTest(unittest.TestCase):
         self.assertFalse(ai_ocr.is_running(self.out))
         self.assertFalse(ai_ocr._stop_requested(self.out))
 
+    # ── 2026-08-27: «다시 읽으려고 눌렀는데 작동을 안해» ───────────────────
+    # 눌러도 아무 일이 없던 까닭이 둘이었다. 여기서 둘 다 못 박는다.
+
+    def test_실패로_끝나면_도는_중이_아니다(self):
+        """오류가 적혔는데도 «도는 중»이면 화면이 진행바에 갇혀 오류를 못 보여 준다.
+
+        화면 코드가 `if 도는중: 진행바 / elif 오류: 오류표시` 라서, 심장박동이
+        신선한 채 error 만 얹히면 **영원히 진행바만 돈다.**
+        """
+        self._beat(error="RuntimeError: 공급자를 쓸 수 없습니다")
+        self.assertFalse(ai_ocr.is_running(self.out))
+        self.assertEqual(ai_ocr.status(self.out).get("error"),
+                         "RuntimeError: 공급자를 쓸 수 없습니다")
+
+    def test_시작하면_곧바로_도는_것으로_보인다(self):
+        """start_background 는 **갈래를 띄우기 전에** 첫 심장박동을 찍어야 한다.
+
+        예전에는 clear_run_state() 가 박동을 지운 채 돌아왔다. 버튼을 누른 뒤
+        화면이 다시 그려지는 시점엔 박동이 없어 is_running()=False → 진행바도
+        오류도 없이 «아무 일도 안 일어난» 것처럼 보였다.
+        """
+        started = []
+
+        def _fake_reocr(*a, **kw):
+            started.append(True)
+            time.sleep(0.5)          # 화면이 다시 그려질 만큼은 살아 있게
+
+        real = ai_ocr.reocr
+        ai_ocr.reocr = _fake_reocr
+        try:
+            ai_ocr.start_background(self.tmp / "책.pdf", self.out, "codex_cli",
+                                    pages=[1, 2, 3])
+            # 갈래가 아직 아무것도 안 했더라도 이미 «도는 중»이어야 한다
+            self.assertTrue(ai_ocr.is_running(self.out))
+            self.assertEqual(ai_ocr.status(self.out).get("total"), 3)
+            self.assertEqual(ai_ocr.status(self.out).get("provider"), "codex_cli")
+        finally:
+            ai_ocr.reocr = real
+            time.sleep(0.6)
+        self.assertTrue(started)
+
 
 if __name__ == "__main__":
     unittest.main()

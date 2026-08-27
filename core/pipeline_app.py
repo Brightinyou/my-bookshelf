@@ -2213,12 +2213,28 @@ if _active_view in {"1_txt", "all_run"}:
                          + f"  ({_pdf_tq})")
             else:
                 _npages_tq = ai_ocr.page_count(_pdf_tq)
-                _prov_opts = list(llm.CLI_PROVIDERS) + list(llm.API_PROVIDERS)
-                _prov_lbl = {"codex_cli": t("Codex CLI (구독 · 추가 과금 없음)"),
-                             "claude_cli": t("Claude CLI (구독 · 추가 과금 없음)")}
-                _prov_tq = st.radio(
-                    t("판독 공급자"), _prov_opts, horizontal=True, key="tq_prov",
-                    format_func=lambda p: _prov_lbl.get(p, f"{p} API"))
+                # ★공급자를 여기서 다시 고르게 하지 않는다 (2026-08-27 연구자 요청 —
+                #   "공급자 목록을 따로 띄우지 말고 그냥 기본 설정해 둔 것으로").
+                #   설정 탭에서 한 번 고른 모델을 다른 단계가 모두 쓰는데 이 화면만
+                #   따로 물었고, 게다가 **준비되지 않은 공급자까지 늘어놓고 첫 항목을
+                #   기본으로 골라 두었다.** CLI_PROVIDERS 의 첫 항목이 claude_cli 라
+                #   Codex 만 켜 둔 연구자에게는 «없는 공급자»가 골라진 채였다. 그대로
+                #   누르면 백그라운드 갈래가 곧바로 실패하는데, 화면은 st.rerun() 으로
+                #   이미 다시 그려진 뒤라 **오류도 진행바도 없이 아무 일도 안 일어난
+                #   것처럼** 보였다. 이제 설정값을 그대로 따른다.
+                _prov_tq, _ = llm.wiki_provider_model()
+                if not llm.has_key(_prov_tq):
+                    st.error(t("쓸 수 있는 AI가 없어 다시 읽을 수 없습니다 — "
+                               ":material/settings: 설정 탭에서 API 키를 넣거나 "
+                               "CLI 구독을 켜 주세요."))
+                    # 빠져나갈 길은 남겨 둔다 — 여기서 그냥 멈추면 이 화면에 갇힌다
+                    if st.button(t("아니요, 이대로 진행"), key="tq_skip_noai"):
+                        st.session_state["tq_dismissed"] = True
+                        st.rerun()
+                    st.stop()
+                _prov_lbl = {"codex_cli": "Codex CLI", "claude_cli": "Claude CLI"}
+                st.caption(tf("판독에 쓸 AI: **%s** — 바꾸시려면 :material/settings: 설정 탭에서.",
+                              _prov_lbl.get(_prov_tq, f"{_prov_tq} API")))
                 # 안내는 '실제로 판독할 쪽 수'로 계산해야 한다 — 시험 3쪽인데
                 # 책 전체 기준으로 겁을 주면 안 된다. _pages_tq는 아래에서 정해지므로
                 # 안내도 그 뒤로 미룬다.

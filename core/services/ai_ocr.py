@@ -993,6 +993,8 @@ def is_running(out_txt) -> bool:
     st = status(out_txt)
     if not st:
         return False
+    if st.get("error"):
+        return False                                  # 실패로 끝났다 — 도는 중이 아니다
     if time.time() - st.get("beat", 0) > STALE_AFTER:
         return False                                  # 심장이 멎었다
     pid = st.get("pid")
@@ -1071,6 +1073,22 @@ def start_background(pdf_path: Path, out_txt: Path, provider: str, model: str = 
         return
     kill_orphans(out_txt)              # 지난번에 부모가 죽어 남은 판독 프로세스 정리
     clear_run_state(out_txt)
+
+    # ★첫 심장박동은 **갈래를 띄우기 전에, 여기서** 찍는다 (2026-08-27).
+    #   예전에는 clear_run_state() 가 박동 파일을 지운 채 곧바로 돌아왔다. 화면은
+    #   버튼을 누른 뒤 st.rerun() 으로 다시 그려지는데 그 시점엔 박동이 없으니
+    #   is_running()=False → 진행바도 없고, 갈래가 곧 실패해 error 를 적어도 그걸
+    #   보러 다시 그릴 일이 없어 **아무 일도 안 일어난 것처럼** 보였다. 여기서
+    #   미리 찍어 두면 화면이 곧장 진행 상태로 들어가 3초마다 다시 그리므로,
+    #   성공하면 진행바가, 실패하면 오류가 반드시 눈에 띈다.
+    try:
+        _hb_path(out_txt).parent.mkdir(parents=True, exist_ok=True)
+        _hb_path(out_txt).write_text(json.dumps(
+            {"beat": time.time(), "pid": os.getpid(), "done": 0,
+             "total": len(pages) if pages else 0, "page": 0, "provider": provider,
+             "page_started": time.time()}, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
 
     def _worker():
         try:
