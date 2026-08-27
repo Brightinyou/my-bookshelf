@@ -53,7 +53,7 @@ From the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releas
 
 #### Step 2 — Run it (one-time security prompt ⚠️)
 
-Double-clicking `Setup.exe` brings up a blue *"Windows protected your PC"* screen. **This is not a virus** — the app simply is not code-signed (a certificate costs a few hundred dollars a year).
+Double-clicking `Setup.exe` brings up a blue *"Windows protected your PC"* screen. This is the notice Windows shows for software that **has not been signed with a commercial code-signing certificate** — common for programs shared by an individual.
 
 1. Click **[More info]**.
 2. Click the **[Run anyway]** button that appears.
@@ -101,7 +101,7 @@ On the [**latest release**](https://github.com/Brightinyou/my-bookshelf/releases
 
 #### Step 3 — First time only: pass the security warning ⚠️
 
-This app is a **personal build without Apple signing/notarization**, so the first launch shows an *"unidentified developer"* warning. **It is not malware** — it just skips the (US$99/yr) signing cost. Allow it once as follows. (The DMG does **not** remove this step — it's a signing matter, independent of packaging.)
+This app is a **personal build that has not gone through Apple signing/notarization**, so the first launch shows an *"unidentified developer"* warning. This is a common notice for software shared by an individual; allow it once as follows. (The DMG does **not** remove this step — it's a signing matter, independent of packaging.)
 
 - **Try first**: **right-click (or control-click)** the `MyBookshelf` icon in Applications → **Open** → **Open** in the dialog.
 - **If that doesn't open it** (recent macOS blocks the right-click bypass):
