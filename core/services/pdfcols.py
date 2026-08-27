@@ -4,6 +4,7 @@
 - 띄어쓰기는 실제 공백 문자 유지 + x좌표 간격 보조(깨진 공백 폰트 대응).
 - 각 행을 거터(빈 세로 띠)에서 열별로 분할해 컬럼 읽기순서 복원.
 논문 2단, 뉴스레터, 1단→2단 혼합, 한글+영어 혼합, 3단 등을 처리한다."""
+import re
 import statistics
 import unicodedata
 
@@ -240,6 +241,41 @@ def _cluster(positions, tol):
     return [(statistics.median(g), len(g)) for g in groups]
 
 
+_FN_LINE = re.compile(r"^\s*\d{1,3}[\s.)]")
+
+
+def _split_note_lines(notes_text: str) -> str:
+    """각주 블록 안에서 **번호로 시작하는 줄마다 새 문단**으로 끊는다 (2026-08-27).
+
+    ★여기는 구분선 아래라 각주인 것이 이미 확실하다. 그러니 문서 전체 번호 사슬
+    (reflowlib.separate_footnotes)처럼 조심스럽게 볼 이유가 없다 — 번호로 시작하면
+    새 각주다. 사슬 방식은 중간에 각주 하나를 놓치면 뒤가 통째로 버려져서, 챕터에
+    닿는 각주가 40개 중 15개에 그쳤다.
+
+    각주가 쪽을 걸쳐 이어질 때 첫 줄은 번호 없이 시작하는데, 그 줄은 끊지 않으므로
+    앞 각주에 그대로 이어 붙는다 — 쪽 경계 처리는 reflow 쪽에서 이미 한다."""
+    # ★각주 번호는 윗첨자라 본문보다 기준선이 높아, 읽기 순서에서 **번호만 한 줄**로
+    # 떨어져 나온다. 먼저 그것을 뒷줄에 붙여 '1 David Silver…' 꼴로 되돌린다.
+    rows = notes_text.split("\n")
+    joined: list[str] = []
+    i = 0
+    while i < len(rows):
+        s = rows[i].strip()
+        nxt = rows[i + 1].strip() if i + 1 < len(rows) else ""
+        if s.isdigit() and len(s) <= 3 and nxt and not nxt.isdigit():
+            joined.append(s + " " + nxt)
+            i += 2
+            continue
+        joined.append(rows[i])
+        i += 1
+    out: list[str] = []
+    for ln in joined:
+        if _FN_LINE.match(ln) and out and out[-1].strip():
+            out.append("")
+        out.append(ln)
+    return "\n".join(out)
+
+
 def _footnote_rule_y(page) -> float | None:
     """각주 구분선의 y 좌표. 없으면 None (2026-08-27).
 
@@ -251,7 +287,11 @@ def _footnote_rule_y(page) -> float | None:
     "선 없음"으로 잘못 판정했다.
 
     쪽 아래 절반에 있는 얇고 가로로 긴 도형만 본다. 여럿이면 가장 위(=본문에 가까운
-    쪽)를 쓴다 — 그 아래가 통째로 각주다."""
+    쪽)를 쓴다 — 그 아래가 통째로 각주다.
+
+    ★돌려주는 값은 **위에서 아래로 재는 좌표**다. PDF 객체 좌표는 쪽 아래가 원점인데
+    `_glyphs`의 ycen 은 쪽 위가 원점이라 그대로 비교하면 위아래가 뒤집힌다
+    (2026-08-27 — 이것 때문에 각주 대신 본문이 잘려 나왔다)."""
     try:
         import ctypes
         import pypdfium2.raw as pr
@@ -282,7 +322,7 @@ def _footnote_rule_y(page) -> float | None:
              pr.FPDFPage_CountObjects(page.raw))
     except Exception:
         return None
-    return max(found) if found else None
+    return (h - max(found)) if found else None      # PDF좌표 → 위에서 아래로
 
 
 def _reading_order(page, ymin=None, ymax=None):
@@ -389,8 +429,9 @@ def pdf_to_pages(path):
                 if _ry is None:
                     pages.append(_reading_order(page))
                 else:
-                    _body = _reading_order(page, ymin=_ry)
-                    _notes = _reading_order(page, ymax=_ry)
+                    # 위에서 아래로 재므로 본문이 선 '위'(작은 값), 각주가 '아래'다
+                    _body = _reading_order(page, ymax=_ry)
+                    _notes = _split_note_lines(_reading_order(page, ymin=_ry))
                     _sep = "\n\n"
                     pages.append(_body + _sep + _notes if (_body and _notes)
                                  else (_body or _notes))
