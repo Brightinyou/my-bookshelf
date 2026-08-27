@@ -5,6 +5,10 @@ toolbarMode = "minimal"
 [server]
 # 스캔 PDF 등 큰 원본도 업로드 창으로 바로 넣을 수 있게 기본 200MB에서 상향 (2026-07-25)
 maxUploadSize = 1024
+# 소스 파일 감시를 끈다 (2026-08-27). 설치 프로그램이 앱이 떠 있는 채로 core/*.py를
+# 덮어쓰면 Streamlit이 모듈이 바뀐 것을 알아채고 화면을 다시 그려 깜빡였다. 배포본은
+# 실행 중에 코드가 바뀔 일이 없으니 감시가 필요 없고, 감시 스레드만큼 가벼워진다.
+fileWatcherType = "none"
 
 [browser]
 gatherUsageStats = false

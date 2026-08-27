@@ -196,6 +196,28 @@ begin
     );
 end;
 
+{ 설치 전에 실행 중인 앱을 먼저 끈다.
+  ★2026-08-27. 예전에는 taskkill이 [UninstallRun]에만 있어서, **설치 때는 앱이
+  살아 있는 채로 core\*.py가 덮여 썼다.** 그러면 이미 불러온 옛 모듈과 새로
+  불러오는 새 모듈이 한 프로세스에서 섞이고, 남은 창은 죽은 서버에 재접속을
+  되풀이하며 깜빡인다. 실측(v1.2.59 설치 직후): 창 6개·서버 2개가 떠 있었다. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  Exec(
+    ExpandConstant('{cmd}'),
+    '/c powershell -NoProfile -Command "Get-CimInstance Win32_Process | ' +
+    'Where-Object { $_.Name -in @(''python.exe'',''pythonw.exe'') -and ' +
+    '($_.CommandLine -like ''*pipeline_app.py*'' -or $_.CommandLine -like ''*desktop.py*'') } | ' +
+    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode
+  );
+  { 포트와 파일 잠금이 풀릴 틈을 준다 }
+  Sleep(1500);
+end;
+
 procedure InitializeWizard;
 begin
   PythonDownloadPage :=

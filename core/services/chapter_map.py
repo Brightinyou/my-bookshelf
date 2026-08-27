@@ -442,10 +442,12 @@ def review_findings(ws_name: str, stem: str) -> list[str]:
         out.append(f"장이 {len(files)}개뿐입니다 — 목차와 견주어 보세요")
     numeric = [f for f in files if re.fullmatch(r"제?\s*\d+\s*장|Chapter\s*\d+|\d+", chapter_title(f).strip(), re.I)]
     if numeric:
-        out.append(f"제목이 번호뿐인 장이 {len(numeric)}개 있습니다 — 목차를 붙여넣으면 채워집니다")
-    for _i, _h in missed_headings(ws_name, stem):
-        out.append(f"{_i:02d}장 안에 제목처럼 보이는 줄이 있습니다: 「{_h}」"
-                   " — «✂️ 장 나누기»에서 여기부터 새 장으로 나눌 수 있습니다")
+        out.append(f"제목이 번호뿐인 장이 {len(numeric)}개 있습니다")
+    # ★«01장 안에 제목처럼 보이는 줄이 있습니다 — 장 나누기에서 …» 경고는 뺐다
+    #   (2026-08-27). 그 «✂️ 장 나누기»를 같은 날 화면에서 걷어냈으므로, 남겨 두면
+    #   있지도 않은 단추를 찾으라고 시키는 꼴이 된다. 논문 한 편에 다섯 줄씩 붙어
+    #   실제로 화면을 덮었다. missed_headings() 자체는 남겨 둔다 — 판정은 멀쩡하고
+    #   나중에 다시 쓸 자리가 생길 수 있다.
     return out
 
 
