@@ -242,6 +242,8 @@ def _cluster(positions, tol):
 
 
 _FN_LINE = re.compile(r"^\s*\d{1,3}[\s.)]")
+# 하이픈(미매핑 글리프 포함)으로 끊긴 낱말 바로 뒤에 붙은 각주 번호
+_HYPH_NOTE = re.compile(r"[a-z￾�-](\d{1,3})\s+[A-Z“‘]")
 
 
 def _split_note_lines(notes_text: str) -> str:
@@ -306,6 +308,18 @@ def _notes_text(page, ymin: float) -> str:
     left = min(x for x, _ in items)
     out: list[str] = []
     for x, text in items:
+        # ★본문 마지막 줄이 각주 첫 줄과 한 행으로 묶여 오는 일이 있다 (2026-08-27).
+        # 낱말이 하이픈으로 끊긴 자리 바로 뒤에 각주 번호가 붙는 모양이다 —
+        #   'as a result of re￾26 A. V. Yurov, …'   'what dis￾32 "You have made …'
+        # 그 각주(9·26·32번)를 통째로 놓치고 있었다. 하이픈 뒤 번호에서 끊는다.
+        m = _HYPH_NOTE.search(text)
+        if m:
+            head, tail = text[:m.start(1)].rstrip(), text[m.start(1):]
+            if head:
+                out.append(head)
+            out.append("")
+            out.append(tail)
+            continue
         if x <= left + mw * 0.8 and out and out[-1].strip():
             out.append("")               # 새 각주 — 문단을 끊는다
         out.append(text)
