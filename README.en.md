@@ -1,13 +1,39 @@
 # My Bookshelf
 
-**A personal research tool that turns PDF/DOCX/HWP/HWPX/TXT documents into EPUB e-books, Word documents, Hangul (HWPX) documents, and Obsidian Wiki notes** — Text conversion → Chapter split → Translation → Summaries → **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki**, in one flow.
+**A personal research tool that turns books, papers and manuscripts into readable summary notes and e-books.**
+Feed it PDF/DOCX/HWP/HWPX/TXT and it translates, summarises, and exports to **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki**.
 
 [![Download for Windows](https://img.shields.io/badge/%F0%9F%AA%9F%20Windows-Setup.exe-0078D4?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
 [![Download for macOS](https://img.shields.io/badge/%F0%9F%8D%8E%20macOS-.dmg-000000?style=for-the-badge)](https://github.com/Brightinyou/my-bookshelf/releases/latest)
 
-> 🇰🇷 한국어 설명서: [README.md](README.md)
+> 🇰🇷 한국어 설명서: [README.md](README.md) · 📘 Every tab in detail: [User manual](docs/MANUAL.en.md)
 
 Runs on both Windows and macOS. The same core (`core/`) is shared and **only the installation differs** — in [2. Installation](#2-installation), read the part for your operating system.
+
+---
+
+## ⚡ Quick start
+
+| | What to do |
+|---|---|
+| **1. Install** | Grab 🪟 `Setup.exe` or 🍎 `MyBookshelf.dmg` from the badges above and run it. You clear a **security warning once**, and the first launch takes **5–20 minutes** to prepare. → [details](#2-installation) |
+| **2. Connect an AI** | In the app's `⚙️ Settings` tab, switch on an **AI subscription (CLI)** or paste an **API key**. A ChatGPT or Claude subscription works at no extra cost. → [details](#3-first-time-setup--connect-an-ai) |
+| **3. Add documents** | Drop files onto the `📄 Text conversion` tab and press **[▶ Start]**. From there, **the popups walk you through** each following stage. |
+| **4. Collect results** | In the `📖 Output` tab, switch on EPUB, Word, Hangul, or Obsidian and press **[▶ Start]**. |
+
+---
+
+## Contents
+
+1. [What it does](#1-what-it-does)
+2. [Installation](#2-installation) — [🪟 Windows](#windows) · [🍎 macOS](#macos)
+3. [First-time setup — connect an AI](#3-first-time-setup--connect-an-ai)
+4. [The workflow](#4-the-workflow)
+5. [Start · Stop · Resume](#5-start--stop--resume)
+6. [Language and translation](#6-language-and-translation)
+7. [Data locations](#7-data-locations)
+8. [Troubleshooting](#8-troubleshooting)
+9. [Copyright and disclaimer](#9-copyright-and-disclaimer)
 
 ---
 
@@ -41,6 +67,8 @@ Both are on the [**latest release**](https://github.com/Brightinyou/my-bookshelf
 </div>
 
 ---
+
+<a id="windows"></a>
 
 ### 🪟 Windows
 
@@ -83,6 +111,8 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 
 ---
 
+<a id="macos"></a>
+
 ### 🍎 macOS
 
 #### Step 1 — Download
@@ -108,7 +138,7 @@ Opening `MyBookshelf` for the first time shows an *"unidentified developer"* war
 - **Try first**: **right-click (or control-click)** the `MyBookshelf` icon in Applications → **Open** → **Open** in the dialog.
 - **If that doesn't open it** (recent macOS blocks the right-click bypass):
   1. Double-click once so the warning appears (you can dismiss it).
-  2. Go to ** menu → System Settings → Privacy & Security**.
+  2. Go to the **Apple menu (top-left of the screen) → System Settings → Privacy & Security**.
   3. Scroll down to *"'MyBookshelf' was blocked"* and click **[Open Anyway]**, then **Open** in the dialog.
 
 > Once allowed, just **double-click** the icon from then on.
@@ -195,47 +225,23 @@ Also open `⚙️ Settings → Obsidian vault` to check or change the folder whe
 
 ---
 
-## 4. The workflow in detail
+## 4. The workflow
 
-Switch stages from the top menu. Every upload area accepts **file picker or drag & drop**. The "open folder" buttons are tucked into a small expander so the actual work area stands out.
+Switch stages from the top menu. Every upload area accepts **the file picker or drag & drop**.
 
-> **When a stage finishes, a popup asks about the next step.** For example, after text conversion it asks *"Split into chapters next?"* — press **[Yes, proceed now]** and **only the book you just processed** advances and runs automatically (other queued books are left untouched). To process several at once or pick manually, use **[Choose on the screen]** to open the regular queue view. The popup closes while processing so the progress bar and Stop button stay visible.
+| Stage | What it does |
+|---|---|
+| **① 📄 Text conversion** | Extracts the body text from PDF/DOCX/HWP/HWPX/TXT and saves it as TXT. You can also pull a paper straight in by URL, DOI, or arXiv number. |
+| **② ✂️ Chapter split** | Splits a book TXT into per-chapter files. If no split is needed, the whole document moves on as it is. |
+| **③ 🌐 Translation** | Detects the source language automatically and renders it into your chosen **target language**. A paragraph-by-paragraph bilingual file is optional. |
+| **④ 📝 Summaries** | Builds per-chapter notes — author, key summary, overview, key quotes, key keywords. Length is adjustable from 5–40 % of the source. |
+| **⑤ 📖 Output** | Exports to **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki** — any combination at once. |
 
-### ① 📄 Text conversion
-- Uploaded PDF/DOCX/HWP/HWPX/TXT files stack up in the **processing queue**.
-- Select items and press **[Convert to text]** — extracts the text and saves TXT. The original document is kept.
-- **[Delete]** removes mistakenly added files.
-- **Fetch from a paper source**: pull a paper by URL, DOI or arXiv number (for login/paywalled pages, download the PDF yourself and upload it).
+> **When a stage finishes, a popup asks about the next step.** **[Yes, proceed now]** advances only the book you just processed; use **[Choose on the screen]** to pick several at once from the queue.
 
-### ② ✂️ Chapter split
-- Splits a book TXT into **per-chapter files** under a per-book folder.
-- **[Split]** — split into chapters. **[Move to next step]** — if no split is needed, send the whole document onward (when source differs from the target language → Translation; otherwise → Summaries).
-- Short documents are handled separately under "Short documents".
+> ⚠️ **EPUB carries the full text, not a summary.** Use it only on documents you already have the right to use, and only within your own personal use. ([9. Copyright and disclaimer](#9-copyright-and-disclaimer))
 
-### ③ 🌐 Translation (multiple languages → chosen target)
-- Detects the source language automatically, including English, German, Dutch, French, Spanish, Italian, Portuguese, Latin, Japanese, Chinese, Russian, Greek, Hebrew, and Arabic.
-- Choose the output language in `⚙️ Settings → 🎯 Target language`: Korean, English, Japanese, Chinese, German, French, Spanish, Italian, Portuguese, Dutch, or Russian. Korean is the default.
-- The target language applies consistently to translations, chapter summaries, and Wiki notes. It is separate from the interface language.
-- Translation text remains named `_ko.txt` for compatibility. Enable the **Bilingual** toggle to also create `_bilingual.txt`, which pairs source and translation by paragraph.
-- Existing translations and summaries remain in their previous language. Delete them and run the stage again after changing the target.
-
-### ④ 📝 Summaries
-- Creates per-chapter summary notes (`_wiki.md`) — author, key summary, overview, key quotes, key keywords (with explanations).
-- Summaries are written as **direct statements of the content**, not "the author says …".
-- **Length control**: in the Settings tab or the collapsible **"Adjust summary length"** here, set the summary body to **5–40 % of the source** (15 % default). Higher values make longer notes and increase **output tokens / API cost** (input tokens for the source stay the same). Short chapters keep a minimum length.
-- Select queued items and press **[▶ Start]**.
-
-### ⑤ 📖 Output (Create EPUB · Create DOCX · Create HWPX · Wiki)
-- This stage has **four independent toggles**. Enable any combination to generate every selected format.
-  - **EPUB e-book** *(full text, not a summary)*: packages the complete source/translated chapters into an `.epub` in `5_전자책(EPUB)`. It is instant once optional Korean line-break repair has finished. ⚠️ This reproduces the entire copyrighted work. Use it only on documents **you already have the right to use**, and only within your own personal use. What copying, translation, or format conversion is permitted varies by country and by how you obtained the document — this feature grants you no right to distribute or share the result.
-  - **Line-break repair** *(optional, Korean source books)*: restores printed line breaks into readable paragraphs before EPUB export. AI decides whitespace only; it does not alter the body text.
-  - **Word document (DOCX)** *(summary-based)*: saves editable summaries in `5_위키문서(DOCX)`.
-  - **Hangul document (HWPX)** *(summary-based)*: saves editable summaries in `5_위키문서(HWPX)`.
-  - **Obsidian Wiki** *(summary-based)*: saves a hub note and per-chapter notes in the selected vault.
-  - Select at least one output.
-- The note/document frontmatter is auto-filled with **author, publication date, and publisher (`Place: Publisher`)**, extracted from the source's title/colophon page (left blank if not confidently found).
-- If a book is already reflected, the popup asks **"Replace?"** to update it in place.
-- Use **[Select all]/[Clear]** in the queue, then **[▶ Start]**.
+📘 Every button and option is documented in the **[User manual](docs/MANUAL.en.md)**.
 
 ---
 
@@ -250,12 +256,12 @@ For the AI stages (Chapter split, Translation, Summaries, Wiki), pressing **[▶
 
 ---
 
-## 6. Language and the translation stage
+## 6. Language and translation
 
 `⚙️ Settings → Language` changes the interface language only.
 
 - Choose the language of translations, summaries, and Wiki notes separately in `⚙️ Settings → 🎯 Target language`.
-- The Translation stage is currently hidden while the interface is set to English. Set the interface to Korean to run translation work.
+- The Translation stage works with the interface set to English too — the two settings are independent.
 - Changing the target language does not rewrite existing translations or summaries; delete the relevant output and run the stage again.
 
 ---
@@ -268,7 +274,7 @@ Default data folders (folder names are Korean or English depending on the instal
 0_Inbox/            uploads/downloads waiting (pre-processing)
 1_PDF_Originals/    original PDFs
 2_Converted_TXT/    converted TXT (done/ = archived sources after split)
-3_Chapters/<book>/  workspace holding chapters, translations (_ko), bilingual output (_bilingual), summaries (_wiki.md), overview
+3_Chapters/<book>/  workspace holding chapters, translations (_ko etc., by target language), bilingual output (_bilingual), summaries (_wiki.md), overview
 5_전자책(EPUB)/      exported full-text EPUB e-books
 5_위키문서(DOCX)/    exported DOCX documents (when "Create DOCX document" is on — this folder name stays in Korean regardless of the UI language)
 5_위키문서(HWPX)/    exported HWPX documents (when "Create HWPX document" is on — this folder name stays in Korean regardless of the UI language)
