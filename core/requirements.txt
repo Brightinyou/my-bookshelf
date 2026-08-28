@@ -7,7 +7,9 @@ anthropic>=0.40
 certifi>=2024.8.30
 # 네이티브 창 래핑 (브라우저 탭 대신 독립 앱 창)
 pywebview>=5.0
-pythonnet>=3.0
+# pythonnet 은 Windows 의 WebView2 백엔드에만 필요하다. macOS 에서는 설치는
+# 되지만 Mono 가 없어 import clr 이 실패한다 — 받을 이유가 없다 (2026-08-29).
+pythonnet>=3.0; sys_platform == "win32"
 # PDF 장 지도 판독 — 북마크·페이지 추출·이미지 렌더링 (2026-07-07 Tier 0)
 pypdfium2>=4.30
 Pillow>=10.0

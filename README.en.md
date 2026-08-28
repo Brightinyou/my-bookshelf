@@ -145,12 +145,12 @@ Opening `MyBookshelf` for the first time shows an *"unidentified developer"* war
 
 > Once allowed, just **double-click** the icon from then on.
 
-#### Step 4 — First-run setup (automatic)
+#### Step 4 — First launch
 
-The first launch **auto-installs** the Python environment and packages (**5–20 min** depending on your network; the window may show "preparing"). When done, the native app window appears. Later launches open in seconds.
+If you installed the `.pkg`, it **opens right away.** The Python environment and packages are prepared during installation — that is why the installer pauses for a few minutes. If Python is missing, the installer **downloads and installs it for you**, so there is nothing to prepare on your side.
 
-> Requires Python 3.10+. If missing, install from [python.org](https://www.python.org/downloads/).
-> If setup seems stuck, check the log: `~/Library/Application Support/MyBookshelf/app.log`
+> With the zip, the same preparation happens on first launch instead (a few minutes depending on your network; the window may show "preparing").
+> Logs: `~/Library/Application Support/MyBookshelf/install.log` (installer) and `app.log` (app).
 
 > <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **On Windows?** → [Download `Setup.exe` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) and run it. macOS and Windows share a single repository.
 

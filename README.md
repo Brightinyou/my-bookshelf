@@ -16,7 +16,7 @@ Windows와 macOS 모두 지원합니다. 같은 코어(`core/`)를 쓰고 **설�
 
 | | 할 일 |
 |---|---|
-| **1. 설치** | 위 배지에서 <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` 또는 <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 첫 실행 준비에 **5~20분** 걸립니다. → [자세히](#2-설치) |
+| **1. 설치** | 위 배지에서 <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` 또는 <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 설치 중 파이썬 환경 준비에 몇 분 걸립니다. → [자세히](#2-설치) |
 | **2. AI 연결** | 앱의 `⚙️ 설정` 탭에서 **AI 구독(CLI)** 을 켜거나 **API 키**를 넣습니다. ChatGPT·Claude 구독이 있으면 추가 요금 없이 씁니다. → [자세히](#3-첫-설정--ai-연결) |
 | **3. 문서 넣기** | `📄 텍스트 변환` 탭에 파일을 끌어다 놓고 **[▶ 시작]**. 이후 단계는 **팝업이 물어보는 대로** 이어집니다. |
 | **4. 결과 받기** | `📖 출력` 탭에서 EPUB·Word·한글·Obsidian 중 원하는 형식을 켜고 **[▶ 시작]**. |
@@ -145,11 +145,12 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 > 한 번 허용하면 그다음부터는 **아이콘을 그냥 더블클릭**하면 됩니다.
 
-#### 4단계 — 첫 실행 준비 (자동)
+#### 4단계 — 첫 실행
 
-처음 실행하면 필요한 파이썬 환경과 패키지를 **자동으로 설치**합니다(네트워크 상태에 따라 **5~20분**, 창이 준비 중일 수 있음). 완료되면 네이티브 앱 창이 뜹니다. 이후 실행은 몇 초면 열립니다.
+`.pkg`로 설치하셨다면 **바로 열립니다.** 파이썬 환경과 패키지는 설치 과정에서 이미 갖춰집니다(그래서 설치 관리자가 몇 분 머뭅니다). 파이썬이 없으면 설치 프로그램이 **알아서 받아 설치**하므로 따로 준비하실 것이 없습니다.
 
-> Python 3.10 이상이 필요합니다. 없으면 [python.org](https://www.python.org/downloads/)에서 설치하세요.
+> zip으로 받으셨다면 첫 실행 때 같은 준비를 합니다(네트워크 상태에 따라 몇 분, 창이 준비 중일 수 있음).
+> 준비 기록은 `~/Library/Application Support/MyBookshelf/install.log`에 남습니다.
 > 설치가 오래 걸리거나 멈춘 것 같으면 로그를 확인하세요: `~/Library/Application Support/MyBookshelf/app.log`
 
 ---

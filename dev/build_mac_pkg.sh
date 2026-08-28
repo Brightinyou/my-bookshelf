@@ -16,17 +16,16 @@ APP_VERSION="$(python3 -c "import sys; sys.path.insert(0,'$ROOT_DIR/core'); from
 APP_VERSION_NUMBER="${APP_VERSION#v}"
 IDENTIFIER="com.mybookshelf.app"
 
-# ── .app 이 없거나 버전이 다르면 먼저 빌드 ──────────────────
-NEED_BUILD=1
-if [ -d "$APP" ]; then
-    CUR="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist" 2>/dev/null || echo "")"
-    [ "$CUR" = "$APP_VERSION" ] && NEED_BUILD=0
-fi
-if [ "$NEED_BUILD" = "1" ]; then
+# ── .app 을 언제나 다시 빌드한다 ────────────────────────────
+# 처음에는 «버전이 같으면 건너뛰기» 였는데, 이 저장소는 판올림을 Windows 쪽에서
+# 하므로 맥에서는 버전이 같은 채로 소스만 바뀌는 것이 보통이다. 그 조건이면
+# 바뀐 코드가 통째로 빠진 pkg 가 나온다 — requirements.txt 를 고치고도 옛
+# 것이 담겼다. 빌드는 몇 초라 아낄 이유가 없다. (2026-08-29)
+if [ "${1:-}" != "--no-build" ]; then
     echo "📦 .app 을 먼저 빌드합니다…"
     bash "$SCRIPT_DIR/build_mac_app.sh" < /dev/null > /dev/null
 fi
-[ -d "$APP" ] || { echo "❌ $APP 이 없습니다"; exit 1; }
+[ -d "$APP" ] || { echo "❌ $APP 이 없습니다 (--no-build 로 건너뛰었나?)"; exit 1; }
 
 echo "📦 MyBookshelf.pkg 빌드 시작… ($APP_VERSION)"
 
@@ -48,11 +47,20 @@ pkgbuild --analyze --root "$STAGE/root" "$COMPONENT" >/dev/null
 /usr/libexec/PlistBuddy -c "Set :0:BundleIsVersionChecked false" "$COMPONENT" 2>/dev/null || true
 
 # ── pkg 생성 ────────────────────────────────────────────────
+# ── 설치 직후 스크립트: 파이썬 환경 준비 ─────────────────
+# Windows 의 [Run] «setup.bat --installer» 와 같은 자리. 설치가 끝나면 바로
+# 실행되도록 만든다 — 첫 실행 때 기다리지 않는다.
+SCRIPTS="$STAGE/scripts"
+mkdir -p "$SCRIPTS"
+cp "$SCRIPT_DIR/installer/mac_postinstall.sh" "$SCRIPTS/postinstall"
+chmod +x "$SCRIPTS/postinstall"
+
 PKG="$DIST/MyBookshelf-$APP_VERSION.pkg"
 rm -f "$PKG"
 pkgbuild \
     --root "$STAGE/root" \
     --component-plist "$COMPONENT" \
+    --scripts "$SCRIPTS" \
     --install-location /Applications \
     --identifier "$IDENTIFIER" \
     --version "$APP_VERSION_NUMBER" \
@@ -68,4 +76,4 @@ echo "받는 사람이 할 일:"
 echo "  1. MyBookshelf.pkg 더블클릭"
 echo "  2. «확인되지 않은 개발자» 경고 → 우클릭 → 열기 (첫 1회)"
 echo "  3. 설치 관리자에서 [계속] → [설치] → 암호 입력"
-echo "  4. Launchpad 에서 My Bookshelf 실행 (첫 실행 패키지 설치 5~20분)"
+echo "  4. Launchpad 에서 My Bookshelf 실행 — 설치 때 환경을 미리 갖추므로 바로 열린다"
