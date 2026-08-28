@@ -137,43 +137,25 @@ begin
     FileExists('C:\Python314\python.exe');
 end;
 
-function DownloadAndInstallPython: Boolean;
-var
-  ResultCode: Integer;
-  Error: String;
-  PythonArgs: String;
+{ 파이썬 설치 인자 — 마법사 경로와 무음 경로가 같은 값을 쓰도록 한 곳에 둔다. }
+function PythonInstallArgs: String;
 begin
-  Result := False;
-  PythonArgs :=
+  Result :=
     '/quiet InstallAllUsers=0 Include_launcher=1 InstallLauncherAllUsers=0 ' +
     'Include_pip=1 PrependPath=1 Include_test=0 AssociateFiles=0 Shortcuts=0';
+end;
 
-  PythonDownloadPage.Clear;
-  PythonDownloadPage.Add(
-    '{#PythonInstallerUrl}',
-    '{#PythonInstallerName}',
-    '{#PythonInstallerSha}'
-  );
-  PythonDownloadPage.Show;
-  try
-    try
-      PythonDownloadPage.Download;
-    except
-      if PythonDownloadPage.AbortedByUser then
-        Log('Python download aborted by user.')
-      else begin
-        Error := Format('%s: %s', [PythonDownloadPage.LastBaseNameOrUrl, GetExceptionMessage]);
-        SuppressibleMsgBox(AddPeriod(Error), mbCriticalError, MB_OK, IDOK);
-      end;
-      exit;
-    end;
-  finally
-    PythonDownloadPage.Hide;
-  end;
+{ 내려받은 파이썬 설치 파일을 실행한다. 실패 사유는 여기서 한 번만 알린다
+  (무음 설치에서는 SuppressibleMsgBox 가 창을 띄우지 않고 기본값으로 넘어간다). }
+function RunPythonInstaller(const InstallerPath: String): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := False;
 
   if not Exec(
-    ExpandConstant('{tmp}\{#PythonInstallerName}'),
-    PythonArgs,
+    InstallerPath,
+    PythonInstallArgs,
     '',
     SW_SHOWNORMAL,
     ewWaitUntilTerminated,
@@ -199,6 +181,41 @@ begin
     exit;
   end;
 
+  Result := True;
+end;
+
+function DownloadAndInstallPython: Boolean;
+var
+  Error: String;
+begin
+  Result := False;
+
+  PythonDownloadPage.Clear;
+  PythonDownloadPage.Add(
+    '{#PythonInstallerUrl}',
+    '{#PythonInstallerName}',
+    '{#PythonInstallerSha}'
+  );
+  PythonDownloadPage.Show;
+  try
+    try
+      PythonDownloadPage.Download;
+    except
+      if PythonDownloadPage.AbortedByUser then
+        Log('Python download aborted by user.')
+      else begin
+        Error := Format('%s: %s', [PythonDownloadPage.LastBaseNameOrUrl, GetExceptionMessage]);
+        SuppressibleMsgBox(AddPeriod(Error), mbCriticalError, MB_OK, IDOK);
+      end;
+      exit;
+    end;
+  finally
+    PythonDownloadPage.Hide;
+  end;
+
+  if not RunPythonInstaller(ExpandConstant('{tmp}\{#PythonInstallerName}')) then
+    exit;
+
   Result := HasSupportedPython or HasPython314InCommonPaths;
   if not Result then
     SuppressibleMsgBox(
@@ -208,6 +225,43 @@ begin
       MB_OK,
       IDOK
     );
+end;
+
+{ 무음 설치(/SILENT·/VERYSILENT)에서의 파이썬 확보.
+  ★2026-08-29. 위의 DownloadAndInstallPython 은 NextButtonClick(마법사의 [다음])
+  에서만 불리는데 **무음 설치에는 누를 버튼이 없어 한 번도 실행되지 않았다.**
+  파이썬 없는 PC에 무음 설치를 걸면 그대로 진행되다가 setup.bat 이
+  "Python 3.10 or newer is required" 로 실패한다 — 무인 배포(install-mybookshelf.ps1)가
+  걸렸던 자리다. 여기서는 물어볼 사람이 없으니 곧장 받아 설치하고, 실패하면
+  빈 문자열 대신 사유를 돌려줘 설치를 그 자리에서 멈춘다(반쪽 설치 방지). }
+function EnsurePythonSilently: String;
+begin
+  Result := '';
+
+  try
+    DownloadTemporaryFile(
+      '{#PythonInstallerUrl}',
+      '{#PythonInstallerName}',
+      '{#PythonInstallerSha}',
+      nil
+    );
+  except
+    Result :=
+      'Python ' + '{#PythonVersion}' + ' could not be downloaded: ' + GetExceptionMessage;
+    exit;
+  end;
+
+  if not RunPythonInstaller(ExpandConstant('{tmp}\{#PythonInstallerName}')) then begin
+    Result :=
+      'Python ' + '{#PythonVersion}' + ' could not be installed automatically.' + #13#10 +
+      'Install Python from python.org, then run Setup.exe again.';
+    exit;
+  end;
+
+  if not (HasSupportedPython or HasPython314InCommonPaths) then
+    Result :=
+      'Python ' + '{#PythonVersion}' + ' was installed but Setup could not verify it.' + #13#10 +
+      'Run Setup.exe again once Python is visible on this PC.';
 end;
 
 { 설치 전에 실행 중인 앱을 먼저 끈다.
@@ -220,6 +274,14 @@ var
   ResultCode: Integer;
 begin
   Result := '';
+
+  { 무음 설치에는 마법사 단계가 없어 NextButtonClick 이 안 불린다 — 여기서 확보한다. }
+  if WizardSilent and not (HasSupportedPython or HasPython314InCommonPaths) then begin
+    Result := EnsurePythonSilently;
+    if Result <> '' then
+      exit;
+  end;
+
   Exec(
     ExpandConstant('{cmd}'),
     '/c powershell -NoProfile -Command "Get-CimInstance Win32_Process | ' +
