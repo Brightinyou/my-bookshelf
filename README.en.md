@@ -102,7 +102,16 @@ At the end of the install you'll see *"Preparing Python environment"*, and it wi
 - Progress log: `install.log` in that folder
 - If it will not start: `launch-error.log` in the same folder
 
-#### Step 6 — Launch
+#### Step 6 — Connect an AI
+
+The regular `Setup.exe` installs the app and Python environment only. In the app's `⚙️ Settings`, prepare one of the following:
+
+- To use a ChatGPT or Claude subscription, install the Codex or Claude CLI and enable its CLI toggle.
+- To use an API, enter a Gemini, OpenAI, or Anthropic API key.
+
+Use the **one-line install** below if you want the AI CLI and Obsidian installed automatically too.
+
+#### Step 7 — Launch
 
 Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open in seconds.
 
@@ -114,7 +123,7 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 > [!TIP]
 > ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows — ⚡ One-line install
 >
-> *Skips steps 1–6.*
+> *Skips steps 1–7.*
 >
 > If you're comfortable with PowerShell, **one script does Python, the app, an AI CLI, and default settings.**
 >
@@ -140,42 +149,66 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 
 > The file is only a few hundred KB — **that is expected.** The `.pkg` fetches and prepares the Python environment during installation.
 
-#### Step 2 — Put it in Applications
+#### Step 2 — Pass the one-time security warning ⚠️
 
-- **`.pkg`**: double-click → [Continue] → [Install] → your Mac password. When Terminal opens at the end, choose **Claude, Codex, both, or later**, then choose whether to install Obsidian. Each option shows its additional disk usage.
-- **zip**: unzip and move the resulting `MyBookshelf.app` into your **Applications** folder.
+Because this independently distributed app has not gone through Apple signing and notarization, macOS may show an *"unidentified developer"* warning.
 
-> ⚠️ **If you took the zip, move the app into Applications before running it.** Double-clicking it straight from your Downloads folder makes macOS run it from a locked temporary folder, and it **hangs with no visible response**. The `.pkg` does not have this problem.
+- **`.pkg`**: in Downloads, **control-click (or right-click) `MyBookshelf.pkg` → Open → Open**.
+- **zip**: first move `MyBookshelf.app` into **Applications**, then **control-click its icon → Open → Open**. Running it directly from Downloads can place it in a temporary translocation path and make it appear to hang.
+- If it is still blocked, double-click once to trigger the warning, then use **Apple menu → System Settings → Privacy & Security → Open Anyway**.
 
-#### Step 3 — First time only: pass the security warning ⚠️
+#### Step 3 — Install the app and Python environment
 
-Opening `MyBookshelf` for the first time shows an *"unidentified developer"* warning. This is the notice macOS shows for software that **has not gone through Apple signing/notarization** — common for programs shared by an individual. Allow it once as follows.
+In the `.pkg` installer, click **[Continue] → [Install]** and enter your Mac password. It automatically:
 
-> Neither the `.pkg` nor the zip removes this step — it's about signing, not packaging. With the `.pkg` the warning appears when you first open the installer.
+1. Finds Python 3.10 or newer, preferring an installation that matches the Mac's architecture.
+2. If none is available, downloads Python 3.14.6 from python.org, verifies its SHA256, and installs it.
+3. Creates an app-specific virtual environment and installs the required Python packages.
 
-- **Try first**: **right-click (or control-click)** the `MyBookshelf` icon in Applications → **Open** → **Open** in the dialog.
-- **If that doesn't open it** (recent macOS blocks the right-click bypass):
-  1. Double-click once so the warning appears (you can dismiss it).
-  2. Go to the **Apple menu (top-left of the screen) → System Settings → Privacy & Security**.
-  3. Scroll down to *"'MyBookshelf' was blocked"* and click **[Open Anyway]**, then **Open** in the dialog.
+This can take a few minutes depending on the network; leave the installer open.
 
-> Once allowed, just **double-click** the icon from then on.
+> **The zip is different.** Python 3.10 or newer must already be installed. If it is missing, the first launch directs you to python.org; after installing Python, reopen the app to prepare its virtual environment and packages.
 
-#### Step 4 — First launch
+#### Step 4 — Choose an AI in Terminal
 
-If you installed the `.pkg`, it **opens right away.** The Python environment and packages are prepared during installation — that is why the installer pauses for a few minutes. If Python is missing, the installer **downloads and installs it for you**, so there is nothing to prepare on your side.
+After Python preparation, a **My Bookshelf — Additional setup** Terminal window opens.
 
-If you selected a CLI, run `claude` or `codex` once in the open Terminal window to sign in with your subscription. If you selected **both**, run each command once.
+| Choice | What it installs | Approx. additional space |
+|---|---|---:|
+| **1. Claude** | Claude Code CLI · Claude Pro/Max subscription | 293MB |
+| **2. Codex** | Codex CLI · ChatGPT Plus/Pro subscription | 363MB, including Node.js |
+| **3. Both** | Claude and Codex · Codex is the default working AI | 656MB |
+| **4. Later** | No CLI; enter an API key in the app later | 0MB |
 
-> With the zip, the same preparation happens on first launch instead (a few minutes depending on your network; the window may show "preparing").
-> Logs: `~/Library/Application Support/MyBookshelf/install.log` (installer) and `app.log` (app).
+Pressing Enter without a number selects the default, **4. Later**. An existing CLI is not downloaded again and is shown as 0MB additional space.
+
+> If Homebrew is already installed, it is used for Node.js. The setup does not install Homebrew; without it, the official Node.js LTS build is installed directly in the user account.
+
+#### Step 5 — Choose whether to install Obsidian
+
+After the AI choice, setup asks whether to install Obsidian (about 515MB). The default is **No**.
+
+- **Yes**: uses Homebrew if available; otherwise downloads the latest official macOS DMG and installs it under `~/Applications`.
+- **No**: sets the default outputs to **EPUB + Word**. Installing Obsidian sets them to **EPUB + Obsidian Wiki**.
+- If Obsidian already exists in `/Applications` or `~/Applications`, the download is skipped.
+
+You can change output formats and the Obsidian vault later in `⚙️ Settings`.
+
+#### Step 6 — Sign in to the CLI and launch the app
+
+When additional setup finishes, press Enter to close its window. If you selected a CLI, open a new Terminal window and run `claude` or `codex` once to sign in with your subscription. If you selected **Both**, sign in to each command.
+
+Then launch **My Bookshelf** from Launchpad or Applications. The `.pkg` build opens immediately because its Python environment is already prepared.
+
+> Installer log: `~/Library/Application Support/MyBookshelf/install.log`<br>
+> App log: `~/Library/Application Support/MyBookshelf/app.log`
 
 <a id="oneline-mac"></a>
 
 > [!TIP]
 > ### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS — ⚡ One-line install
 >
-> *Skips steps 1–4.*
+> *Skips steps 1–6.*
 >
 > If you're comfortable with a terminal, one script handles the download plus **Python, the app, an AI CLI, and default settings**. The `.pkg` also installs Python and your selected AI CLI and Obsidian; this route simply supplies the choices up front for an unattended install.
 >
