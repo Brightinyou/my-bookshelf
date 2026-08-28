@@ -34,8 +34,8 @@ jobs:
         shell: cmd
 
       - name: Fetch Poppler
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File dev/installer/fetch-poppler.ps1
-        shell: cmd
+        run: ./dev/installer/fetch-poppler.ps1
+        shell: pwsh
 
       - name: Build installer
         run: iscc "dev\installer\MyBookshelf.iss"
