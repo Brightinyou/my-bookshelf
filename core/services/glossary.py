@@ -88,15 +88,33 @@ def orig_for(ko: str, desc: str) -> str:
     return ""
 
 
+def read_note(path: Path) -> str | None:
+    """줄바꿈을 번역하지 않고 읽는다.
+
+    Path.read_text 는 텍스트 모드라 CRLF 를 LF 로 바꿔 읽고, write_text 는
+    Windows 에서 다시 os.linesep 으로 번역해 쓴다. 보관함이 맥·PC 사이에서
+    동기화되므로, PC 에서 한 번 고치면 손댄 노트 전체의 줄바꿈이 바뀌어
+    통째로 변경분이 돈다. newline="" 로 원본을 그대로 다룬다. (2026-08-29)"""
+    try:
+        with open(path, encoding="utf-8", errors="ignore", newline="") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def write_note(path: Path, text: str) -> None:
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
 def collect(wiki_dir: Path) -> list[tuple[str, str, Path]]:
     """보관함 전체에서 (한글, 원어, 노트경로) 을 모은다."""
     out = []
     for f in sorted(wiki_dir.rglob("*.md")):
         if f.name.startswith("_"):        # _retrofit.log 등 부속 파일
             continue
-        try:
-            text = f.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        text = read_note(f)
+        if text is None:
             continue
         for ko, desc in iter_keyword_lines(text):
             orig = orig_for(ko, desc)
@@ -197,12 +215,17 @@ def apply_to_text(text: str, gloss: dict) -> tuple[str, int]:
     «현상학(phenomenology), 민속 방법론(Ethnomethodology)» 처럼 나란한 항목의
     한쪽만 소문자가 되었다. 전역 일관성을 얻자고 지역 일관성을 깬 셈이라
     범위를 키워드 구획으로 좁혔다 — 그쪽이 용어집의 정본 자리다."""
-    lines = text.split("\n")
+    # splitlines() 를 쓰면 CR 이 사라진다. 구분자를 남기는 방식으로 자른다.
+    parts = re.split(r'(\r\n|\n|\r)', text)
+    lines = [parts[i] + (parts[i + 1] if i + 1 < len(parts) else "")
+             for i in range(0, len(parts), 2)]
     out, inside, n = [], False, 0
-    for line in lines:
+    for raw in lines:
+        line = raw.rstrip("\r\n")
+        eol = raw[len(line):]
         if line.startswith(KW_HEADING):
             inside = True
-            out.append(line)
+            out.append(line + eol)
             continue
         if inside and line.startswith("## "):
             inside = False
@@ -217,8 +240,8 @@ def apply_to_text(text: str, gloss: dict) -> tuple[str, int]:
                         if pat in line:
                             n += line.count(pat)
                             line = line.replace(pat, "(" + canon + ")")
-        out.append(line)
-    return "\n".join(out), n
+        out.append(line + eol)
+    return "".join(out), n
 
 
 def hint_for(text: str, gloss: dict, limit: int = 25) -> str:
@@ -288,8 +311,14 @@ def load(src: Path) -> dict:
 # ── 단독 실행 ──
 def _cli() -> int:
     import argparse
-    import shutil
     import sys
+    # Windows 콘솔은 기본이 cp949 라 한글·«»·① 이 UnicodeEncodeError 를 낸다.
+    # setup.bat 이 chcp 65001 을 하는 것과 같은 취지. (2026-08-29)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+    import shutil
     import time
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -342,13 +371,12 @@ def _cli() -> int:
     for f in sorted(wiki.rglob("*.md")):
         if f.name.startswith("_"):
             continue
-        try:
-            old = f.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        old = read_note(f)
+        if old is None:
             continue
         new, n = apply_to_text(old, gloss)
         if n and new != old:
-            f.write_text(new, encoding="utf-8")
+            write_note(f, new)
             changed += 1
             total += n
     print(f"고친 노트 {changed}개 · 표기 {total}곳")

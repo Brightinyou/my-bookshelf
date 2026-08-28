@@ -113,6 +113,12 @@ def check(term: str, cache_dir: Path, use_getty: bool = False) -> dict:
 def _cli() -> int:
     import argparse
     import sys
+    # Windows 콘솔은 기본이 cp949 라 한글·«»·① 이 UnicodeEncodeError 를 낸다.
+    # setup.bat 이 chcp 65001 을 하는 것과 같은 취지. (2026-08-29)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     import config as cfg                                   # noqa: E402
     from services import glossary as gl                    # noqa: E402
