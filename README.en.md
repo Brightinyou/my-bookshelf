@@ -64,6 +64,8 @@ PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translatio
 
 The links above **download the latest build directly.** Older builds and other files live on the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest).
 
+⚡ Comfortable with a terminal or PowerShell? There is a **one-line install** too — Python, the app, and the AI connection in one go. [🪟 Windows](#oneline-win) · [🍎 macOS](#oneline-mac)
+
 </div>
 
 ---
@@ -107,18 +109,21 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 > **Updates**: use **Settings → Check for updates** in the app.
 > If you were running a version older than v1.2.33, download this one manually just once — older builds point at the pre-merge repository.
 
-#### One-line install (if you're comfortable with PowerShell)
+<a id="oneline-win"></a>
 
-A single script replaces steps 1–6 — Python, the app, an AI CLI, and default settings.
-
-```powershell
-irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
-powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
-```
-
-Options: `-AI codex` (default) · `-AI none` · `-Obsidian` · `-TargetLang en`.
-
-Only two things stay manual: signing in to the subscription CLI, and entering an API key.
+> [!TIP]
+> ### ⚡ One-line install — skips steps 1–6
+>
+> If you're comfortable with PowerShell, **one script does Python, the app, an AI CLI, and default settings.**
+>
+> ```powershell
+> irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
+> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
+> ```
+>
+> Options: `-AI codex` (default) · `-AI none` · `-Obsidian` · `-TargetLang en`.
+>
+> Only two things stay manual — **signing in to the subscription CLI, and entering an API key.**
 
 ---
 
@@ -161,18 +166,22 @@ If you installed the `.pkg`, it **opens right away.** The Python environment and
 > With the zip, the same preparation happens on first launch instead (a few minutes depending on your network; the window may show "preparing").
 > Logs: `~/Library/Application Support/MyBookshelf/install.log` (installer) and `app.log` (app).
 
-#### One-line install (if you're comfortable with a terminal)
+<a id="oneline-mac"></a>
 
-A single script replaces steps 1–4 — Python, the app, an AI CLI, and default settings.
-
-```bash
-curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
-bash install-mybookshelf.sh --ai claude --launch
-```
-
-Options: `--ai codex` (default) · `--ai none` · `--obsidian` · `--target-lang en`. Run `bash install-mybookshelf.sh --help` for the full list.
-
-This route **never hits the security warning** — it installs with the `installer` command. Only two things stay manual: signing in to the subscription CLI, and entering an API key.
+> [!TIP]
+> ### ⚡ One-line install — skips steps 1–4
+>
+> If you're comfortable with a terminal, **one script does Python, the app, an AI CLI, and default settings.**
+>
+> ```bash
+> curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
+> bash install-mybookshelf.sh --ai claude --launch
+> ```
+>
+> Options: `--ai codex` (default) · `--ai none` · `--obsidian` · `--target-lang en`. Run `bash install-mybookshelf.sh --help` for the full list.
+>
+> **This route never hits the security warning** — it installs with the `installer` command.
+> Only two things stay manual — **signing in to the subscription CLI, and entering an API key.**
 
 > <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **On Windows?** → [Download `Setup.exe` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) and run it. macOS and Windows share a single repository.
 

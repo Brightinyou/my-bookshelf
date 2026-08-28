@@ -64,6 +64,8 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 위 링크를 누르면 **최신 판이 바로 내려받아집니다.** 예전 판이나 다른 파일은 [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)에 있습니다.
 
+⚡ 터미널·PowerShell 이 익숙하시면 **한 줄로 끝내는 방법**도 있습니다 — 파이썬·앱·AI 연결까지 한 번에. [🪟 Windows](#oneline-win) · [🍎 macOS](#oneline-mac)
+
 </div>
 
 ---
@@ -107,18 +109,21 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 > **업데이트**: 앱의 **설정 탭 → 업데이트 확인**으로 새 판을 받을 수 있습니다.
 > 다만 **v1.2.33 이전 판을 쓰고 계셨다면 이번 한 번은 직접 받아 설치**해야 합니다(저장소가 통합되기 전 판이라 옛 주소를 보고 있습니다).
 
-#### 한 줄로 끝내기 (PowerShell 이 익숙하시면)
+<a id="oneline-win"></a>
 
-위 1~6단계를 스크립트 하나가 대신합니다. 파이썬·앱·AI CLI·기본 설정까지 한 번에 끝납니다.
-
-```powershell
-irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
-powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
-```
-
-`-AI codex`(기본) · `-AI none` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다.
-
-자동화되지 않는 것은 둘뿐입니다: 구독 CLI 브라우저 로그인, API 키 입력.
+> [!TIP]
+> ### ⚡ 한 줄로 끝내기 — 위 1~6단계를 건너뜁니다
+>
+> PowerShell 이 익숙하시면, **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다.
+>
+> ```powershell
+> irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
+> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
+> ```
+>
+> `-AI codex`(기본) · `-AI none` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다.
+>
+> 자동화되지 않는 것은 둘뿐입니다 — **구독 CLI 브라우저 로그인, API 키 입력.**
 
 ---
 
@@ -162,18 +167,22 @@ powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -L
 > 준비 기록은 `~/Library/Application Support/MyBookshelf/install.log`에 남습니다.
 > 설치가 오래 걸리거나 멈춘 것 같으면 로그를 확인하세요: `~/Library/Application Support/MyBookshelf/app.log`
 
-#### 한 줄로 끝내기 (터미널이 익숙하시면)
+<a id="oneline-mac"></a>
 
-위 1~4단계를 스크립트 하나가 대신합니다. 파이썬·앱·AI CLI·기본 설정까지 한 번에 끝납니다.
-
-```bash
-curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
-bash install-mybookshelf.sh --ai claude --launch
-```
-
-`--ai codex`(기본) · `--ai none` · `--obsidian`(옵시디언도 설치) · `--target-lang en` 등을 줄 수 있습니다. `bash install-mybookshelf.sh --help` 로 전부 볼 수 있습니다.
-
-이 방법은 **보안 경고를 만나지 않습니다** — `installer` 명령으로 설치하기 때문입니다. 자동화되지 않는 것은 둘뿐입니다: 구독 CLI 브라우저 로그인, API 키 입력.
+> [!TIP]
+> ### ⚡ 한 줄로 끝내기 — 위 1~4단계를 건너뜁니다
+>
+> 터미널이 익숙하시면, **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다.
+>
+> ```bash
+> curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
+> bash install-mybookshelf.sh --ai claude --launch
+> ```
+>
+> `--ai codex`(기본) · `--ai none` · `--obsidian`(옵시디언도 설치) · `--target-lang en` 등을 줄 수 있습니다. `bash install-mybookshelf.sh --help` 로 전부 볼 수 있습니다.
+>
+> **이 방법은 보안 경고를 만나지 않습니다** — `installer` 명령으로 설치하기 때문입니다.
+> 자동화되지 않는 것은 둘뿐입니다 — **구독 CLI 브라우저 로그인, API 키 입력.**
 
 ---
 
