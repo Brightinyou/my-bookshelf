@@ -54,6 +54,7 @@ Source: "..\..\start.bat";               DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\stop-app.bat";            DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\setup.bat";               DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\install-obsidian.bat";    DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\glossary.bat";            DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\vendor\poppler\*";        DestDir: "{app}\poppler"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -65,6 +66,7 @@ Source: "..\..\vendor\poppler\*";        DestDir: "{app}\poppler"; Flags: ignore
 Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\.venv\Scripts\MyBookshelf.exe"; Parameters: """{app}\core\desktop.py"""; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"
 Name: "{userprograms}\{#MyAppName} (Folder)\Start {#MyAppName}"; Filename: "{app}\.venv\Scripts\MyBookshelf.exe"; Parameters: """{app}\core\desktop.py"""; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"
 Name: "{userprograms}\{#MyAppName} (Folder)\Stop {#MyAppName}"; Filename: "{app}\stop-app.bat"; WorkingDir: "{app}"
+Name: "{userprograms}\{#MyAppName} (Folder)\Glossary"; Filename: "{app}\glossary.bat"; WorkingDir: "{app}"
 Name: "{userprograms}\{#MyAppName} (Folder)\Uninstall"; Filename: "{uninstallexe}"; IconFilename: "{app}\MyBookshelf.ico"
 Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\.venv\Scripts\MyBookshelf.exe"; Parameters: """{app}\core\desktop.py"""; IconFilename: "{app}\MyBookshelf.ico"; WorkingDir: "{app}"; Tasks: desktopicon
 Name: "{userdesktop}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; IconFilename: "{app}\MyBookshelf.ico"; Tasks: uninstallicon

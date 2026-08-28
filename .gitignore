@@ -26,6 +26,7 @@ build/
 .github/*
 !.github/workflows/
 !.github/workflows/build-windows.yml
+!.github/workflows/build-macos.yml
 AGENTS.md
 
 *.key

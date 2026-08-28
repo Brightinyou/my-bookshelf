@@ -1,0 +1,56 @@
+name: macOS Package Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-package:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build app and package
+        run: bash dev/build_mac_pkg.sh
+
+      - name: Get version
+        id: ver
+        run: |
+          version=$(python3 -c "import sys; sys.path.insert(0, 'core'); from version import APP_VERSION; print(APP_VERSION.removeprefix('v'))")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Zip app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/.mac-build.noindex/MyBookshelf.app \
+            "dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}-mac.zip"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyBookshelf-macOS-v${{ steps.ver.outputs.version }}
+          path: |
+            dist/.mac-build.noindex/MyBookshelf.pkg
+            dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}.pkg
+            dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}-mac.zip
+          retention-days: 30
+
+      - name: Add macOS files to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/.mac-build.noindex/MyBookshelf.pkg
+            dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}.pkg
+            dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}-mac.zip
+          generate_release_notes: true
