@@ -64,7 +64,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 위 링크를 누르면 **최신 판이 바로 내려받아집니다.** 예전 판이나 다른 파일은 [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)에 있습니다.
 
-⚡ 터미널·PowerShell 이 익숙하시면 **한 줄로 끝내는 방법**도 있습니다 — 파이썬·앱·AI 연결까지 한 번에. [🪟 Windows](#oneline-win) · [🍎 macOS](#oneline-mac)
+⚡ 터미널·PowerShell 이 익숙하시면 **한 줄로 끝내는 방법**도 있습니다 — 파이썬·앱·AI 연결까지 한 번에. [<img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows](#oneline-win) · [<img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS](#oneline-mac)
 
 </div>
 
@@ -112,7 +112,9 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 <a id="oneline-win"></a>
 
 > [!TIP]
-> ### ⚡ 한 줄로 끝내기 — 위 1~6단계를 건너뜁니다
+> ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows — ⚡ 한 줄로 끝내기
+>
+> *위 1~6단계를 건너뜁니다.*
 >
 > PowerShell 이 익숙하시면, **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다.
 >
@@ -170,7 +172,9 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 <a id="oneline-mac"></a>
 
 > [!TIP]
-> ### ⚡ 한 줄로 끝내기 — 위 1~4단계를 건너뜁니다
+> ### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS — ⚡ 한 줄로 끝내기
+>
+> *위 1~4단계를 건너뜁니다.*
 >
 > 터미널이 익숙하시면, **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다.
 >

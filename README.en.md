@@ -64,7 +64,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translatio
 
 The links above **download the latest build directly.** Older builds and other files live on the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest).
 
-⚡ Comfortable with a terminal or PowerShell? There is a **one-line install** too — Python, the app, and the AI connection in one go. [🪟 Windows](#oneline-win) · [🍎 macOS](#oneline-mac)
+⚡ Comfortable with a terminal or PowerShell? There is a **one-line install** too — Python, the app, and the AI connection in one go. [<img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows](#oneline-win) · [<img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS](#oneline-mac)
 
 </div>
 
@@ -112,7 +112,9 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 <a id="oneline-win"></a>
 
 > [!TIP]
-> ### ⚡ One-line install — skips steps 1–6
+> ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows — ⚡ One-line install
+>
+> *Skips steps 1–6.*
 >
 > If you're comfortable with PowerShell, **one script does Python, the app, an AI CLI, and default settings.**
 >
@@ -169,7 +171,9 @@ If you installed the `.pkg`, it **opens right away.** The Python environment and
 <a id="oneline-mac"></a>
 
 > [!TIP]
-> ### ⚡ One-line install — skips steps 1–4
+> ### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS — ⚡ One-line install
+>
+> *Skips steps 1–4.*
 >
 > If you're comfortable with a terminal, **one script does Python, the app, an AI CLI, and default settings.**
 >
