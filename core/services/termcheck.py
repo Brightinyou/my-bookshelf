@@ -123,7 +123,7 @@ def _cli() -> int:
     ap.add_argument("--getty", action="store_true", help="Getty AAT까지 본다(느림)")
     a = ap.parse_args()
 
-    g = gl.load(gl.path_for(cfg.CONFIG_DIR))
+    g = gl.load_any(cfg.CONFIG_DIR, cfg.WIKI_DIR)
     if not g:
         print("용어집이 없다. 먼저: python3 -m services.glossary --report")
         return 1

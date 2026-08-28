@@ -246,8 +246,31 @@ def hint_for(text: str, gloss: dict, limit: int = 25) -> str:
 
 
 # ── 저장/적재 ──
-def path_for(config_dir: Path) -> Path:
+def path_for(config_dir: Path, wiki_dir: Path | None = None) -> Path:
+    """용어집 파일 자리.
+
+    **보관함 안에 둔다.** 보관함은 이미 기기 사이에서 동기화되므로(SynologyDrive)
+    맥에서 정한 정본이 PC에서 그대로 쓰인다. 설정 폴더(~/.config)에 두면 기기
+    밖으로 나가지 않아 양쪽이 따로 놀았다 — 같은 보관함을 보면서 표기를 각자
+    정하면 통일의 뜻이 없다. (2026-08-29)
+
+    보관함을 쓸 수 없으면(외장 볼륨 미연결 등) 설정 폴더로 물러선다."""
+    if wiki_dir is not None:
+        try:
+            if wiki_dir.is_dir():
+                return wiki_dir / "_glossary.json"
+        except OSError:
+            pass
     return config_dir / "glossary.json"
+
+
+def load_any(config_dir: Path, wiki_dir: Path | None = None) -> dict:
+    """보관함 → 설정 폴더 순으로 찾는다. 옛 자리에 있던 것도 계속 읽힌다."""
+    for cand in (path_for(config_dir, wiki_dir), config_dir / "glossary.json"):
+        g = load(cand)
+        if g:
+            return g
+    return {}
 
 
 def save(gloss: dict, dest: Path) -> None:
@@ -285,7 +308,7 @@ def _cli() -> int:
 
     pairs = collect(wiki)
     gloss = build(pairs)
-    dest = path_for(cfg.CONFIG_DIR if hasattr(cfg, "CONFIG_DIR") else Path.home() / ".config" / "mybookshelf")
+    dest = path_for(cfg.CONFIG_DIR, wiki)
     save(gloss, dest)
 
     uni = unify_targets(gloss)

@@ -732,7 +732,7 @@ def _lang_rules() -> dict:
 def _glossary():
     """용어집을 읽는다. 없으면 빈 dict — 파이프라인은 그대로 돈다."""
     try:
-        return gloss.load(gloss.path_for(cfg.CONFIG_DIR))
+        return gloss.load_any(cfg.CONFIG_DIR, cfg.WIKI_DIR)
     except Exception:
         return {}
 
