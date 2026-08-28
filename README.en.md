@@ -17,7 +17,7 @@ Runs on both Windows and macOS. The same core (`core/`) is shared and **only the
 | | What to do |
 |---|---|
 | **1. Install** | Grab <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` or <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg` from the badges above and run it. You clear a **security warning once**, and the installer spends a few minutes preparing the Python environment. → [details](#2-installation) |
-| **2. Connect an AI** | In the app's `⚙️ Settings` tab, switch on an **AI subscription (CLI)** or paste an **API key**. A ChatGPT or Claude subscription works at no extra cost. → [details](#3-first-time-setup--connect-an-ai) |
+| **2. Connect an AI** | After a macOS PKG install, Terminal asks you to choose **Claude, Codex, both, or later**. If you skip it, enable a CLI or enter an API key in `⚙️ Settings`. → [details](#3-first-time-setup--connect-an-ai) |
 | **3. Add documents** | Drop files onto the `📄 Text conversion` tab and press **[▶ Start]**. From there, **the popups walk you through** each following stage. |
 | **4. Collect results** | In the `📖 Output` tab, switch on EPUB, Word, Hangul, or Obsidian and press **[▶ Start]**. |
 
@@ -138,11 +138,11 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 - **[Download `MyBookshelf.pkg` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)** — this is the only one you need. Double-click it and the installer places the app in **Applications** for you.
 - If you cannot use a Mac administrator password, grab `MyBookshelf-vX.Y.Z-mac.zip` from the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest) under **Assets**. Unzipping gives just the app file.
 
-> The file is only a few hundred KB — **that is expected.** The Python environment is fetched on first launch.
+> The file is only a few hundred KB — **that is expected.** The `.pkg` fetches and prepares the Python environment during installation.
 
 #### Step 2 — Put it in Applications
 
-- **`.pkg`**: double-click → [Continue] → [Install] → your Mac password. That's it; nothing else to do in this step.
+- **`.pkg`**: double-click → [Continue] → [Install] → your Mac password. When Terminal opens at the end, choose **Claude, Codex, both, or later**, then choose whether to install Obsidian. Each option shows its additional disk usage.
 - **zip**: unzip and move the resulting `MyBookshelf.app` into your **Applications** folder.
 
 > ⚠️ **If you took the zip, move the app into Applications before running it.** Double-clicking it straight from your Downloads folder makes macOS run it from a locked temporary folder, and it **hangs with no visible response**. The `.pkg` does not have this problem.
@@ -165,6 +165,8 @@ Opening `MyBookshelf` for the first time shows an *"unidentified developer"* war
 
 If you installed the `.pkg`, it **opens right away.** The Python environment and packages are prepared during installation — that is why the installer pauses for a few minutes. If Python is missing, the installer **downloads and installs it for you**, so there is nothing to prepare on your side.
 
+If you selected a CLI, run `claude` or `codex` once in the open Terminal window to sign in with your subscription. If you selected **both**, run each command once.
+
 > With the zip, the same preparation happens on first launch instead (a few minutes depending on your network; the window may show "preparing").
 > Logs: `~/Library/Application Support/MyBookshelf/install.log` (installer) and `app.log` (app).
 
@@ -175,7 +177,7 @@ If you installed the `.pkg`, it **opens right away.** The Python environment and
 >
 > *Skips steps 1–4.*
 >
-> If you're comfortable with a terminal, **one script does Python, the app, an AI CLI, and default settings.**
+> If you're comfortable with a terminal, one script handles the download plus **Python, the app, an AI CLI, and default settings**. The `.pkg` also installs Python and your selected AI CLI and Obsidian; this route simply supplies the choices up front for an unattended install.
 >
 > ```bash
 > curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
@@ -361,7 +363,8 @@ dev/                 build scripts (build_mac_app.sh, bump_version.py …)
 
 - macOS build: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (excluded from Spotlight)
 - macOS distributable: `dev/build_mac_pkg.sh` → `MyBookshelf-vX.Y.Z.pkg` plus the fixed name `MyBookshelf.pkg`
-- macOS install automation: `dev/installer/mac_postinstall.sh` (the pkg's postinstall — prepares Python and the venv)
+- macOS install automation: `dev/installer/mac_postinstall.sh` (Python and venv) + `mac_setup_extras.sh` (sequential AI CLI and Obsidian choices)
+- Windows distributable: `.github/workflows/build-windows.yml` builds `Setup.exe` and a versioned ZIP on tag pushes and attaches both to the release
 - Unattended installers: `install-mybookshelf.sh` (macOS) · `install-mybookshelf.ps1` (Windows)
 - Run from source: each platform's `start` script, or `streamlit run core/pipeline_app.py`
 

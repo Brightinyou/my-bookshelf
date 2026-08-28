@@ -17,7 +17,7 @@ Windows와 macOS 모두 지원합니다. 같은 코어(`core/`)를 쓰고 **설�
 | | 할 일 |
 |---|---|
 | **1. 설치** | 위 배지에서 <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` 또는 <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 설치 중 파이썬 환경 준비에 몇 분 걸립니다. → [자세히](#2-설치) |
-| **2. AI 연결** | 앱의 `⚙️ 설정` 탭에서 **AI 구독(CLI)** 을 켜거나 **API 키**를 넣습니다. ChatGPT·Claude 구독이 있으면 추가 요금 없이 씁니다. → [자세히](#3-첫-설정--ai-연결) |
+| **2. AI 연결** | macOS PKG는 설치 직후 터미널에서 **Claude·Codex·둘 다·나중에** 중 하나를 묻습니다. 건너뛰었다면 앱의 `⚙️ 설정` 탭에서 CLI를 켜거나 API 키를 넣습니다. → [자세히](#3-첫-설정--ai-연결) |
 | **3. 문서 넣기** | `📄 텍스트 변환` 탭에 파일을 끌어다 놓고 **[▶ 시작]**. 이후 단계는 **팝업이 물어보는 대로** 이어집니다. |
 | **4. 결과 받기** | `📖 출력` 탭에서 EPUB·Word·한글·Obsidian 중 원하는 형식을 켜고 **[▶ 시작]**. |
 
@@ -138,11 +138,11 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 - **[`MyBookshelf.pkg` 내려받기 ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)** — 이것만 받으면 됩니다. 더블클릭하면 설치 관리자가 **응용 프로그램** 폴더에 넣어 줍니다.
 - 맥 관리자 암호를 쓸 수 없다면, [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)의 **Assets**에서 `MyBookshelf-vX.Y.Z-mac.zip` 을 받으세요. 압축을 풀면 앱 파일만 나옵니다.
 
-> 파일 크기가 수백 KB로 작습니다 — **정상입니다.** 파이썬 환경은 첫 실행 때 내려받습니다.
+> 파일 크기가 수백 KB로 작습니다 — **정상입니다.** `.pkg` 설치 중 파이썬 환경을 내려받아 준비합니다.
 
 #### 2단계 — 응용 프로그램에 넣기
 
-- **`.pkg`로 받은 경우**: 더블클릭 → [계속] → [설치] → 맥 암호. 끝입니다. 이 단계에서 따로 할 일이 없습니다.
+- **`.pkg`로 받은 경우**: 더블클릭 → [계속] → [설치] → 맥 암호. 설치가 끝날 때 터미널이 열리면 **Claude·Codex·둘 다·나중에** 중 하나를 고르고, 이어서 옵시디언 설치 여부를 고릅니다. 각 선택지에 추가 용량이 표시됩니다.
 - **zip으로 받은 경우**: 압축을 풀고 나온 `MyBookshelf.app`을 **응용 프로그램** 폴더로 옮깁니다.
 
 > ⚠️ **zip으로 받았다면, 앱을 응용 프로그램 폴더로 옮긴 뒤에 실행하세요.** 내려받기 폴더에서 바로 더블클릭하면 macOS가 앱을 임시 폴더에 가둬 실행하는 탓에 **아무 반응 없이 멈춥니다**. `.pkg`는 이 문제가 없습니다.
@@ -165,6 +165,8 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 `.pkg`로 설치하셨다면 **바로 열립니다.** 파이썬 환경과 패키지는 설치 과정에서 이미 갖춰집니다(그래서 설치 관리자가 몇 분 머뭅니다). 파이썬이 없으면 설치 프로그램이 **알아서 받아 설치**하므로 따로 준비하실 것이 없습니다.
 
+추가 설정에서 CLI를 골랐다면 열린 터미널에서 `claude` 또는 `codex`를 한 번 실행해 구독 계정으로 로그인합니다. **둘 다**를 골랐다면 두 명령을 각각 한 번 실행합니다.
+
 > zip으로 받으셨다면 첫 실행 때 같은 준비를 합니다(네트워크 상태에 따라 몇 분, 창이 준비 중일 수 있음).
 > 준비 기록은 `~/Library/Application Support/MyBookshelf/install.log`에 남습니다.
 > 설치가 오래 걸리거나 멈춘 것 같으면 로그를 확인하세요: `~/Library/Application Support/MyBookshelf/app.log`
@@ -176,7 +178,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 >
 > *위 1~4단계를 건너뜁니다.*
 >
-> 터미널이 익숙하시면, **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다.
+> 터미널이 익숙하시면, 내려받기부터 **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다. `.pkg`도 파이썬과 선택한 AI CLI·옵시디언을 설치하며, 이 방법은 옵션을 명령에 미리 적는 무인 설치입니다.
 >
 > ```bash
 > curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
@@ -360,7 +362,8 @@ dev/                 빌드 스크립트 (build_mac_app.sh, bump_version.py …)
 
 - macOS 빌드: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (Spotlight 검색 제외)
 - macOS 배포본: `dev/build_mac_pkg.sh` → `MyBookshelf-vX.Y.Z.pkg` + 고정 이름 `MyBookshelf.pkg` (.app이 없거나 버전이 다르면 알아서 먼저 빌드)
-- macOS 설치 자동화: `dev/installer/mac_postinstall.sh` (pkg 의 postinstall — 파이썬·venv 준비)
+- macOS 설치 자동화: `dev/installer/mac_postinstall.sh` (파이썬·venv) + `mac_setup_extras.sh` (AI CLI·옵시디언 순차 선택)
+- Windows 배포본: `.github/workflows/build-windows.yml` → 태그 푸시 때 `Setup.exe` + 버전명 ZIP을 빌드해 릴리스에 첨부
 - 무인 설치 스크립트: `install-mybookshelf.sh` (macOS) · `install-mybookshelf.ps1` (Windows)
 - 개발 실행(레포 코드): 각 플랫폼의 `start` 스크립트 또는 `streamlit run core/pipeline_app.py`
 

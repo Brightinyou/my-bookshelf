@@ -137,6 +137,10 @@ chmod +x "$MACOS/MyBookshelf"
 # ── core/ 파일을 Resources에 복사 ──────────────────────────
 cp "$ROOT_DIR/core/"*.py "$RESOURCES/"
 cp "$ROOT_DIR/core/requirements.txt" "$RESOURCES/"
+# 설치 직후 터미널에서 묻는 추가 설정 (AI CLI·옵시디언) — postinstall 이 띄운다
+cp "$SCRIPT_DIR/installer/mac_setup_extras.sh" "$RESOURCES/setup-extras.command"
+chmod +x "$RESOURCES/setup-extras.command"
+
 # services/ 서브패키지 (2026-07 v0.7.x 분리 구조)
 rm -rf "$RESOURCES/services"
 mkdir -p "$RESOURCES/services"

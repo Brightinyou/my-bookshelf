@@ -32,6 +32,7 @@ USER_HOME="$(/usr/bin/dscl . -read "/Users/$USER_NAME" NFSHomeDirectory 2>/dev/n
 SUPPORT="$USER_HOME/Library/Application Support/MyBookshelf"
 VENV="$SUPPORT/.venv"
 LOG="$SUPPORT/install.log"
+UNATTENDED_MARK="$SUPPORT/.unattended-install"
 
 /usr/bin/install -d -o "$USER_NAME" -m 755 "$SUPPORT" 2>/dev/null
 
@@ -39,6 +40,23 @@ log() { echo "[$(date '+%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 # -H 로 HOME 을 그 사용자 것으로 맞춘다. 없으면 pip 이 root 의 캐시 경로를
 # 보다가 권한이 없어 캐시를 통째로 포기한다.
 asuser() { /usr/bin/sudo -H -u "$USER_NAME" "$@"; }
+
+launch_extras() {
+    # 무인 설치 스크립트는 AI·옵시디언 설정을 스스로 처리한다.
+    if [ -f "$UNATTENDED_MARK" ]; then
+        log "무인 설치 — 추가 설정 창을 띄우지 않는다"
+    elif [ -x "$RESOURCES/setup-extras.command" ]; then
+        asuser /usr/bin/open -a Terminal "$RESOURCES/setup-extras.command" >/dev/null 2>&1 \
+            && log "추가 설정 창을 띄웠다" \
+            || log "추가 설정 창을 띄우지 못했다 (앱 설정 탭에서 직접 고르면 된다)"
+    else
+        log "setup-extras.command 없음 — 건너뛴다"
+    fi
+}
+
+# 아래 준비 경로는 이미 설치됨·다운로드 실패 등 여러 곳에서 끝날 수 있다.
+# 어느 경로든 마지막에는 사용자의 선택 질문까지 이어 간다.
+trap launch_extras EXIT
 
 log "── postinstall 시작 (사용자 $USER_NAME) ──"
 
@@ -126,8 +144,8 @@ TOML
 
 if asuser "$VENV/bin/python" -c "import streamlit, webview" >/dev/null 2>&1; then
     log "준비 완료 — 첫 실행부터 바로 열린다"
-    asuser /usr/bin/osascript -e 'display notification "설치가 끝났습니다. 바로 실행할 수 있습니다." with title "My Bookshelf"' >/dev/null 2>&1
 else
     log "패키지 확인 실패 — 앱 첫 실행이 이어서 처리한다"
 fi
+
 exit 0

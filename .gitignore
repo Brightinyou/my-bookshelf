@@ -22,7 +22,10 @@ build/
 # 산출물(dist/)은 여전히 제외 — 여기 넣는 것은 '만드는 법'뿐이다.
 !/dev/installer/
 !/dev/workflows/
-.github/
+# GitHub Actions는 실제 위치에서 추적해야 태그 푸시 때 Windows 설치본이 만들어진다.
+.github/*
+!.github/workflows/
+!.github/workflows/build-windows.yml
 AGENTS.md
 
 *.key

@@ -82,7 +82,7 @@ sudo -v || die "관리자 권한을 얻지 못했습니다."
 # 긴 설치 동안 sudo 시간이 끊기지 않게 유지한다.
 ( while kill -0 "$$" 2>/dev/null; do sudo -n true 2>/dev/null; sleep 50; done ) &
 SUDO_KEEPALIVE=$!
-trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null; rm -rf "$WORK"' EXIT
+trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null; [ -z "${UNATTENDED_MARK:-}" ] || rm -f "$UNATTENDED_MARK"; rm -rf "$WORK"' EXIT
 
 # ── 1. 파이썬 ────────────────────────────────────────────────
 step 1 "파이썬 확인"
@@ -136,8 +136,13 @@ log "downloaded $TAG"
 # ── 3. 무음 설치 (+ 환경 준비) ───────────────────────────────
 step 3 "설치 — 파이썬 패키지를 받는 동안 몇 분 걸립니다. 그대로 두세요."
 T0=$(date +%s)
+# 이 스크립트가 4~6단계를 스스로 하므로, pkg 의 추가 설정 창은 뜨지 않게 한다.
+mkdir -p "$SUPPORT"
+UNATTENDED_MARK="$SUPPORT/.unattended-install"
+: > "$UNATTENDED_MARK"
 sudo installer -pkg "$WORK/MyBookshelf.pkg" -target / >>"$LOG" 2>&1 \
-    || die "설치에 실패했습니다. $LOG 를 확인하세요."
+    || { rm -f "$UNATTENDED_MARK"; die "설치에 실패했습니다. $LOG 를 확인하세요."; }
+rm -f "$UNATTENDED_MARK"
 VENV="$SUPPORT/.venv"
 if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -c "import streamlit, webview" >/dev/null 2>&1; then
     [ -f "$SUPPORT/install.log" ] && tail -15 "$SUPPORT/install.log" | sed 's/^/  /'
