@@ -14,6 +14,7 @@ import config as cfg
 import gemini_wiki as gw   # nfc, rebuild_citations, make_filename, OUT_DIR, get_key
 import llm_providers as llm
 import source_metadata as smeta
+from services import glossary as gloss   # 용어 표기 통일 (2026-08-29)
 
 DONE_DIR = cfg.DONE_DIR
 MAX_CHAPTERS = 30
@@ -728,6 +729,14 @@ def _lang_rules() -> dict:
     return {"tgt": tgt, "lang_rule": rule}
 
 
+def _glossary():
+    """용어집을 읽는다. 없으면 빈 dict — 파이프라인은 그대로 돈다."""
+    try:
+        return gloss.load(gloss.path_for(cfg.CONFIG_DIR))
+    except Exception:
+        return {}
+
+
 CHAPTER_PROMPT = """당신은 신학·인문학 학술 사서입니다. 아래는 책 『{book}』의 한 장 「{chapter}」의 전문입니다.
 이 장을 충실하고 깊이 있게 대표하는 옵시디언 노트를 작성하세요.
 
@@ -736,7 +745,7 @@ CHAPTER_PROMPT = """당신은 신학·인문학 학술 사서입니다. 아래�
 - ⭐ 주제만 나열하지 말고 실제 주장·논거·결론을 구체적으로 담는다. "~를 모색한다/다룬다/분석한다"로 끝내지 말 것.
 - ⭐ 문체: "저자는 ~라고 말한다/본다/주장한다/드러낸다/읽는다" 같은 저자 지칭 프레임을 쓰지 말고, 내용 자체를 단정적 평서문으로 직접 진술한다. 예: "저자는 X가 Y라고 말한다" → "X는 Y이다". 단, 서로 다른 사상가·입장을 대조·구별할 때만 그 주체를 밝힌다(예: "하이데거는 …", "레비나스는 …").
 - 이 장의 핵심 개념 정의, 논증 흐름, 근거·사례를 구체적으로. 책의 다른 장이나 무관한 주제는 끌어들이지 말 것.
-- ⭐ 전문 용어는 처음 나올 때 {tgt} 번역(원어) 순서로 병기 — 예: 대신함(substitution), 말함(le Dire). 이후에는 {tgt}만 쓴다.
+- ⭐ 전문 용어는 처음 나올 때 {tgt} 번역(원어) 순서로 병기 — 예: 대신함(substitution), 말함(le Dire). 이후에는 {tgt}만 쓴다.{gloss_hint}
 - ⭐ 해당 분야 훈련이 없는 독자도 따라오도록 풀어 쓴다: 한 문장에 한 개념, 긴 문장은 나누고, 어려운 개념은 일상어로 한 번 더 설명한다.
 - ⭐ 앞선 사상가의 개념(예: 후설의 지향성, 하이데거의 존재 이해)은 먼저 그 개념이 무엇인지 한 문장으로 소개한 뒤에 그에 대한 비판·변형을 서술한다.
 - OCR 노이즈·판권·목차 등 본문 외 요소 제외.
@@ -762,11 +771,17 @@ def generate_chapter(book, chap_title, chap_text):
     max_in = llm.MAX_INPUT_CHARS.get(prov, 500_000)
     eff = min(len(chap_text), max_in)                       # 모델이 실제로 보는 분량
     p = _length_params(eff)
+    g = _glossary()
     data = _gen_json(CHAPTER_PROMPT.format(
         book=book, chapter=chap_title, text=chap_text[:max_in],
         n_sub=p["n_sub"], n_cite=p["n_cite"], src_chars=eff, pct=p["pct"],
         target_chars=p["target"], per_sub=p["per_sub"],
-        sent_ov=p["sent_ov"], n_kw=p["n_kw"], **_lang_rules()), p["max_out"])
+        sent_ov=p["sent_ov"], n_kw=p["n_kw"],
+        gloss_hint=gloss.hint_for(chap_text[:max_in], g), **_lang_rules()), p["max_out"])
+    if data.get("body") and g:
+        data["body"], n_fix = gloss.apply_to_text(data["body"], g)
+        if n_fix:
+            print(f"      ↳ 용어 표기 {n_fix}곳을 보관함 정본에 맞춤", flush=True)
     if data.get("body"):
         data["body"], _, n_over = gw.rebuild_citations(data["body"], chap_text, [], chap_title, target=p["n_cite"])
         if n_over:
@@ -797,6 +812,12 @@ def generate_overview(book, sections, head_text=""):
         ov = _gen_json(OVERVIEW_PROMPT.format(
             book=book, secs=secs, intro_sent=intro_sent,
             head=(head_text or "(제공되지 않음)"), **_lang_rules()), 8192)
+        g = _glossary()
+        if g and ov.get("keywords"):
+            # 개요의 키워드도 같은 정본을 쓰게 한다. apply_to_text 는 키워드 구획을
+            # 찾으므로 머리글을 붙였다 떼어 낸다.
+            fixed, _ = gloss.apply_to_text(gloss.KW_HEADING + "\n" + ov["keywords"], g)
+            ov["keywords"] = fixed.split("\n", 1)[1]
     except Exception:
         ov = {"category": "기타", "summary": "", "intro": ""}
     # DOI/arXiv로 받은 논문이면 CrossRef/arXiv API 조회 결과(서지정보)가 LLM 추측보다
