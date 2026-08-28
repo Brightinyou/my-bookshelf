@@ -16,7 +16,7 @@ Runs on both Windows and macOS. The same core (`core/`) is shared and **only the
 
 | | What to do |
 |---|---|
-| **1. Install** | Grab <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` or <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg` from the badges above and run it. You clear a **security warning once**, and the first launch takes **5–20 minutes** to prepare. → [details](#2-installation) |
+| **1. Install** | Grab <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` or <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg` from the badges above and run it. You clear a **security warning once**, and the installer spends a few minutes preparing the Python environment. → [details](#2-installation) |
 | **2. Connect an AI** | In the app's `⚙️ Settings` tab, switch on an **AI subscription (CLI)** or paste an **API key**. A ChatGPT or Claude subscription works at no extra cost. → [details](#3-first-time-setup--connect-an-ai) |
 | **3. Add documents** | Drop files onto the `📄 Text conversion` tab and press **[▶ Start]**. From there, **the popups walk you through** each following stage. |
 | **4. Collect results** | In the `📖 Output` tab, switch on EPUB, Word, Hangul, or Obsidian and press **[▶ Start]**. |
@@ -70,8 +70,6 @@ The links above **download the latest build directly.** Older builds and other f
 
 <a id="windows"></a>
 
-<a id="windows"></a>
-
 ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows
 
 #### Step 1 — Download
@@ -109,9 +107,20 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 > **Updates**: use **Settings → Check for updates** in the app.
 > If you were running a version older than v1.2.33, download this one manually just once — older builds point at the pre-merge repository.
 
----
+#### One-line install (if you're comfortable with PowerShell)
 
-<a id="macos"></a>
+A single script replaces steps 1–6 — Python, the app, an AI CLI, and default settings.
+
+```powershell
+irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
+powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
+```
+
+Options: `-AI codex` (default) · `-AI none` · `-Obsidian` · `-TargetLang en`.
+
+Only two things stay manual: signing in to the subscription CLI, and entering an API key.
+
+---
 
 <a id="macos"></a>
 
@@ -151,6 +160,19 @@ If you installed the `.pkg`, it **opens right away.** The Python environment and
 
 > With the zip, the same preparation happens on first launch instead (a few minutes depending on your network; the window may show "preparing").
 > Logs: `~/Library/Application Support/MyBookshelf/install.log` (installer) and `app.log` (app).
+
+#### One-line install (if you're comfortable with a terminal)
+
+A single script replaces steps 1–4 — Python, the app, an AI CLI, and default settings.
+
+```bash
+curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
+bash install-mybookshelf.sh --ai claude --launch
+```
+
+Options: `--ai codex` (default) · `--ai none` · `--obsidian` · `--target-lang en`. Run `bash install-mybookshelf.sh --help` for the full list.
+
+This route **never hits the security warning** — it installs with the `installer` command. Only two things stay manual: signing in to the subscription CLI, and entering an API key.
 
 > <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **On Windows?** → [Download `Setup.exe` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) and run it. macOS and Windows share a single repository.
 
@@ -325,4 +347,21 @@ dev/                 build scripts (build_mac_app.sh, bump_version.py …)
 ```
 
 - macOS build: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (excluded from Spotlight)
+- macOS distributable: `dev/build_mac_pkg.sh` → `MyBookshelf-vX.Y.Z.pkg` plus the fixed name `MyBookshelf.pkg`
+- macOS install automation: `dev/installer/mac_postinstall.sh` (the pkg's postinstall — prepares Python and the venv)
+- Unattended installers: `install-mybookshelf.sh` (macOS) · `install-mybookshelf.ps1` (Windows)
 - Run from source: each platform's `start` script, or `streamlit run core/pipeline_app.py`
+
+### Glossary
+
+Unifies how each term's original-language form is written across your vault's notes. The glossary lives in the vault as `_glossary.json`, so sharing the vault across machines shares the canonical spellings too.
+
+```
+Windows   glossary.bat            report  /  --apply to fix  /  --check against authorities
+macOS     cd core && python3 -m services.glossary          (--apply to fix)
+          cd core && python3 -m services.termcheck         (authority check)
+```
+
+- `--apply` backs up the whole vault first. It only touches **case and spacing differences inside the `## 핵심 키워드` block**.
+- When the original term itself differs (`책임` → responsibility / responsabilité / Verantwortung) that is usually a source-language difference, so it is listed for review rather than changed.
+- Terms `termcheck` cannot find are reported as **unverified, not wrong** — a term a book coined will not be in any dictionary.

@@ -70,8 +70,6 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 <a id="windows"></a>
 
-<a id="windows"></a>
-
 ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows
 
 #### 1단계 — 내려받기
@@ -109,9 +107,20 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 > **업데이트**: 앱의 **설정 탭 → 업데이트 확인**으로 새 판을 받을 수 있습니다.
 > 다만 **v1.2.33 이전 판을 쓰고 계셨다면 이번 한 번은 직접 받아 설치**해야 합니다(저장소가 통합되기 전 판이라 옛 주소를 보고 있습니다).
 
----
+#### 한 줄로 끝내기 (PowerShell 이 익숙하시면)
 
-<a id="macos"></a>
+위 1~6단계를 스크립트 하나가 대신합니다. 파이썬·앱·AI CLI·기본 설정까지 한 번에 끝납니다.
+
+```powershell
+irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
+powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
+```
+
+`-AI codex`(기본) · `-AI none` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다.
+
+자동화되지 않는 것은 둘뿐입니다: 구독 CLI 브라우저 로그인, API 키 입력.
+
+---
 
 <a id="macos"></a>
 
@@ -152,6 +161,19 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 > zip으로 받으셨다면 첫 실행 때 같은 준비를 합니다(네트워크 상태에 따라 몇 분, 창이 준비 중일 수 있음).
 > 준비 기록은 `~/Library/Application Support/MyBookshelf/install.log`에 남습니다.
 > 설치가 오래 걸리거나 멈춘 것 같으면 로그를 확인하세요: `~/Library/Application Support/MyBookshelf/app.log`
+
+#### 한 줄로 끝내기 (터미널이 익숙하시면)
+
+위 1~4단계를 스크립트 하나가 대신합니다. 파이썬·앱·AI CLI·기본 설정까지 한 번에 끝납니다.
+
+```bash
+curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
+bash install-mybookshelf.sh --ai claude --launch
+```
+
+`--ai codex`(기본) · `--ai none` · `--obsidian`(옵시디언도 설치) · `--target-lang en` 등을 줄 수 있습니다. `bash install-mybookshelf.sh --help` 로 전부 볼 수 있습니다.
+
+이 방법은 **보안 경고를 만나지 않습니다** — `installer` 명령으로 설치하기 때문입니다. 자동화되지 않는 것은 둘뿐입니다: 구독 CLI 브라우저 로그인, API 키 입력.
 
 ---
 
@@ -325,4 +347,20 @@ dev/                 빌드 스크립트 (build_mac_app.sh, bump_version.py …)
 
 - macOS 빌드: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (Spotlight 검색 제외)
 - macOS 배포본: `dev/build_mac_pkg.sh` → `MyBookshelf-vX.Y.Z.pkg` + 고정 이름 `MyBookshelf.pkg` (.app이 없거나 버전이 다르면 알아서 먼저 빌드)
+- macOS 설치 자동화: `dev/installer/mac_postinstall.sh` (pkg 의 postinstall — 파이썬·venv 준비)
+- 무인 설치 스크립트: `install-mybookshelf.sh` (macOS) · `install-mybookshelf.ps1` (Windows)
 - 개발 실행(레포 코드): 각 플랫폼의 `start` 스크립트 또는 `streamlit run core/pipeline_app.py`
+
+### 용어집
+
+요약 노트의 «한글(원어)» 표기를 보관함 안에서 통일합니다. 용어집은 보관함의 `_glossary.json` 에 저장되어, 보관함을 여러 기기에서 공유하면 정본도 함께 따라갑니다.
+
+```
+Windows   glossary.bat            현황  /  --apply 수정  /  --check 사전 대조
+macOS     cd core && python3 -m services.glossary          (--apply 로 수정)
+          cd core && python3 -m services.termcheck         (사전 대조)
+```
+
+- `--apply` 는 보관함을 통째로 백업한 뒤 고칩니다. 손대는 범위는 **«## 핵심 키워드» 구획의 대소문자·공백 차이뿐**입니다.
+- 원어 자체가 다른 것(`책임` → responsibility / responsabilité / Verantwortung)은 원서 언어 차이인 경우가 많아 자동으로 손대지 않고 검토 목록으로만 보여 줍니다.
+- `termcheck` 가 못 찾은 용어는 «미확인»이지 «오류»가 아닙니다 — 책이 만든 조어는 사전에 없는 것이 정상입니다.
