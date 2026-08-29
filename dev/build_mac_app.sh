@@ -84,9 +84,19 @@ case "$APP_PATH" in
         ;;
 esac
 
-# ── 첫 실행: 패키지 설치 ────────────────────────────────────
-if [ ! -x "$VENV/bin/python" ]; then
-    osascript -e 'display dialog "My Bookshelf를 처음 시작합니다.\n\n필요한 패키지를 설치합니다 (5~20분 소요).\n설치 중에는 아무 창도 보이지 않을 수 있습니다.\n완료되면 앱 창이 자동으로 열립니다." buttons {"설치 시작"} default button "설치 시작" with title "My Bookshelf 설치"'
+# ── 첫 실행·손상 환경: 패키지 설치 ──────────────────────────
+env_healthy() {
+    [ -x "$VENV/bin/python" ] \
+        && "$VENV/bin/python" -c "import streamlit, webview, numpy, pandas" >/dev/null 2>&1
+}
+
+if ! env_healthy; then
+    if [ -x "$VENV/bin/python" ]; then
+        osascript -e 'display dialog "My Bookshelf의 Python 환경이 손상되어 복구합니다.\n\n필요한 패키지를 다시 설치합니다 (5~20분 소요).\n완료되면 앱 창이 자동으로 열립니다." buttons {"복구 시작"} default button "복구 시작" with title "My Bookshelf 환경 복구"'
+        rm -rf "$VENV"
+    else
+        osascript -e 'display dialog "My Bookshelf를 처음 시작합니다.\n\n필요한 패키지를 설치합니다 (5~20분 소요).\n설치 중에는 아무 창도 보이지 않을 수 있습니다.\n완료되면 앱 창이 자동으로 열립니다." buttons {"설치 시작"} default button "설치 시작" with title "My Bookshelf 설치"'
+    fi
 
     # Apple Silicon이면 arm64 네이티브 python 우선(/opt/homebrew) — universal2(python.org)
     # 빌드는 "Intel 기반 앱" 경고를 띄우므로 호스트 아키텍처와 일치하는 걸 고른다.
@@ -117,7 +127,7 @@ if [ ! -x "$VENV/bin/python" ]; then
     "$VENV/bin/python" -m pip install --upgrade pip -q >>"$LOG" 2>&1
     "$VENV/bin/python" -m pip install -r "$RESOURCES/requirements.txt" -q >>"$LOG" 2>&1
 
-    if [ ! -x "$VENV/bin/streamlit" ] || ! "$VENV/bin/python" -c "import webview" 2>/dev/null; then
+    if ! env_healthy; then
         osascript -e "display alert \"설치 실패\" message \"패키지 설치에 실패했습니다.\n로그: $LOG\" as critical"
         open "$SUPPORT"; exit 1
     fi

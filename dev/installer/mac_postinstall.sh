@@ -77,7 +77,7 @@ fi
 
 # ── 이미 준비돼 있으면 끝 ──
 if [ -x "$VENV/bin/python" ] \
-   && asuser "$VENV/bin/python" -c "import streamlit, webview" >/dev/null 2>&1; then
+   && asuser "$VENV/bin/python" -c "import streamlit, webview, numpy, pandas" >/dev/null 2>&1; then
     log "이미 준비된 환경이 있다 — 패키지만 최신으로 맞춘다"
     asuser "$VENV/bin/python" -m pip install -r "$RESOURCES/requirements.txt" -q >>"$LOG" 2>&1
     log "완료"
@@ -152,7 +152,7 @@ asuser /bin/mkdir -p "$USER_HOME/.streamlit"
 email = ""
 TOML
 
-if asuser "$VENV/bin/python" -c "import streamlit, webview" >/dev/null 2>&1; then
+if asuser "$VENV/bin/python" -c "import streamlit, webview, numpy, pandas" >/dev/null 2>&1; then
     log "준비 완료 — 첫 실행부터 바로 열린다"
 else
     log "패키지 확인 실패 — 앱 첫 실행이 이어서 처리한다"
