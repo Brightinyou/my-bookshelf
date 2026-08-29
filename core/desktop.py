@@ -395,10 +395,11 @@ def main() -> int:
 
     try:
         import webview
-    except ImportError:
+    except ImportError as exc:
         return _fail(
-            "pywebview is not installed.",
-            "Run setup.bat again or reinstall My Bookshelf.",
+            "The desktop window runtime is incomplete.",
+            f"{type(exc).__name__}: {exc}\n\n"
+            "Run setup.bat again to repair pywebview and pythonnet.",
         )
 
     # 이전 실행에서 남은 서버를 먼저 정리한다 (좀비 방지·항상 최신 로드, 2026-07-24)

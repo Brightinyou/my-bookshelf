@@ -83,6 +83,25 @@ if errorlevel 1 (
     goto :fail
 )
 
+echo [STEP] Verifying installed packages...
+call ".venv\Scripts\python.exe" -c "import streamlit"
+if errorlevel 1 (
+    echo [WARN] The existing environment is incomplete. Reinstalling all packages...
+    call ".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall -r "%REQ_FILE%"
+    if errorlevel 1 goto :runtime_fail
+)
+
+call ".venv\Scripts\python.exe" -c "import webview"
+if errorlevel 1 (
+    echo [WARN] The desktop window runtime is incomplete. Repairing pywebview...
+    call ".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall "pywebview>=5.0" "pythonnet>=3.0"
+    if errorlevel 1 goto :runtime_fail
+)
+
+call ".venv\Scripts\python.exe" -c "import streamlit, webview"
+if errorlevel 1 goto :runtime_fail
+echo [OK] Desktop runtime verified.
+
 if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit" >nul 2>nul
 if not exist "%USERPROFILE%\.streamlit\credentials.toml" (
     > "%USERPROFILE%\.streamlit\credentials.toml" echo [general]
@@ -122,6 +141,12 @@ echo [DONE] Installation finished.
 echo        Start the app with MyBookshelf.exe or start-app.vbs
 if "%NO_PAUSE%"=="0" pause
 exit /b 0
+
+:runtime_fail
+echo [ERROR] Installed packages could not be imported.
+echo         The detailed Python error is shown above.
+echo         Security software may have removed files from .venv.
+goto :fail
 
 :fail
 echo.
