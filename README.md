@@ -212,14 +212,14 @@ CLI를 골랐다면 설치 창이 곧바로 브라우저 로그인 창을 엽니
 > 터미널이 익숙하시면, 내려받기부터 **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다. `.pkg`도 파이썬과 선택한 AI CLI·옵시디언을 설치하며, 이 방법은 옵션을 명령에 미리 적는 무인 설치입니다.
 >
 > ```bash
-> curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
-> bash install-mybookshelf.sh --ai claude --launch
+> curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
+> bash install-mybookshelf.sh --ai both --obsidian --launch
 > ```
 >
-> `--ai codex`(기본) · `--ai none` · `--obsidian`(옵시디언도 설치) · `--target-lang en` 등을 줄 수 있습니다. `bash install-mybookshelf.sh --help` 로 전부 볼 수 있습니다.
+> `--ai codex`(기본) · `--ai claude` · `--ai both` · `--ai none`을 쓸 수 있습니다. `--ai claude --ai codex`처럼 두 번 적어도 둘 다 설치합니다. `--obsidian`(옵시디언도 설치) · `--target-lang en` 등은 `bash install-mybookshelf.sh --help`에서 볼 수 있습니다.
 >
 > **이 방법은 보안 경고를 만나지 않습니다** — `installer` 명령으로 설치하기 때문입니다.
-> 자동화되지 않는 것은 둘뿐입니다 — **구독 CLI 브라우저 로그인, API 키 입력.**
+> 선택한 CLI의 **브라우저 로그인 창도 설치 중 자동으로 열립니다.** API 키 입력만 앱 설정에서 직접 합니다.
 
 ---
 

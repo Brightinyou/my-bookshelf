@@ -2,7 +2,7 @@
 # install-mybookshelf.sh — My Bookshelf 무인 설치 (macOS)
 #
 # install-mybookshelf.ps1 의 맥판. 사용자가 손으로 하던 과정을 그대로 옮겼다:
-#   1) 파이썬 3.14 (없을 때만)      4) AI CLI (codex 또는 claude)
+#   1) 파이썬 3.14 (없을 때만)      4) AI CLI (Claude·Codex·둘 다)
 #   2) MyBookshelf.pkg 내려받기      5) 옵시디언 (선택)
 #   3) 무음 설치 + 환경 준비          6) 기본 설정 미리 넣기
 #
@@ -12,11 +12,12 @@
 #   ★ installer(1) 로 깔면 «확인되지 않은 개발자» 경고를 아예 만나지 않는다.
 #     Gatekeeper 는 Finder 로 열 때 걸린다.
 #
-#   자동화되지 않는 것은 둘뿐 — 구독 CLI 브라우저 로그인, API 키 입력.
+#   자동화되지 않는 것은 API 키 입력뿐 — 구독 CLI 로그인 창은 설치 중 바로 연다.
 #
 # 쓰기:
 #   bash install-mybookshelf.sh
-#   bash install-mybookshelf.sh --ai claude --obsidian --launch
+#   bash install-mybookshelf.sh --ai both --obsidian --launch
+#   bash install-mybookshelf.sh --ai claude --ai codex --obsidian --launch
 
 set -uo pipefail
 
@@ -29,13 +30,28 @@ PY_VERSION="3.14.6"
 PY_URL="https://www.python.org/ftp/python/${PY_VERSION}/python-${PY_VERSION}-macos11.pkg"
 PY_SHA="d3c9fff52214847e4fab03e9eaf53dd2a8e51e3534aa0b61f201b749f86bef28"
 
-AI="codex"; OBSIDIAN=0; LANG_UI="ko"; TARGET_LANG="ko"
+AI="codex"; AI_SPECIFIED=0; WANT_CLAUDE=0; WANT_CODEX=1
+OBSIDIAN=0; LANG_UI="ko"; TARGET_LANG="ko"
 WIKI_PCT=30; NO_PREFS=0; LAUNCH=0
 MANUAL=()
 
+add_ai() {
+    # 첫 --ai는 기본 Codex를 지운다. 그 뒤 반복된 --ai는 누적해 둘 다 선택할 수 있다.
+    if [ "$AI_SPECIFIED" = "0" ]; then
+        WANT_CLAUDE=0; WANT_CODEX=0; AI_SPECIFIED=1
+    fi
+    case "$1" in
+        claude) WANT_CLAUDE=1 ;;
+        codex)  WANT_CODEX=1 ;;
+        both)   WANT_CLAUDE=1; WANT_CODEX=1 ;;
+        none)   WANT_CLAUDE=0; WANT_CODEX=0 ;;
+        *) echo "--ai 는 codex·claude·both·none 중 하나"; exit 2 ;;
+    esac
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --ai)          AI="${2:-codex}"; shift 2 ;;
+        --ai)          [ $# -ge 2 ] || { echo "--ai 뒤에 값이 필요합니다"; exit 2; }; add_ai "$2"; shift 2 ;;
         --obsidian)    OBSIDIAN=1; shift ;;
         --lang)        LANG_UI="${2:-ko}"; shift 2 ;;
         --target-lang) TARGET_LANG="${2:-ko}"; shift 2 ;;
@@ -46,7 +62,15 @@ while [ $# -gt 0 ]; do
         *) echo "모르는 옵션: $1"; exit 2 ;;
     esac
 done
-case "$AI" in codex|claude|none) ;; *) echo "--ai 는 codex·claude·none 중 하나"; exit 2 ;; esac
+if [ "$WANT_CLAUDE" = "1" ] && [ "$WANT_CODEX" = "1" ]; then
+    AI="both"
+elif [ "$WANT_CLAUDE" = "1" ]; then
+    AI="claude"
+elif [ "$WANT_CODEX" = "1" ]; then
+    AI="codex"
+else
+    AI="none"
+fi
 
 C_CYAN=$'\033[36m'; C_YELLOW=$'\033[33m'; C_OFF=$'\033[0m'
 say()  { echo "  $*"; }
@@ -56,10 +80,85 @@ log()  { echo "$(date '+%H:%M:%S')  $*" >> "$LOG"; }
 die()  { echo "${C_YELLOW}중단: $*${C_OFF}"; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+host_arch() {
+    # Rosetta 안에서 uname은 x86_64를 내놓을 수 있다. 하드웨어 플래그를 우선 쓴다.
+    if [ "$(/usr/sbin/sysctl -in hw.optional.arm64 2>/dev/null)" = "1" ]; then
+        echo arm64
+    else
+        /usr/bin/uname -m
+    fi
+}
+
+venv_healthy() {
+    local arch
+    arch="$(host_arch)"
+    [ -x "$VENV/bin/python" ] \
+        && /usr/bin/arch -"$arch" "$VENV/bin/python" -c \
+            "import platform, sys, streamlit, webview, numpy, pandas; assert platform.machine() == sys.argv[1]" \
+            "$arch" >/dev/null 2>&1
+}
+
+register_cli_path() {
+    local profile marker line
+    marker="# My Bookshelf CLI PATH"
+    line='export PATH="$HOME/.local/bin:$HOME/Library/Application Support/MyBookshelf/node/bin:$PATH"'
+    export PATH="$HOME/.local/bin:$SUPPORT/node/bin:$PATH"
+    for profile in "$HOME/.zprofile" "$HOME/.zshrc"; do
+        if [ -e "$profile" ] && grep -Fqx "$marker" "$profile" 2>/dev/null; then
+            continue
+        fi
+        printf '\n%s\n%s\n' "$marker" "$line" >> "$profile" 2>/dev/null \
+            || warn "터미널 PATH를 $profile 에 기록하지 못했습니다."
+    done
+}
+
+install_node_local() {
+    local arch node_arch tmp index version archive expected got
+    arch="$(host_arch)"
+    case "$arch" in arm64) node_arch="arm64" ;; x86_64) node_arch="x64" ;; *) return 1 ;; esac
+    tmp="$(mktemp -d -t mybookshelf-node)" || return 1
+    index="$tmp/index.json"
+    curl -fsSL https://nodejs.org/dist/index.json -o "$index" || { rm -rf "$tmp"; return 1; }
+    version="$("$PY" - "$index" "$node_arch" <<'PYEOF'
+import json, sys
+rows = json.load(open(sys.argv[1], encoding="utf-8"))
+kind = f"osx-{sys.argv[2]}-tar"
+print(next((row["version"] for row in rows if row.get("lts") and kind in row.get("files", [])), ""))
+PYEOF
+)"
+    [ -n "$version" ] || { rm -rf "$tmp"; return 1; }
+    archive="node-${version}-darwin-${node_arch}.tar.xz"
+    curl -fsSL "https://nodejs.org/dist/${version}/${archive}" -o "$tmp/$archive" \
+        && curl -fsSL "https://nodejs.org/dist/${version}/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt" \
+        || { rm -rf "$tmp"; return 1; }
+    expected="$(awk -v f="$archive" '$2 == f {print $1; exit}' "$tmp/SHASUMS256.txt")"
+    got="$(shasum -a 256 "$tmp/$archive" | awk '{print $1}')"
+    [ -n "$expected" ] && [ "$got" = "$expected" ] || { rm -rf "$tmp"; return 1; }
+    rm -rf "$SUPPORT/node"
+    mkdir -p "$SUPPORT/node"
+    tar -xJf "$tmp/$archive" -C "$SUPPORT/node" --strip-components 1 || { rm -rf "$tmp"; return 1; }
+    rm -rf "$tmp"
+    export PATH="$SUPPORT/node/bin:$HOME/.local/bin:$PATH"
+    have node
+}
+
+start_cli_login() {
+    case "$1" in
+        claude)
+            say "Claude 브라우저 로그인 창을 엽니다. 로그인 후 이 Terminal로 돌아오세요."
+            claude auth login
+            ;;
+        codex)
+            say "Codex 브라우저 로그인 창을 엽니다. 로그인 후 이 Terminal로 돌아오세요."
+            codex login --device-auth
+            ;;
+    esac
+}
+
 find_python() {
     # postinstall·런처와 같은 판정 — 호스트와 아키텍처가 같은 3.10 이상.
     local hostarch cand info fallback=""
-    hostarch="$(uname -m)"
+    hostarch="$(host_arch)"
     for cand in /opt/homebrew/bin/python3.14 /opt/homebrew/bin/python3.13 \
                 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3 \
                 /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 \
@@ -82,7 +181,13 @@ sudo -v || die "관리자 권한을 얻지 못했습니다."
 # 긴 설치 동안 sudo 시간이 끊기지 않게 유지한다.
 ( while kill -0 "$$" 2>/dev/null; do sudo -n true 2>/dev/null; sleep 50; done ) &
 SUDO_KEEPALIVE=$!
-trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null; [ -z "${UNATTENDED_MARK:-}" ] || rm -f "$UNATTENDED_MARK"; rm -rf "$WORK"' EXIT
+cleanup() {
+    kill "$SUDO_KEEPALIVE" 2>/dev/null || true
+    wait "$SUDO_KEEPALIVE" 2>/dev/null || true
+    [ -z "${UNATTENDED_MARK:-}" ] || rm -f "$UNATTENDED_MARK"
+    rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 # ── 1. 파이썬 ────────────────────────────────────────────────
 step 1 "파이썬 확인"
@@ -144,7 +249,7 @@ sudo installer -pkg "$WORK/MyBookshelf.pkg" -target / >>"$LOG" 2>&1 \
     || { rm -f "$UNATTENDED_MARK"; die "설치에 실패했습니다. $LOG 를 확인하세요."; }
 rm -f "$UNATTENDED_MARK"
 VENV="$SUPPORT/.venv"
-if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -c "import streamlit, webview" >/dev/null 2>&1; then
+if ! venv_healthy; then
     [ -f "$SUPPORT/install.log" ] && tail -15 "$SUPPORT/install.log" | sed 's/^/  /'
     warn "환경 준비가 끝나지 않았습니다 — 앱 첫 실행이 이어서 처리합니다."
     MANUAL+=("앱을 한 번 실행해 환경 준비를 마치기 (몇 분)")
@@ -162,29 +267,40 @@ else
         say "Node.js 이미 있음 ($(node --version))"
     elif have brew; then
         say "Node.js 를 설치합니다."
-        brew install node >>"$LOG" 2>&1
+        brew install node >>"$LOG" 2>&1 || warn "Homebrew Node.js 설치 실패"
     fi
-    if ! have node && [ "$AI" != "claude" ]; then
-        warn "Node.js 를 설치하지 못했습니다 — https://nodejs.org 에서 LTS 를 직접 설치하세요."
-        MANUAL+=("Node.js LTS 설치 후 이 스크립트를 다시 실행")
-    else
-        if [ "$AI" = "claude" ]; then
-            # 공식 설치본이 ~/.local/bin 에 네이티브로 깐다. npm 전역 설치는 알맹이
-            # 없는 껍데기가 남는 사고가 있어 앱도 이쪽을 먼저 본다.
-            say "Claude Code CLI 설치 중..."
-            curl -fsSL https://claude.ai/install.sh 2>>"$LOG" | bash >>"$LOG" 2>&1 \
-                || { warn "공식 설치 실패 — npm 으로 시도합니다."
-                     have npm && npm install -g @anthropic-ai/claude-code >>"$LOG" 2>&1; }
-            CLI="claude"
-        else
+    if ! have node && { [ "$AI" = "codex" ] || [ "$AI" = "both" ]; }; then
+        say "Codex 에 필요한 Node.js LTS 를 사용자 폴더에 설치합니다."
+        install_node_local >>"$LOG" 2>&1 \
+            || warn "Node.js 를 설치하지 못했습니다 — https://nodejs.org 에서 LTS를 설치하세요."
+    fi
+    register_cli_path
+
+    if { [ "$AI" = "claude" ] || [ "$AI" = "both" ]; } && ! have claude; then
+        say "Claude Code CLI 설치 중..."
+        curl -fsSL https://claude.ai/install.sh 2>>"$LOG" | bash >>"$LOG" 2>&1 \
+            || { warn "공식 설치 실패 — npm 으로 다시 시도합니다."
+                 have npm && npm install -g @anthropic-ai/claude-code --prefix "$HOME/.local" >>"$LOG" 2>&1; }
+        export PATH="$HOME/.local/bin:$SUPPORT/node/bin:$PATH"
+    fi
+    if { [ "$AI" = "codex" ] || [ "$AI" = "both" ]; } && ! have codex; then
+        if have npm; then
             say "Codex CLI 설치 중..."
-            npm install -g @openai/codex >>"$LOG" 2>&1
-            CLI="codex"
+            mkdir -p "$HOME/.local"
+            npm install -g @openai/codex --prefix "$HOME/.local" >>"$LOG" 2>&1 \
+                || warn "Codex CLI 설치 실패 — $LOG 를 확인하세요."
+            export PATH="$HOME/.local/bin:$SUPPORT/node/bin:$PATH"
+        else
+            warn "npm을 찾지 못해 Codex CLI를 설치하지 못했습니다."
         fi
-        export PATH="$HOME/.local/bin:$PATH"
-        if have "$CLI"; then say "$CLI 준비 완료 — 로그인만 남았습니다."
-        else warn "$CLI 를 찾지 못했습니다. 새 터미널 창에서 확인하세요."; fi
-        MANUAL+=("터미널에서 '$CLI' 를 한 번 실행해 브라우저로 로그인 (구독 계정)")
+    fi
+    CLAUDE_OK=0; CODEX_OK=0
+    have claude && CLAUDE_OK=1
+    have codex && CODEX_OK=1
+    [ "$CLAUDE_OK" = "1" ] && say "claude 준비 완료." || [ "$AI" = "codex" ] || warn "claude 를 찾지 못했습니다."
+    [ "$CODEX_OK" = "1" ] && say "codex 준비 완료." || [ "$AI" = "claude" ] || warn "codex 를 찾지 못했습니다."
+    if [ "$CLAUDE_OK" = "0" ] && [ "$CODEX_OK" = "0" ]; then
+        MANUAL+=("AI CLI 설치 기록 확인: $LOG")
     fi
 fi
 
@@ -231,8 +347,8 @@ keys.update({
     "pref_use_obsidian": obsidian,
     "pref_use_docx": not obsidian,      # 옵시디언을 안 쓰면 Word 로 받는다
     "pref_use_hwpx": False,
-    "pref_use_claude_cli": ai == "claude",
-    "pref_use_codex_cli": ai == "codex",
+    "pref_use_claude_cli": ai in ("claude", "both"),
+    "pref_use_codex_cli": ai in ("codex", "both"),
 })
 if ai != "none":
     prov = "claude_cli" if ai == "claude" else "codex_cli"
@@ -251,6 +367,17 @@ if not os.path.exists(cfg_file):
 PYEOF
     OUTPUTS="EPUB+Word"; [ "$OBSIDIAN" = "1" ] && OUTPUTS="EPUB+옵시디언"
     say "도착언어 $TARGET_LANG · 요약 ${WIKI_PCT}% · 출력 $OUTPUTS 로 맞췄습니다."
+fi
+
+# 설치 창을 닫기 전에 브라우저 로그인을 끝낸다. 둘 다 고르면 Claude가 끝난 뒤
+# Codex를 연다. 실패하거나 취소해도 설치 자체는 유지되고 앱 설정에서 다시 시도할 수 있다.
+if [ "$AI" = "both" ]; then
+    [ "${CLAUDE_OK:-0}" = "1" ] && start_cli_login claude
+    [ "${CODEX_OK:-0}" = "1" ] && start_cli_login codex
+elif [ "$AI" = "claude" ] && [ "${CLAUDE_OK:-0}" = "1" ]; then
+    start_cli_login claude
+elif [ "$AI" = "codex" ] && [ "${CODEX_OK:-0}" = "1" ]; then
+    start_cli_login codex
 fi
 
 # ── 7. 마무리 ────────────────────────────────────────────────

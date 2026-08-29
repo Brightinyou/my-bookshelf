@@ -43,6 +43,7 @@ jobs:
             dist/.mac-build.noindex/MyBookshelf.pkg
             dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}.pkg
             dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}-mac.zip
+            install-mybookshelf.sh
           retention-days: 30
 
       - name: Add macOS files to release
@@ -53,4 +54,5 @@ jobs:
             dist/.mac-build.noindex/MyBookshelf.pkg
             dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}.pkg
             dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}-mac.zip
+            install-mybookshelf.sh
           generate_release_notes: true

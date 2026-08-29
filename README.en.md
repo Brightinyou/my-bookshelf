@@ -212,14 +212,14 @@ Then launch **My Bookshelf** from Launchpad or Applications. The `.pkg` build op
 > If you're comfortable with a terminal, one script handles the download plus **Python, the app, an AI CLI, and default settings**. The `.pkg` also installs Python and your selected AI CLI and Obsidian; this route simply supplies the choices up front for an unattended install.
 >
 > ```bash
-> curl -fsSL -O https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh
-> bash install-mybookshelf.sh --ai claude --launch
+> curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
+> bash install-mybookshelf.sh --ai both --obsidian --launch
 > ```
 >
-> Options: `--ai codex` (default) · `--ai none` · `--obsidian` · `--target-lang en`. Run `bash install-mybookshelf.sh --help` for the full list.
+> Options: `--ai codex` (default) · `--ai claude` · `--ai both` · `--ai none`. Repeating `--ai claude --ai codex` also installs both. See `bash install-mybookshelf.sh --help` for `--obsidian`, `--target-lang en`, and the full list.
 >
 > **This route never hits the security warning** — it installs with the `installer` command.
-> Only two things stay manual — **signing in to the subscription CLI, and entering an API key.**
+> The selected CLI's browser sign-in opens during installation. Only API-key entry remains manual in the app settings.
 
 > <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **On Windows?** → [Download `Setup.exe` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) and run it. macOS and Windows share a single repository.
 
