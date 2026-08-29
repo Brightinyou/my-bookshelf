@@ -33,6 +33,15 @@ warn() { echo "${C_Y}  ! $*${C_0}"; }
 log()  { echo "$(date '+%H:%M:%S')  extras: $*" >> "$LOG" 2>/dev/null; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# 설치 직후에는 postinstall이 로그 소유권을 맞춘다. 그래도 과거 판에서 root
+# 소유 로그가 남아 있으면 설치 명령 자체가 `>> install.log` 때문에 멈추지 않게
+# /dev/null로만 기록하고, 화면에 이유를 알린다.
+mkdir -p "$SUPPORT" 2>/dev/null || true
+if ! { : >> "$LOG"; } 2>/dev/null; then
+    warn "설치 기록에 쓸 수 없습니다. 설치는 계속하고 기록만 남기지 않습니다."
+    LOG="/dev/null"
+fi
+
 install_node_local() {
     # Homebrew가 없는 깨끗한 Mac도 Codex를 고를 수 있어야 한다. nodejs.org의
     # 최신 LTS 아카이브를 검증해 앱 지원 폴더에 푼다(관리자 암호 불필요).
@@ -120,7 +129,7 @@ PY="$VENV/bin/python"
 clear 2>/dev/null
 echo "${C_B}My Bookshelf — 추가 설정${C_0}"
 echo "${C_D}앱과 파이썬 환경은 이미 설치됐습니다. 두 가지만 고르시면 됩니다.${C_0}"
-echo "${C_D}그냥 Enter 만 눌러도 되고, 나중에 앱 ⚙️ 설정 탭에서 바꿀 수 있습니다.${C_0}"
+echo "${C_D}번호를 입력한 뒤 Return(Enter)을 누르세요. 그냥 Enter면 나중에 설정합니다.${C_0}"
 
 # ── 1. AI 연결 ───────────────────────────────────────────────
 head_ "1. AI 연결"
@@ -141,13 +150,16 @@ echo "    ${C_B}2${C_0}) Codex CLI         ${C_D}${CODEX_SIZE}${C_0}   ChatGPT P
 echo "    ${C_B}3${C_0}) 둘 다 설치        ${C_D}${BOTH_SIZE}${C_0}   기본 작업 AI는 Codex"
 echo "    ${C_B}4${C_0}) 나중에            ${C_D}0 MB${C_0}            앱에서 API 키를 직접 넣습니다"
 echo
-read -r -p "  선택 [1-4, 기본 4]: " pick
-case "${pick:-4}" in
-    1) AI="claude" ;;
-    2) AI="codex" ;;
-    3) AI="both" ;;
-    *) AI="none" ;;
-esac
+while true; do
+    read -r -p "  선택 [1-4, 기본 4] (번호 후 Enter): " pick
+    case "${pick:-4}" in
+        1) AI="claude"; break ;;
+        2) AI="codex"; break ;;
+        3) AI="both"; break ;;
+        4) AI="none"; break ;;
+        *) warn "1, 2, 3, 4 중 하나를 입력한 뒤 Enter를 누르세요." ;;
+    esac
+done
 
 if { [ "$AI" = "claude" ] || [ "$AI" = "both" ]; } && ! have claude; then
     say "Claude Code CLI 를 설치합니다…"
@@ -172,8 +184,11 @@ if { [ "$AI" = "codex" ] || [ "$AI" = "both" ]; } && ! have codex; then
     if have npm; then
         say "Codex CLI 를 설치합니다…"
         mkdir -p "$HOME/.local"
-        npm install -g @openai/codex --prefix "$HOME/.local" >>"$LOG" 2>&1
+        npm install -g @openai/codex --prefix "$HOME/.local" >>"$LOG" 2>&1 \
+            || warn "Codex CLI 설치에 실패했습니다. 설치 기록을 확인하세요: $LOG"
         export PATH="$HOME/.local/bin:$PATH"
+    else
+        warn "npm을 찾지 못해 Codex CLI를 설치하지 못했습니다."
     fi
 fi
 
@@ -283,4 +298,5 @@ elif [ "$AI" = "none" ]; then
 fi
 log "완료 (ai=$AI obsidian=$OBS)"
 echo
-read -r -p "  Enter 를 누르면 창을 닫습니다. " _ || true
+read -r -p "  Enter 를 누르면 설정을 끝냅니다. " _ || true
+exit 0

@@ -35,6 +35,12 @@ LOG="$SUPPORT/install.log"
 UNATTENDED_MARK="$SUPPORT/.unattended-install"
 
 /usr/bin/install -d -o "$USER_NAME" -m 755 "$SUPPORT" 2>/dev/null
+# postinstall은 root로 실행되지만, 뒤이어 열리는 setup-extras.command는 로그인
+# 사용자의 Terminal에서 실행된다. 로그 파일도 그 사용자가 계속 쓸 수 있어야
+# Node/npm 설치 명령의 리디렉션이 설치 자체를 막지 않는다.
+/usr/bin/touch "$LOG" 2>/dev/null
+/usr/sbin/chown "$USER_NAME" "$LOG" 2>/dev/null
+/bin/chmod u+rw "$LOG" 2>/dev/null
 
 log() { echo "[$(date '+%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 # -H 로 HOME 을 그 사용자 것으로 맞춘다. 없으면 pip 이 root 의 캐시 경로를
@@ -42,6 +48,10 @@ log() { echo "[$(date '+%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 asuser() { /usr/bin/sudo -H -u "$USER_NAME" "$@"; }
 
 launch_extras() {
+    # 이전 판이 root 소유 로그를 남긴 경우도 여기서 복구한다.
+    /usr/bin/touch "$LOG" 2>/dev/null
+    /usr/sbin/chown "$USER_NAME" "$LOG" 2>/dev/null
+    /bin/chmod u+rw "$LOG" 2>/dev/null
     # 무인 설치 스크립트는 AI·옵시디언 설정을 스스로 처리한다.
     if [ -f "$UNATTENDED_MARK" ]; then
         log "무인 설치 — 추가 설정 창을 띄우지 않는다"
