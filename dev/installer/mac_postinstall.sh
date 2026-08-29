@@ -75,9 +75,23 @@ if [ ! -f "$RESOURCES/requirements.txt" ]; then
     exit 0
 fi
 
+# postinstall 자체가 Rosetta로 실행될 수 있으므로 uname만 믿지 않는다. Apple
+# Silicon에서 Rosetta의 uname은 x86_64를 돌려주므로, 하드웨어 플래그를 먼저 본다.
+# Python만 x86_64로 뜨면 numpy/pandas도 조용히 x86_64 wheel을 받을 수 있다.
+if [ "$(/usr/sbin/sysctl -in hw.optional.arm64 2>/dev/null)" = "1" ]; then
+    HOSTARCH="arm64"
+else
+    HOSTARCH="$(/usr/bin/uname -m)"
+fi
+venv_healthy() {
+    [ -x "$VENV/bin/python" ] \
+        && asuser /usr/bin/arch -"$HOSTARCH" "$VENV/bin/python" -c \
+            "import platform, sys, streamlit, webview, numpy, pandas; assert platform.machine() == sys.argv[1]" \
+            "$HOSTARCH" >/dev/null 2>&1
+}
+
 # ── 이미 준비돼 있으면 끝 ──
-if [ -x "$VENV/bin/python" ] \
-   && asuser "$VENV/bin/python" -c "import streamlit, webview, numpy, pandas" >/dev/null 2>&1; then
+if venv_healthy; then
     log "이미 준비된 환경이 있다 — 패키지만 최신으로 맞춘다"
     asuser "$VENV/bin/python" -m pip install -r "$RESOURCES/requirements.txt" -q >>"$LOG" 2>&1
     log "완료"
@@ -87,7 +101,6 @@ fi
 # ── 쓸 만한 파이썬 찾기 ──
 # 호스트와 아키텍처가 같은 것을 고른다. universal2 를 x86_64 로 띄우면
 # 창이 «Intel 기반 앱» 으로 뜬다.
-HOSTARCH="$(uname -m)"
 PY=""
 PY_FALLBACK=""
 for cand in /opt/homebrew/bin/python3.14 /opt/homebrew/bin/python3.13 \
@@ -152,10 +165,13 @@ asuser /bin/mkdir -p "$USER_HOME/.streamlit"
 email = ""
 TOML
 
-if asuser "$VENV/bin/python" -c "import streamlit, webview, numpy, pandas" >/dev/null 2>&1; then
+if venv_healthy; then
     log "준비 완료 — 첫 실행부터 바로 열린다"
 else
-    log "패키지 확인 실패 — 앱 첫 실행이 이어서 처리한다"
+    # 부분 설치된 x86_64 wheel을 남기면 다음 실행이 겉보기에는 성공한 환경으로
+    # 오인한다. 설정·문서는 지원 폴더에 그대로 두고 venv만 지워 런처가 복구한다.
+    log "환경 검증 실패 — 손상된 venv를 지우고 앱 첫 실행 복구로 넘긴다"
+    rm -rf "$VENV"
 fi
 
 exit 0

@@ -53,6 +53,11 @@ APP_PATH="$( cd "$( dirname "$0" )/../.." && pwd )"   # .app 번들 경로
 SUPPORT="$HOME/Library/Application Support/MyBookshelf"
 VENV="$SUPPORT/.venv"
 LOG="$SUPPORT/app.log"
+if [ "$(/usr/sbin/sysctl -in hw.optional.arm64 2>/dev/null)" = "1" ]; then
+    HOSTARCH="arm64"
+else
+    HOSTARCH="$(/usr/bin/uname -m)"
+fi
 
 # ── 응용 프로그램 폴더로 자가 설치 (그 폴더에 없을 때만) ────
 case "$APP_PATH" in
@@ -87,7 +92,9 @@ esac
 # ── 첫 실행·손상 환경: 패키지 설치 ──────────────────────────
 env_healthy() {
     [ -x "$VENV/bin/python" ] \
-        && "$VENV/bin/python" -c "import streamlit, webview, numpy, pandas" >/dev/null 2>&1
+        && "$VENV/bin/python" -c \
+            "import platform, sys, streamlit, webview, numpy, pandas; assert platform.machine() == sys.argv[1]" \
+            "$HOSTARCH" >/dev/null 2>&1
 }
 
 if ! env_healthy; then
@@ -100,7 +107,6 @@ if ! env_healthy; then
 
     # Apple Silicon이면 arm64 네이티브 python 우선(/opt/homebrew) — universal2(python.org)
     # 빌드는 "Intel 기반 앱" 경고를 띄우므로 호스트 아키텍처와 일치하는 걸 고른다.
-    HOSTARCH=$(uname -m)
     PY=""
     for cand in /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 \
                 /opt/homebrew/bin/python3.11 /opt/homebrew/bin/python3 \
@@ -123,7 +129,11 @@ if ! env_healthy; then
     fi
 
     mkdir -p "$SUPPORT"
-    "$PY" -m venv "$VENV" >>"$LOG" 2>&1
+    if [ "$HOSTARCH" = "arm64" ] || [ "$HOSTARCH" = "x86_64" ]; then
+        /usr/bin/arch -"$HOSTARCH" "$PY" -m venv "$VENV" >>"$LOG" 2>&1
+    else
+        "$PY" -m venv "$VENV" >>"$LOG" 2>&1
+    fi
     "$VENV/bin/python" -m pip install --upgrade pip -q >>"$LOG" 2>&1
     "$VENV/bin/python" -m pip install -r "$RESOURCES/requirements.txt" -q >>"$LOG" 2>&1
 
