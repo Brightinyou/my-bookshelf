@@ -104,12 +104,9 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 #### 6단계 — AI 연결
 
-일반 `Setup.exe`는 앱과 파이썬 환경까지만 설치합니다. 앱의 `⚙️ 설정`에서 다음 중 하나를 준비합니다.
+설치가 끝나면 **My Bookshelf - Additional setup** PowerShell 창이 열립니다. **Claude·Codex·둘 다·나중에** 중 하나를 고르면 선택한 CLI를 설치하고 브라우저 로그인 창을 바로 엽니다. **둘 다**를 고르면 Claude 로그인 뒤 Codex 로그인이 이어지며, 준비된 CLI는 앱 설정에도 자동으로 등록됩니다.
 
-- ChatGPT·Claude 구독을 쓸 때: Codex 또는 Claude CLI를 설치하고 해당 CLI 토글을 켭니다.
-- API를 쓸 때: Gemini·OpenAI·Anthropic 중 하나의 API 키를 넣습니다.
-
-AI CLI와 옵시디언까지 자동 설치하려면 아래 **한 줄로 끝내기**를 사용하세요.
+CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`에서 Gemini·OpenAI·Anthropic 중 하나의 API 키를 넣습니다.
 
 #### 7단계 — 실행
 
@@ -132,9 +129,9 @@ AI CLI와 옵시디언까지 자동 설치하려면 아래 **한 줄로 끝내�
 > powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
 > ```
 >
-> `-AI codex`(기본) · `-AI none` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다.
+> `-AI codex`(기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다.
 >
-> 자동화되지 않는 것은 둘뿐입니다 — **구독 CLI 브라우저 로그인, API 키 입력.**
+> 기본적으로 선택한 구독 CLI의 브라우저 로그인도 바로 시작합니다. 자동화 환경에서는 `-NoLogin`으로 건너뛸 수 있으며, API 키는 앱에서 직접 입력합니다.
 
 ---
 

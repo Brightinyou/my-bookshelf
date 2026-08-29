@@ -12,7 +12,7 @@
     (NextButtonClick)에 걸려 있어 /VERYSILENT 로는 실행되지 않는다.
     무음 설치 전에 파이썬이 없으면 setup.bat 이 그대로 실패한다.
 
-  자동화되지 않는 것은 둘뿐 — 구독 CLI 브라우저 로그인, API 키 입력.
+  선택한 구독 CLI의 브라우저 로그인도 설치 직후 시작한다.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1
@@ -20,12 +20,13 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('codex','claude','none')] [string] $AI = 'codex',
+    [ValidateSet('codex','claude','both','none')] [string] $AI = 'codex',
     [switch] $Obsidian,
     [ValidateSet('ko','en')] [string] $Lang = 'ko',
     [string] $TargetLang = 'ko',
     [int]    $WikiLengthPct = 30,
     [switch] $NoPrefs,
+    [switch] $NoLogin,
     [switch] $Launch
 )
 
@@ -55,8 +56,28 @@ function Refresh-Path {
     $env:Path = (@($m, $u) | Where-Object { $_ }) -join ';'
 }
 
+function Add-UserPath ($dir) {
+    if (-not (Test-Path -LiteralPath $dir)) { return }
+    $u = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $parts = @($u -split ';' | Where-Object { $_ })
+    if ($parts -notcontains $dir) {
+        [Environment]::SetEnvironmentVariable('Path', (($parts + $dir) -join ';'), 'User')
+    }
+    Refresh-Path
+}
+
 function Have-Command ($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 function Have-Winget { Have-Command 'winget' }
+
+function Ensure-Node {
+    if ((Have-Command 'node') -and (Have-Command 'npm.cmd')) { return $true }
+    if (Have-Winget) {
+        Say 'Node.js LTS를 설치합니다 (관리자 확인 창이 한 번 뜰 수 있습니다).'
+        winget install -e --id OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements | Out-Null
+        Refresh-Path
+    }
+    return (Have-Command 'node') -and (Have-Command 'npm.cmd')
+}
 
 function Have-Python {
     # .iss 의 HasSupportedPython 과 같은 판정 — 3.10 이상이면 된다.
@@ -131,39 +152,53 @@ Say "완료 ($([int]((Get-Date) - $t0).TotalMinutes)분). 설치 위치: $AppDir
 
 # ── 4. Node.js + AI CLI ──────────────────────────────────────
 Step 4 'AI 연결 준비'
+$claudeReady = $false
+$codexReady = $false
 if ($AI -eq 'none') {
     Say 'CLI 설치를 건너뜁니다 — 앱 설정 탭에서 API 키를 넣으세요.'
     $script:Manual += '앱 ⚙️ 설정 탭에 AI API 키 입력 (Gemini/OpenAI/Anthropic 중 하나)'
 } else {
-    if (Have-Command 'node') {
-        Say "Node.js 이미 있음 ($(node --version))"
-    } elseif (Have-Winget) {
-        Say 'Node.js LTS 를 설치합니다 (관리자 확인 창이 한 번 뜰 수 있습니다).'
-        winget install -e --id OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements | Out-Null
-        Refresh-Path
-    }
-    if (-not (Have-Command 'node')) {
-        Warn 'Node.js 를 설치하지 못했습니다 — https://nodejs.org 에서 LTS 를 직접 설치하세요.'
-        $script:Manual += 'Node.js LTS 설치 후 이 스크립트를 다시 실행'
-    } else {
-        if ($AI -eq 'claude') {
-            # 공식 설치 관리자가 ~/.local/bin 에 네이티브로 깐다. npm 전역 설치는
-            # 알맹이 없는 껍데기가 남는 사고가 있어 앱도 이쪽을 먼저 본다.
-            Say 'Claude Code CLI 설치 중...'
-            try { Invoke-RestMethod 'https://claude.ai/install.ps1' | Invoke-Expression }
-            catch {
-                Warn '공식 설치 실패 — npm 으로 시도합니다.'
-                npm install -g '@anthropic-ai/claude-code' | Out-Null
-            }
-        } else {
-            Say 'Codex CLI 설치 중...'
-            npm install -g '@openai/codex' | Out-Null
+    if ($AI -in @('claude', 'both')) {
+        # 공식 설치 관리자는 Node.js 없이 사용자 폴더에 네이티브 CLI를 설치한다.
+        Say 'Claude Code CLI 설치 중...'
+        try { Invoke-RestMethod 'https://claude.ai/install.ps1' | Invoke-Expression }
+        catch {
+            Warn 'Claude 공식 설치에 실패해 npm으로 다시 시도합니다.'
+            if (Ensure-Node) { & npm.cmd install -g '@anthropic-ai/claude-code' | Out-Null }
         }
-        Refresh-Path
-        $cli = if ($AI -eq 'claude') { 'claude' } else { 'codex' }
-        if (Have-Command $cli) { Say "$cli 준비 완료 — 로그인만 남았습니다." }
-        else { Warn "$cli 를 찾지 못했습니다. 새 PowerShell 창을 열고 확인하세요." }
-        $script:Manual += "PowerShell 에서 '$cli' 를 한 번 실행해 브라우저로 로그인 (구독 계정)"
+        Add-UserPath (Join-Path $HOME '.local\bin')
+        $claudeReady = Have-Command 'claude'
+    }
+
+    if ($AI -in @('codex', 'both')) {
+        if (Ensure-Node) {
+            Say 'Codex CLI 설치 중...'
+            & npm.cmd install -g '@openai/codex' | Out-Null
+            Refresh-Path
+            $codexReady = Have-Command 'codex'
+        } else {
+            Warn 'Node.js를 설치하지 못해 Codex CLI를 준비하지 못했습니다.'
+            $script:Manual += 'Node.js LTS 설치 후 이 스크립트를 다시 실행'
+        }
+    }
+
+    if ($claudeReady) { Say 'claude 준비 완료.' }
+    elseif ($AI -in @('claude', 'both')) { Warn 'claude를 찾지 못했습니다. 새 PowerShell 창을 열고 확인하세요.' }
+    if ($codexReady) { Say 'codex 준비 완료.' }
+    elseif ($AI -in @('codex', 'both')) { Warn 'codex를 찾지 못했습니다. 새 PowerShell 창을 열고 확인하세요.' }
+
+    if ($NoLogin) {
+        if ($claudeReady) { $script:Manual += "PowerShell에서 'claude auth login' 실행" }
+        if ($codexReady) { $script:Manual += "PowerShell에서 'codex login --device-auth' 실행" }
+    } else {
+        if ($claudeReady) {
+            Say 'Claude 브라우저 로그인을 시작합니다.'
+            & claude auth login
+        }
+        if ($codexReady) {
+            Say 'Codex 브라우저 로그인을 시작합니다.'
+            & codex login --device-auth
+        }
     }
 }
 
@@ -204,11 +239,11 @@ if ($NoPrefs) {
         'pref_use_obsidian'             = [bool]$Obsidian
         'pref_use_docx'                 = (-not [bool]$Obsidian)   # 옵시디언을 안 쓰면 Word 로 받는다
         'pref_use_hwpx'                 = $false
-        'pref_use_claude_cli'           = ($AI -eq 'claude')
-        'pref_use_codex_cli'            = ($AI -eq 'codex')
+        'pref_use_claude_cli'           = $claudeReady
+        'pref_use_codex_cli'            = $codexReady
     }
-    if ($AI -ne 'none') {
-        $prov = if ($AI -eq 'claude') { 'claude_cli' } else { 'codex_cli' }
+    if ($claudeReady -or $codexReady) {
+        $prov = if ($codexReady) { 'codex_cli' } else { 'claude_cli' }
         $prefs['wiki_provider'] = $prov
         $prefs['wiki_model'] = 'default'
         $prefs['pref_translate_engine'] = "${prov}:default"

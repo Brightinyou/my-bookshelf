@@ -1,5 +1,5 @@
 ﻿#define MyAppName           "My Bookshelf"
-#define MyAppVersion        "1.2.64"
+#define MyAppVersion        "1.2.66"
 #define PythonVersion       "3.14.6"
 #define PythonInstallerName "python-3.14.6-amd64.exe"
 #define PythonInstallerUrl  "https://www.python.org/ftp/python/3.14.6/python-3.14.6-amd64.exe"
@@ -55,6 +55,7 @@ Source: "..\..\stop-app.bat";            DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\setup.bat";               DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\install-obsidian.bat";    DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\glossary.bat";            DestDir: "{app}"; Flags: ignoreversion
+Source: "windows_setup_extras.ps1";       DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\vendor\poppler\*";        DestDir: "{app}\poppler"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -85,6 +86,12 @@ Filename: "{app}\.venv\Scripts\pythonw.exe"; \
     WorkingDir: "{app}"; \
     StatusMsg: "Preparing the application shortcut."; \
     Flags: waituntilterminated runhidden
+
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\windows_setup_extras.ps1"""; \
+    WorkingDir: "{app}"; \
+    Flags: waituntilterminated postinstall skipifsilent; \
+    Description: "Set up Claude or Codex"
 
 Filename: "{sys}\wscript.exe"; \
     Parameters: """{app}\start-app.vbs"""; \

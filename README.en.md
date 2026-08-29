@@ -104,12 +104,9 @@ At the end of the install you'll see *"Preparing Python environment"*, and it wi
 
 #### Step 6 — Connect an AI
 
-The regular `Setup.exe` installs the app and Python environment only. In the app's `⚙️ Settings`, prepare one of the following:
+After installation, a **My Bookshelf - Additional setup** PowerShell window opens. Choose **Claude, Codex, both, or later**. Setup installs the selected CLI and immediately opens its browser sign-in. Selecting **both** signs in to Claude first and then Codex, and enables both CLIs in the app settings.
 
-- To use a ChatGPT or Claude subscription, install the Codex or Claude CLI and enable its CLI toggle.
-- To use an API, enter a Gemini, OpenAI, or Anthropic API key.
-
-Use the **one-line install** below if you want the AI CLI and Obsidian installed automatically too.
+To use an API instead, choose **later** and enter a Gemini, OpenAI, or Anthropic API key in `⚙️ Settings`.
 
 #### Step 7 — Launch
 
@@ -132,9 +129,9 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 > powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
 > ```
 >
-> Options: `-AI codex` (default) · `-AI none` · `-Obsidian` · `-TargetLang en`.
+> Options: `-AI codex` (default) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian` · `-TargetLang en`.
 >
-> Only two things stay manual — **signing in to the subscription CLI, and entering an API key.**
+> The selected subscription CLI opens browser sign-in immediately. Use `-NoLogin` to skip it in automation; API keys are still entered in the app.
 
 ---
 
