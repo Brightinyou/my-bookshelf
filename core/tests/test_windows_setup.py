@@ -70,3 +70,11 @@ class WindowsSetupTest(unittest.TestCase):
             r'#define MyAppVersion\s+"([^"]+)"', installer
         ).group(1)
         self.assertEqual(source_version, installer_version)
+
+    def test_workflow_publishes_unattended_installer(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "build-windows.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("- '*.ps1'", workflow)
+        self.assertGreaterEqual(workflow.count("install-mybookshelf.ps1"), 2)

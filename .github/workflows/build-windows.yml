@@ -9,6 +9,7 @@ on:
       - 'core/**'
       - 'dev/installer/**'
       - '*.bat'
+      - '*.ps1'
       - '*.vbs'
       - 'MyBookshelf.exe'
       - 'MyBookshelf.ico'
@@ -68,6 +69,7 @@ jobs:
           path: |
             dist/windows/Setup.exe
             dist/windows/MyBookshelf-Setup-v${{ steps.ver.outputs.version }}.zip
+            install-mybookshelf.ps1
           retention-days: 30
 
       - name: Add Windows files to release
@@ -77,4 +79,5 @@ jobs:
           files: |
             dist/windows/Setup.exe
             dist/windows/MyBookshelf-Setup-v${{ steps.ver.outputs.version }}.zip
+            install-mybookshelf.ps1
           generate_release_notes: true
