@@ -47,6 +47,18 @@ class WindowsSetupTest(unittest.TestCase):
         self.assertIn("& claude auth login", script)
         self.assertIn("& codex login --device-auth", script)
 
+    def test_host_first_install_reset_is_reversible_and_removes_python(self):
+        script = (
+            ROOT / "dev" / "windows-first-install" / "reset-host.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Python.Python.3.14", script)
+        self.assertIn("Python.Python.3.13", script)
+        self.assertIn("Python.Launcher", script)
+        self.assertIn("Move-ToBackup", script)
+        self.assertNotIn("Remove-Item", script)
+        self.assertIn("Documents and vaults were not changed", script)
+
     def test_source_and_installer_versions_match(self):
         source = (ROOT / "core" / "version.py").read_text(encoding="utf-8")
         installer = (ROOT / "dev" / "installer" / "MyBookshelf.iss").read_text(
