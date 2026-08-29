@@ -180,7 +180,7 @@ After Python preparation, a **My Bookshelf — Additional setup** Terminal windo
 | **3. Both** | Claude and Codex · Codex is the default working AI | 656MB |
 | **4. Later** | No CLI; enter an API key in the app later | 0MB |
 
-Pressing Enter without a number selects the default, **4. Later**. An existing CLI is not downloaded again and is shown as 0MB additional space.
+Enter a number and press Return. Pressing Enter without a number selects the default, **4. Later**. An existing CLI is not downloaded again and is shown as 0MB additional space.
 
 > If Homebrew is already installed, it is used for Node.js. The setup does not install Homebrew; without it, the official Node.js LTS build is installed directly in the user account.
 
@@ -196,7 +196,9 @@ You can change output formats and the Obsidian vault later in `⚙️ Settings`.
 
 #### Step 6 — Sign in to the CLI and launch the app
 
-When additional setup finishes, press Enter to close its window. If you selected a CLI, open a new Terminal window and run `claude` or `codex` once to sign in with your subscription. If you selected **Both**, sign in to each command.
+When you select a CLI, setup opens its browser sign-in immediately. Selecting **Both** signs in to Claude first, then Codex. It also registers the command paths, so `claude` and `codex` work from newly opened Terminal windows.
+
+You can cancel either sign-in and later enable it in `⚙️ Settings` or use an API key instead. The final Enter ends additional setup.
 
 Then launch **My Bookshelf** from Launchpad or Applications. The `.pkg` build opens immediately because its Python environment is already prepared.
 

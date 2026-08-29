@@ -42,6 +42,46 @@ if ! { : >> "$LOG"; } 2>/dev/null; then
     LOG="/dev/null"
 fi
 
+register_cli_path() {
+    # Finder로 연 앱은 자체 PATH를 쓰지만, 사용자가 어느 새 Terminal을 열어도
+    # claude/codex를 바로 쓸 수 있게 zsh의 로그인·일반 셸에 한 번만 등록한다.
+    # 사용자 전용 Node를 쓴 경우에는 Codex의 `env node` 셔뱅에도 이 경로가 필요하다.
+    local profile marker line
+    marker="# My Bookshelf CLI PATH"
+    line='export PATH="$HOME/.local/bin:$HOME/Library/Application Support/MyBookshelf/node/bin:$PATH"'
+    export PATH="$HOME/.local/bin:$SUPPORT/node/bin:$PATH"
+    for profile in "$HOME/.zprofile" "$HOME/.zshrc"; do
+        if [ -e "$profile" ] && grep -Fqx "$marker" "$profile" 2>/dev/null; then
+            continue
+        fi
+        if {
+            printf '\n%s\n%s\n' "$marker" "$line"
+        } >> "$profile" 2>/dev/null; then
+            log "PATH 등록: $profile"
+        else
+            warn "터미널 PATH를 $profile 에 기록하지 못했습니다."
+        fi
+    done
+}
+
+start_cli_login() {
+    local cli="$1"
+    case "$cli" in
+        claude)
+            head_ "4. Claude 로그인"
+            say "브라우저 로그인 창을 엽니다. Claude 계정으로 로그인한 뒤 이 창으로 돌아오세요."
+            log "Claude 로그인 시작"
+            claude auth login
+            ;;
+        codex)
+            head_ "4. Codex 로그인"
+            say "브라우저 로그인 창을 엽니다. ChatGPT 계정으로 로그인한 뒤 이 창으로 돌아오세요."
+            log "Codex 로그인 시작"
+            codex login --device-auth
+            ;;
+    esac
+}
+
 install_node_local() {
     # Homebrew가 없는 깨끗한 Mac도 Codex를 고를 수 있어야 한다. nodejs.org의
     # 최신 LTS 아카이브를 검증해 앱 지원 폴더에 푼다(관리자 암호 불필요).
@@ -211,6 +251,10 @@ elif [ "$AI" = "both" ]; then
     fi
 fi
 
+if [ "$CLAUDE_OK" = "1" ] || [ "$CODEX_OK" = "1" ]; then
+    register_cli_path
+fi
+
 # ── 2. 옵시디언 ──────────────────────────────────────────────
 head_ "2. 옵시디언"
 OBS=0
@@ -279,19 +323,28 @@ else
 fi
 
 # ── 4. 마무리 ────────────────────────────────────────────────
+# 선택한 CLI의 로그인 창을 설치 흐름 안에서 바로 연다. 각각 끝나거나 취소하면
+# 다음 CLI가 이어서 열린다. 이미 로그인한 CLI는 자체적으로 상태만 알려 준다.
+if [ "$AI" = "both" ]; then
+    [ "$CLAUDE_OK" = "1" ] && start_cli_login claude
+    [ "$CODEX_OK" = "1" ] && start_cli_login codex
+elif [ "$AI" = "claude" ] && [ "$CLAUDE_OK" = "1" ]; then
+    start_cli_login claude
+elif [ "$AI" = "codex" ] && [ "$CODEX_OK" = "1" ]; then
+    start_cli_login codex
+fi
+
 head_ "끝났습니다"
 say "실행: Launchpad 의 «My Bookshelf»"
 if [ "$AI" = "both" ]; then
     echo
-    echo "${C_Y}  남은 일 — 두 CLI 로그인${C_0}"
-    echo "  이 창에서 ${C_B}claude${C_0}, ${C_B}codex${C_0} 를 각각 한 번 실행해 로그인하세요."
-    echo "  ${C_D}로그인 뒤 앱을 켜면 두 CLI 토글이 모두 켜져 있고 기본 AI는 Codex입니다.${C_0}"
+    echo "${C_Y}  Claude와 Codex 로그인 창을 순서대로 열었습니다.${C_0}"
+    echo "  ${C_D}앱을 켜면 두 CLI 토글이 모두 켜져 있고 기본 AI는 Codex입니다.${C_0}"
 elif [ "$AI" = "claude" ] || [ "$AI" = "codex" ]; then
     CLI="$AI"
     echo
-    echo "${C_Y}  남은 일 하나 — 로그인${C_0}"
-    echo "  이 창에서 ${C_B}${CLI}${C_0} 를 한 번 실행해 브라우저로 로그인하세요."
-    echo "  ${C_D}로그인 뒤 앱을 켜면 설정 탭 토글이 이미 켜져 있습니다.${C_0}"
+    echo "${C_Y}  ${CLI} 로그인 창을 열었습니다.${C_0}"
+    echo "  ${C_D}앱을 켜면 설정 탭 토글이 이미 켜져 있습니다.${C_0}"
 elif [ "$AI" = "none" ]; then
     echo
     echo "  앱 ${C_B}⚙️ 설정${C_0} 탭에서 AI API 키를 넣으시면 됩니다."

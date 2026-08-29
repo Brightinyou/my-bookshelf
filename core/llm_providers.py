@@ -194,7 +194,8 @@ def _cli_env() -> dict:
     cur = env.get("PATH", "")
     parts = cur.split(os.pathsep) if cur else []
     for extra in ("/opt/homebrew/bin", "/usr/local/bin",
-                  str(Path.home() / ".local" / "bin")):
+                  str(Path.home() / ".local" / "bin"),
+                  str(Path.home() / "Library" / "Application Support" / "MyBookshelf" / "node" / "bin")):
         if extra not in parts and Path(extra).is_dir():
             parts.insert(0, extra)
     env["PATH"] = os.pathsep.join(parts)
