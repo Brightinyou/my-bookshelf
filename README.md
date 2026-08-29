@@ -126,7 +126,7 @@ CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`�
 >
 > ```powershell
 > irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
-> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI both -Obsidian -Launch
+> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI both -Launch
 > ```
 >
 > `-AI codex`(기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다.
@@ -213,7 +213,7 @@ CLI를 골랐다면 설치 창이 곧바로 브라우저 로그인 창을 엽니
 >
 > ```bash
 > curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
-> bash install-mybookshelf.sh --ai both --obsidian --launch
+> bash install-mybookshelf.sh --ai both --launch
 > ```
 >
 > `--ai codex`(기본) · `--ai claude` · `--ai both` · `--ai none`을 쓸 수 있습니다. `--ai claude --ai codex`처럼 두 번 적어도 둘 다 설치합니다. `--obsidian`(옵시디언도 설치) · `--target-lang en` 등은 `bash install-mybookshelf.sh --help`에서 볼 수 있습니다.
