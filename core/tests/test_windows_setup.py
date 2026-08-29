@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -20,3 +21,15 @@ class WindowsSetupTest(unittest.TestCase):
 
         self.assertIn('Source: "..\\..\\setup.bat"', installer)
         self.assertIn('Source: "..\\..\\glossary.bat"', installer)
+
+    def test_source_and_installer_versions_match(self):
+        source = (ROOT / "core" / "version.py").read_text(encoding="utf-8")
+        installer = (ROOT / "dev" / "installer" / "MyBookshelf.iss").read_text(
+            encoding="utf-8-sig"
+        )
+
+        source_version = re.search(r'APP_VERSION\s*=\s*"v([^"]+)"', source).group(1)
+        installer_version = re.search(
+            r'#define MyAppVersion\s+"([^"]+)"', installer
+        ).group(1)
+        self.assertEqual(source_version, installer_version)

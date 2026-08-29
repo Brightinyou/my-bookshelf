@@ -33,6 +33,15 @@ jobs:
         run: choco install innosetup --no-progress -y
         shell: cmd
 
+      - name: Verify source and installer versions match
+        run: |
+          $source = (Select-String 'APP_VERSION\s*=\s*"v(.+)"' core/version.py).Matches[0].Groups[1].Value
+          $installer = (Select-String '#define MyAppVersion\s+"(.+)"' dev/installer/MyBookshelf.iss).Matches[0].Groups[1].Value
+          if ($source -ne $installer) {
+            throw "Version mismatch: core=$source installer=$installer"
+          }
+        shell: pwsh
+
       - name: Fetch Poppler
         run: ./dev/installer/fetch-poppler.ps1
         shell: pwsh
