@@ -165,6 +165,6 @@ Log 'Host reset completed. Documents and vaults were not changed.'
 
 Write-Host ''
 Write-Host "Backup: $backup" -ForegroundColor Green
-Write-Host 'Opening the public v1.2.67 release page for the first-download test.' -ForegroundColor Green
-Start-Process 'https://github.com/Brightinyou/my-bookshelf/releases/tag/v1.2.67'
+Write-Host 'Opening the latest public release page for the first-download test.' -ForegroundColor Green
+Start-Process 'https://github.com/Brightinyou/my-bookshelf/releases/latest'
 Read-Host 'Press Enter to close this reset window'

@@ -13,7 +13,7 @@ Preserved without modification:
 
 Close Codex before running the reset because the script removes the Codex CLI
 and stops `codex-code-mode-host`. Type `RESET` at its confirmation prompt. When
-the reset finishes, the public `v1.2.67` release page opens for downloading
+the reset finishes, the latest public release page opens for downloading
 `Setup.exe`.
 
 The timestamped backup also contains the pre-test PATH and installed-package
