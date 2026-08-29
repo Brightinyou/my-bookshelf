@@ -36,6 +36,8 @@ class WindowsSetupTest(unittest.TestCase):
         self.assertIn("& codex login --device-auth", script)
         self.assertIn("'pref_use_claude_cli'", script)
         self.assertIn("'pref_use_codex_cli'", script)
+        self.assertIn("'pref_use_obsidian'", script)
+        self.assertIn("Obsidian.Obsidian", script)
 
     def test_unattended_installer_supports_both_clis_and_login(self):
         script = (ROOT / "install-mybookshelf.ps1").read_text(encoding="utf-8-sig")

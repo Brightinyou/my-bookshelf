@@ -104,7 +104,7 @@ At the end of the install you'll see *"Preparing Python environment"*, and it wi
 
 #### Step 6 — Connect an AI
 
-After installation, a **My Bookshelf - Additional setup** PowerShell window opens. Choose **Claude, Codex, both, or later**. Setup installs the selected CLI and immediately opens its browser sign-in. Selecting **both** signs in to Claude first and then Codex, and enables both CLIs in the app settings.
+After installation, a **My Bookshelf - Additional setup** PowerShell window opens. Choose **Claude, Codex, both, or later**, then choose whether to install Obsidian. Setup installs the selected tools and immediately opens browser sign-in. Selecting **both** signs in to Claude first and then Codex, and enables the prepared CLIs and Obsidian in the app settings.
 
 To use an API instead, choose **later** and enter a Gemini, OpenAI, or Anthropic API key in `⚙️ Settings`.
 

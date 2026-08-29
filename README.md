@@ -104,7 +104,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 #### 6단계 — AI 연결
 
-설치가 끝나면 **My Bookshelf - Additional setup** PowerShell 창이 열립니다. **Claude·Codex·둘 다·나중에** 중 하나를 고르면 선택한 CLI를 설치하고 브라우저 로그인 창을 바로 엽니다. **둘 다**를 고르면 Claude 로그인 뒤 Codex 로그인이 이어지며, 준비된 CLI는 앱 설정에도 자동으로 등록됩니다.
+설치가 끝나면 **My Bookshelf - Additional setup** PowerShell 창이 열립니다. **Claude·Codex·둘 다·나중에** 중 하나를 고르면 선택한 CLI를 설치하고, 이어서 옵시디언 설치 여부를 묻습니다. 그 뒤 브라우저 로그인 창을 바로 엽니다. **둘 다**를 고르면 Claude 로그인 뒤 Codex 로그인이 이어지며, 준비된 CLI와 옵시디언은 앱 설정에도 자동으로 등록됩니다.
 
 CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`에서 Gemini·OpenAI·Anthropic 중 하나의 API 키를 넣습니다.
 

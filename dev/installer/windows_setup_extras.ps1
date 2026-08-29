@@ -87,7 +87,25 @@ function Install-Codex {
     return Have-Command 'codex'
 }
 
-function Save-Preferences([bool] $ClaudeReady, [bool] $CodexReady) {
+function Install-Obsidian {
+    $obsidian = Join-Path $env:LOCALAPPDATA 'Programs\Obsidian\Obsidian.exe'
+    if (Test-Path -LiteralPath $obsidian) { return $true }
+    if (-not (Have-Command 'winget')) {
+        Warn 'winget was not found, so Obsidian cannot be installed automatically.'
+        return $false
+    }
+
+    Say 'Installing Obsidian.'
+    & winget install -e --id Obsidian.Obsidian --silent `
+        --accept-source-agreements --accept-package-agreements
+    return Test-Path -LiteralPath $obsidian
+}
+
+function Save-Preferences(
+    [bool] $ClaudeReady,
+    [bool] $CodexReady,
+    [bool] $ObsidianReady
+) {
     New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
     $keysFile = Join-Path $ConfigDir 'keys.json'
     $keys = @{}
@@ -103,6 +121,10 @@ function Save-Preferences([bool] $ClaudeReady, [bool] $CodexReady) {
 
     $keys['pref_use_claude_cli'] = $ClaudeReady
     $keys['pref_use_codex_cli'] = $CodexReady
+    $keys['pref_use_obsidian'] = $ObsidianReady
+    if (-not $ObsidianReady -and -not $keys.ContainsKey('pref_use_docx')) {
+        $keys['pref_use_docx'] = $true
+    }
     if ($ClaudeReady -or $CodexReady) {
         $provider = if ($CodexReady) { 'codex_cli' } else { 'claude_cli' }
         $keys['wiki_provider'] = $provider
@@ -157,7 +179,20 @@ if ($choice -in @('2', '3')) {
     catch { Warn 'Codex installation failed.'; Log $_ }
 }
 
-Save-Preferences $claudeReady $codexReady
+Write-Host ''
+$obsidianPath = Join-Path $env:LOCALAPPDATA 'Programs\Obsidian\Obsidian.exe'
+$obsidianReady = Test-Path -LiteralPath $obsidianPath
+if ($obsidianReady) {
+    Say 'Obsidian is already installed.'
+} else {
+    $obsidianChoice = Read-Host 'Install Obsidian too? (y/N)'
+    if ($obsidianChoice -match '^(y|yes)$') {
+        try { $obsidianReady = Install-Obsidian }
+        catch { Warn 'Obsidian installation failed.'; Log $_ }
+    }
+}
+
+Save-Preferences $claudeReady $codexReady $obsidianReady
 if ($claudeReady) { Start-Login 'claude' }
 if ($codexReady) { Start-Login 'codex' }
 
@@ -167,4 +202,5 @@ if ($choice -eq '4') {
 } else {
     Say 'The selected CLI has been enabled in the app settings.'
 }
+if ($obsidianReady) { Say 'Obsidian has been enabled in the app settings.' }
 [void](Read-Host 'Press Enter to close this window')
