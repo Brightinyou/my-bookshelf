@@ -126,7 +126,7 @@ CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`�
 >
 > ```powershell
 > irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
-> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
+> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI codex -AI claude -Obsidian -Launch
 > ```
 >
 > `-AI codex`(기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다.
