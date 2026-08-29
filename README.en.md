@@ -209,11 +209,11 @@ Then launch **My Bookshelf** from Launchpad or Applications. The `.pkg` build op
 >
 > *Skips steps 1–6.*
 >
-> If you're comfortable with a terminal, one script handles the download plus **Python, the app, an AI CLI, and default settings**. The `.pkg` also installs Python and your selected AI CLI and Obsidian; this route simply supplies the choices up front for an unattended install.
+> If you're comfortable with a terminal, one script handles the download plus **Python, the app, the selected AI CLIs, and default settings**. The `.pkg` also installs Python and your selected AI CLIs, plus Obsidian when requested; this route simply supplies the choices up front for an unattended install.
 >
 > ```bash
 > curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
-> bash install-mybookshelf.sh --ai both --obsidian --launch
+> bash install-mybookshelf.sh --ai both --launch
 > ```
 >
 > Options: `--ai codex` (default) · `--ai claude` · `--ai both` · `--ai none`. Repeating `--ai claude --ai codex` also installs both. See `bash install-mybookshelf.sh --help` for `--obsidian`, `--target-lang en`, and the full list.
