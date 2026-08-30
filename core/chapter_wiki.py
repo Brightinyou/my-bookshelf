@@ -789,9 +789,33 @@ GROUNDING_REVIEW_PROMPT = """당신은 원문 대조 편집자입니다. 아래 
 {draft}
 """
 
-def _gen_json(prompt, max_out):
-    prov, model = llm.wiki_provider_model()
-    return llm.complete_json(prov, model, "", prompt, max_tokens=max_out)
+def _gen_json(prompt, max_out, provider=None, model=None):
+    prov, current_model = llm.wiki_provider_model()
+    if provider:
+        prov = provider
+        current_model = model or llm.PROVIDERS[prov]["models"][0]
+    else:
+        current_model = model or current_model
+    return llm.complete_json(prov, current_model, "", prompt, max_tokens=max_out)
+
+
+def _use_codex_claude_review_chain() -> bool:
+    return (
+        llm.wiki_codex_claude_review_enabled()
+        and llm.wiki_codex_claude_review_available()
+    )
+
+
+def _draft_provider_model() -> tuple[str, str]:
+    if _use_codex_claude_review_chain():
+        return "codex_cli", llm.cli_model_or_default("codex_cli")
+    return llm.wiki_provider_model()
+
+
+def _review_provider_model() -> tuple[str, str]:
+    if _use_codex_claude_review_chain():
+        return "claude_cli", llm.cli_model_or_default("claude_cli")
+    return llm.wiki_provider_model()
 
 
 def _grounding_review(source: str, draft: dict) -> dict:
@@ -804,12 +828,15 @@ def _grounding_review(source: str, draft: dict) -> dict:
     draft_summary = str(draft.get("summary") or "").strip()
     if not draft_body:
         return draft
+    review_prov, review_model = _review_provider_model()
     review = _gen_json(
         GROUNDING_REVIEW_PROMPT.format(
             source=source,
             draft=("요약: " + draft_summary + "\n\n" + draft_body),
         ),
         12_288,
+        provider=review_prov,
+        model=review_model,
     )
     if not isinstance(review, dict):
         raise ValueError("grounding review returned a non-object")
@@ -824,7 +851,7 @@ def _grounding_review(source: str, draft: dict) -> dict:
     return out
 
 def generate_chapter(book, chap_title, chap_text):
-    prov, _ = llm.wiki_provider_model()
+    prov, model = _draft_provider_model()
     max_in = llm.MAX_INPUT_CHARS.get(prov, 500_000)
     eff = min(len(chap_text), max_in)                       # 모델이 실제로 보는 분량
     p = _length_params(eff)
@@ -834,7 +861,8 @@ def generate_chapter(book, chap_title, chap_text):
         n_sub=p["n_sub"], n_cite=p["n_cite"], src_chars=eff, pct=p["pct"],
         target_chars=p["target"], per_sub=p["per_sub"],
         sent_ov=p["sent_ov"], n_kw=p["n_kw"],
-        gloss_hint=gloss.hint_for(chap_text[:max_in], g), **_lang_rules()), p["max_out"])
+        gloss_hint=gloss.hint_for(chap_text[:max_in], g), **_lang_rules()), p["max_out"],
+        provider=prov, model=model)
     # 생성 직후 원문 대조. 실패 시 1차 생성물을 보존해 요약 작업 전체가
     # 중단되지 않게 한다(검증 실패는 로그로만 알린다).
     try:
@@ -842,7 +870,7 @@ def generate_chapter(book, chap_title, chap_text):
         if reviewed is not data:
             data = reviewed
     except Exception as exc:
-        print(f"      ↳ 원문 대조 검증 생략(1차 요약 유지): {exc}", flush=True)
+        print(f"      - 원문 대조 검증 생략(1차 요약 유지): {exc}", flush=True)
     if data.get("body") and g:
         data["body"], n_fix = gloss.apply_to_text(data["body"], g)
         if n_fix:

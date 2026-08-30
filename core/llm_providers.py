@@ -175,6 +175,26 @@ def set_pref(key: str, value) -> None:
         pass
 
 
+def wiki_codex_claude_review_enabled() -> bool:
+    """Whether chapter Wiki generation should draft with Codex CLI, then review with Claude CLI."""
+    return bool(get_pref("wiki_codex_claude_review", False))
+
+
+def set_wiki_codex_claude_review_enabled(enabled: bool) -> None:
+    set_pref("wiki_codex_claude_review", bool(enabled))
+
+
+def wiki_codex_claude_review_available() -> bool:
+    return codex_cli_available() and claude_cli_available()
+
+
+def cli_model_or_default(provider: str) -> str:
+    configured = cli_configured_model(provider)
+    if configured:
+        return configured
+    return (PROVIDERS.get(provider, {}).get("models") or [""])[0]
+
+
 # CLI가 'default' 모델로 돌 때 세션 헤더에서 확인된 실제 모델명 (요약 노트 기록용)
 _LAST_CLI_MODEL = ""
 
@@ -425,7 +445,8 @@ def _claude_cli(model: str, system: str, prompt: str) -> str:
         prompt, timeout=600, cwd=tempfile.gettempdir(),
     )
     if returncode != 0:
-        raise RuntimeError(f"claude CLI exit {returncode}: {(stderr or '')[:200]}")
+        detail = ((stderr or "").strip() + " | " + (stdout or "").strip()).strip(" |")
+        raise RuntimeError(f"claude CLI exit {returncode}: {detail[:300]}")
     out = (stdout or "").strip()
     # ~/.claude 자동 메모리 hook이 출력 끝에 붙는 경우 제거
     for marker in ("\n메모리 저장:", "\n저장할 새 메모리 없음"):
