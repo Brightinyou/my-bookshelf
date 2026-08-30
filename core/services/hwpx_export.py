@@ -64,6 +64,35 @@ def set_hwpx_dir(path_str: str) -> None:
     f.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _clear_outline_numbers(doc) -> int:
+    """개요 번호(가·나·다)를 지우되 개요 수준은 남긴다 (2026-08-31).
+
+    add_heading() 이 만드는 문단은 `<hh:heading type="OUTLINE" level="N"/>` 를
+    갖고, 실제 번호는 번호 정의의 `<hh:paraHead>` 안에 있는 `^1.`·`^2.` 같은
+    자리표시자에서 나온다. 도착언어가 독일어인 문서에 «가. 나. 다.» 가 붙어
+    DOCX 산출물과 모양이 달라졌다.
+
+    자리표시자만 비운다. type="OUTLINE" 과 level 은 그대로 두므로 한글의
+    «개요 보기» 와 자동 목차 생성은 계속 동작한다 — 스타일을 통째로 일반
+    문단으로 바꾸면 그 기능까지 잃는다.
+    """
+    NS = "{http://www.hancom.co.kr/hwpml/2011/head}"
+    n = 0
+    try:
+        headers = doc.parts.headers
+    except AttributeError:          # 6.0 이전 배치
+        headers = getattr(doc, "headers", [])
+    for hdr in headers:
+        el = getattr(hdr, "element", None)
+        if el is None:
+            continue
+        for ph in el.iter(f"{NS}paraHead"):
+            if (ph.text or "").strip():
+                ph.text = ""
+                n += 1
+    return n
+
+
 def _new_paragraph(doc):
     return doc.add_paragraph(text="", include_run=False, style=_BODY_STYLE, inherit_style=False)
 
@@ -184,6 +213,7 @@ def note_md_to_hwpx(md: str, out_path: Path, *, meta: dict | None = None) -> Pat
         i += 1
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    _clear_outline_numbers(doc)
     doc.save_to_path(str(out_path))
     return out_path
 
