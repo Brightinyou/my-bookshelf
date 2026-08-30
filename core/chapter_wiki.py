@@ -750,9 +750,12 @@ CHAPTER_PROMPT = """당신은 신학·인문학 학술 사서입니다. 아래�
 
 [작성 원칙]
 - {lang_rule}
+- ⭐⭐ 반드시 아래 [장 전문]에 실제로 쓰인 내용만 근거로 요약한다. 이 장에서 확인되지 않는 내용은 절대로, 어떤 이유로도 지어내지 않는다 — 그럴듯해 보여도 원문에 없으면 쓰지 않는다.
 - ⭐ 이것은 해설문이나 재창작이 아니라 **원문 근거형 요약**이다. 모든 문장에는 이 장 전문에서 확인되는 주장·이유·사례가 있어야 한다. 원문에 없는 배경지식, 정책 처방, 결과, 동기, 평가를 보태지 말 것.
 - ⭐ 주제만 나열하지 말고 실제 주장·논거·결론을 구체적으로 담되, 원문의 범위를 넓히지 않는다. "~를 모색한다/다룬다/분석한다"로 끝내지 말 것.
 - ⭐ 저자의 목소리와 논증의 결을 보존한다. 1인칭 경험·질문·유보·가능성("~일 수 있다", "어떻게 ~할 것인가")이 논지에 중요하면 평서문으로 단정하거나 일반론으로 바꾸지 말고, "글은 ~을 묻는다" 또는 "게이츠는 자신의 경험을 바탕으로 ~라고 본다"처럼 출처를 밝혀 유지한다.
+- ⭐ 저자의 문체를 요약문에도 최대한 살린다. 원문의 어투(단정적/조심스러운/구어체적/격식체), 즐겨 쓰는 표현과 비유, 문장 리듬을 관찰해 요약 문장에 반영한다 — 모든 책을 똑같은 건조한 논문투로 획일화하지 말 것.
+- ⭐⭐ "이 장은 ~라고 말한다/제시한다/다룬다", "이 글은 ~" 처럼 장(글) 자체를 문장의 주어로 삼아 여는 메타 서술을 쓰지 않는다. 주장·개념을 곧장 문장의 주어로 삼아 직접 서술한다 — 예: "이 장은 습관 형성을 다룬다" 대신 "습관은 작은 반복에서 시작된다"처럼 쓴다. 원문 저자의 1인칭 유보·질문을 표시할 때만 예외로 저자 이름이나 "화자"를 주어로 쓴다(예: "게이츠는 ~라고 본다").
 - ⭐ 원문이 명시하지 않은 인과관계나 세부 설명을 추론해 덧붙이지 않는다. 예: 원문에 없는 노동·존엄·자율성·정책 수단·특정 집단의 상황을 설명하지 말 것.
 - 이 장의 핵심 개념 정의, 논증 흐름, 근거·사례를 원문에 있는 범위에서 구체적으로. 책의 다른 장이나 무관한 주제는 끌어들이지 말 것.
 - ⭐ 전문 용어는 처음 나올 때 {tgt} 번역(원어) 순서로 병기 — 예: 대신함(substitution), 말함(le Dire). 이후에는 {tgt}만 쓴다.{gloss_hint}
@@ -772,31 +775,6 @@ CHAPTER_PROMPT = """당신은 신학·인문학 학술 사서입니다. 아래�
 {text}
 ===끝==="""
 
-# 1차 생성 뒤 원문 대조를 한 번 더 거친다. 긴 장에서 모델이 원문에 없는
-# 배경지식·정책·인과관계를 그럴듯하게 보태는 문제를 줄이기 위한 검증 단계다.
-# 검증 모델이 실패해도 1차 결과를 그대로 사용하도록 호출부에서 예외를 삼킨다.
-GROUNDING_REVIEW_PROMPT = """당신은 원문 대조 편집자입니다. 아래 [원문]과 [초안]을 문장 단위로 대조하세요.
-초안의 목적은 해설이나 재창작이 아닌 원문 충실형 요약입니다.
-
-검증 규칙:
-- 초안의 각 주장·이유·사례·평가는 [원문]에서 직접 확인되어야 한다.
-- 원문에 없는 배경지식, 정책 처방, 심리·동기, 인과관계, 결과, 도덕적 평가를 삭제하세요.
-- 원문에 있는 1인칭 경험, 질문, 유보, 가능성, 조건부 결론은 단정적 일반론으로 바꾸지 말고 보존하세요.
-- 원문에 있는 내용은 누락하지 않되, 원문에 없는 내용을 넣어 분량을 맞추지 마세요.
-- 인용은 원문에 실제 있는 문장만 남기세요. 확실하지 않은 인용은 삭제하세요.
-- 초안의 마크다운 구조(개요/주요 내용/핵심 인용/핵심 키워드)는 유지하세요.
-- 설명이나 검토 의견 없이 JSON 객체 하나만 출력하세요.
-
-출력 형식:
-{{"summary":"검증·수정한 요약", "body":"검증·수정한 마크다운 본문"}}
-
-[원문]
-{source}
-
-[초안]
-{draft}
-"""
-
 def _gen_json(prompt, max_out, provider=None, model=None):
     prov, current_model = llm.wiki_provider_model()
     if provider:
@@ -807,59 +785,8 @@ def _gen_json(prompt, max_out, provider=None, model=None):
     return llm.complete_json(prov, current_model, "", prompt, max_tokens=max_out)
 
 
-def _use_codex_claude_review_chain() -> bool:
-    return (
-        llm.wiki_codex_claude_review_enabled()
-        and llm.wiki_codex_claude_review_available()
-    )
-
-
-def _draft_provider_model() -> tuple[str, str]:
-    if _use_codex_claude_review_chain():
-        return "codex_cli", llm.cli_model_or_default("codex_cli")
-    return llm.wiki_provider_model()
-
-
-def _review_provider_model() -> tuple[str, str]:
-    if _use_codex_claude_review_chain():
-        return "claude_cli", llm.cli_model_or_default("claude_cli")
-    return llm.wiki_provider_model()
-
-
-def _grounding_review(source: str, draft: dict) -> dict:
-    """1차 요약을 원문과 대조해 근거 없는 확장을 제거한다.
-
-    검증 서비스 오류·형식 오류는 호출부에서 원본 초안을 유지할 수 있도록
-    예외를 그대로 올린다. 반환값은 summary/body가 모두 문자열이어야 한다.
-    """
-    draft_body = str(draft.get("body") or "").strip()
-    draft_summary = str(draft.get("summary") or "").strip()
-    if not draft_body:
-        return draft
-    review_prov, review_model = _review_provider_model()
-    review = _gen_json(
-        GROUNDING_REVIEW_PROMPT.format(
-            source=source,
-            draft=("요약: " + draft_summary + "\n\n" + draft_body),
-        ),
-        12_288,
-        provider=review_prov,
-        model=review_model,
-    )
-    if not isinstance(review, dict):
-        raise ValueError("grounding review returned a non-object")
-    body = review.get("body")
-    summary = review.get("summary")
-    if not isinstance(body, str) or not body.strip():
-        raise ValueError("grounding review returned no body")
-    out = dict(draft)
-    out["body"] = body.strip()
-    if isinstance(summary, str) and summary.strip():
-        out["summary"] = summary.strip()
-    return out
-
 def generate_chapter(book, chap_title, chap_text):
-    prov, model = _draft_provider_model()
+    prov, model = llm.wiki_provider_model()
     max_in = llm.MAX_INPUT_CHARS.get(prov, 500_000)
     eff = min(len(chap_text), max_in)                       # 모델이 실제로 보는 분량
     p = _length_params(eff)
@@ -871,14 +798,6 @@ def generate_chapter(book, chap_title, chap_text):
         sent_ov=p["sent_ov"], n_kw=p["n_kw"],
         gloss_hint=gloss.hint_for(chap_text[:max_in], g), **_lang_rules()), p["max_out"],
         provider=prov, model=model)
-    # 생성 직후 원문 대조. 실패 시 1차 생성물을 보존해 요약 작업 전체가
-    # 중단되지 않게 한다(검증 실패는 로그로만 알린다).
-    try:
-        reviewed = _grounding_review(chap_text[:max_in], data)
-        if reviewed is not data:
-            data = reviewed
-    except Exception as exc:
-        print(f"      - 원문 대조 검증 생략(1차 요약 유지): {exc}", flush=True)
     if data.get("body") and g:
         data["body"], n_fix = gloss.apply_to_text(data["body"], g)
         if n_fix:
@@ -891,6 +810,7 @@ def generate_chapter(book, chap_title, chap_text):
 
 OVERVIEW_PROMPT = """다음은 책 『{book}』를 장별로 요약한 것입니다. 이를 바탕으로 책 전체 개요를 쓰세요.
 {lang_rule} 핵심 주장과 결론 중심. 이것은 재해석이 아니라 장별 요약에 근거한 압축이다. 장 요약에 없는 배경지식·인과관계·평가·사례를 지어내지 말 것. 저자의 1인칭 경험, 질문, 유보, 조건부 결론이 책의 논지에 중요하면 단정적 일반론으로 바꾸지 말고 화자 또는 글의 관점을 밝혀 보존한다.
+"이 책은 ~라고 말한다/제시한다"처럼 책 자체를 주어로 삼아 여는 메타 서술을 쓰지 말 것 — 주장을 곧장 문장의 주어로 삼아 직접 서술한다. 원문 저자의 1인칭 유보·질문을 표시할 때만 예외로 저자 이름을 주어로 쓴다.
 전문 용어는 처음 나올 때 {tgt} 번역(원어) 병기. 해당 분야 훈련이 없는 독자도 읽도록 쉬운 문장으로 풀어 쓴다.
 서지 정보(저자·출판사·출판일)는 아래 [책 원문 일부]의 표제지·판권면에서 우선 확인하고, 없으면 장 요약에서 확인한다. 어느 쪽에서도 확실하지 않으면 빈 문자열로 둔다(지어내기 금지).
 [출력] JSON only:

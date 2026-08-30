@@ -175,19 +175,6 @@ def set_pref(key: str, value) -> None:
         pass
 
 
-def wiki_codex_claude_review_enabled() -> bool:
-    """Whether chapter Wiki generation should draft with Codex CLI, then review with Claude CLI."""
-    return bool(get_pref("wiki_codex_claude_review", False))
-
-
-def set_wiki_codex_claude_review_enabled(enabled: bool) -> None:
-    set_pref("wiki_codex_claude_review", bool(enabled))
-
-
-def wiki_codex_claude_review_available() -> bool:
-    return codex_cli_available() and claude_cli_available()
-
-
 def cli_model_or_default(provider: str) -> str:
     configured = cli_configured_model(provider)
     if configured:

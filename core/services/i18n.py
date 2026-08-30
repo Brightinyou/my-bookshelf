@@ -973,13 +973,6 @@ _EN.update({
         "ℹ️ Existing files are not moved automatically — move them yourself if you want them there.",
     "폴더 선택 창을 열 수 없습니다: %s": "Could not open the folder picker: %s",
 
-    # CLI 이중 검증 (선택 기능, 기본 꺼짐)
-    "Codex 작성 후 Claude 검증 (요약·위키만)":
-        "Codex drafts, then Claude reviews (summaries and wiki only)",
-    "번역 단계에는 적용되지 않습니다. 장별 요약과 위키 생성에서만 사용합니다.":
-        "Not used for translation — only for chapter summaries and wiki notes.",
-    "Codex와 Claude CLI를 모두 설치하고 켜면 다시 활성화됩니다.":
-        "Install and enable both the Codex and Claude CLIs to turn this back on.",
     "Codex 설정(~/.codex/config.toml)을 따릅니다": "follows your Codex config (~/.codex/config.toml)",
     "ChatGPT 구독은 모델 지정이 안 됩니다": "a ChatGPT subscription cannot pick the model",
     "미설치": "Not installed",

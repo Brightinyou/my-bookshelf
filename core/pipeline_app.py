@@ -414,14 +414,18 @@ textarea,
     display: block;
     width: 100%;
     text-align: center;
-    padding: 10px 12px;
+    padding: 10px 4px;
     border-radius: 9px;
     border: 1px solid rgba(0, 0, 0, 0.12);
     background: #ffffff;
     color: #4b5563 !important;
     text-decoration: none !important;
     font-weight: 600;
+    font-size: 0.78em;
     line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 .stage-nav-link:hover {
@@ -474,6 +478,13 @@ textarea,
     vertical-align: -0.15em; margin-right: 0.35em;
     font-feature-settings: 'liga'; -webkit-font-feature-settings: 'liga';
     -webkit-font-smoothing: antialiased;
+}
+/* 요약 문서 포맷 토글(DOCX·HWPX·옵시디언·EPUB) — 옆 폴더 열기 버튼과 좁은 칸을
+   나눠 쓰다 보니 글자 크기(A+)를 키우면 라벨이 두 줄로 접혔다. 줄바꿈을 막아
+   항상 한 줄로 유지한다 (2026-08-30). */
+.st-key-wiki5_use_docx label, .st-key-wiki5_use_hwpx label,
+.st-key-wiki5_use_obsidian label, .st-key-wiki5_use_epub label {
+    white-space: nowrap;
 }
 </style>
 """.replace("__MB_FONT_SCALE__", str(_ui_font_scale)), unsafe_allow_html=True)
@@ -3471,22 +3482,23 @@ if _active_view == "5_wiki":
     #    구분해서 보여준다. 옵시디언은 맨 아래에 두어 그 토글 바로 밑에 보관함
     #    설정이 이어지도록 한다 (2026-07-25, HWPX 2026-08-09, EPUB 2026-08-11,
     #    EPUB을 요약 그룹 위로·상시 자간정리 2026-08-11).
-    _ep_new5 = st.toggle(
-        t("EPUB 전자책 생성"), value=_use_ep, key="wiki5_use_epub",
-        help=t(
-            "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
-            "번역본이나 자간정리본이 있으면 그걸 쓰고, 없으면 원문 그대로 담습니다 — "
-            "AI를 부르지 않으므로 항상 즉시 끝납니다. 한글 원문 책의 OCR 줄바꿈을 다듬으려면 "
-            "아래 «자간정리»를 한 번 돌려두세요. "
-            "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다."
-        ),
-    )
-    if _use_ep:
-        # 저장 위치와 저작권 주의는 위 토글 «?» 도움말에 그대로 있다 — 화면에는
-        # 만들어진 것을 바로 열어 볼 길만 둔다 (2026-08-26).
-        if st.button(t("전자책 폴더 열어보기"), icon=":material/folder_open:",
-                     key="epub5_open_dir", help=str(_epub_dir5)):
+    _ep_col5, _, _ = st.columns(3)
+    with _ep_col5:
+        _ep_t5, _ep_b5 = st.columns([3, 1], gap="small")
+        _ep_new5 = _ep_t5.toggle(
+            t("EPUB 전자책 생성"), value=_use_ep, key="wiki5_use_epub",
+            help=t(
+                "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
+                "번역본이나 자간정리본이 있으면 그걸 쓰고, 없으면 원문 그대로 담습니다 — "
+                "AI를 부르지 않으므로 항상 즉시 끝납니다. 한글 원문 책의 OCR 줄바꿈을 다듬으려면 "
+                "아래 «자간정리»를 한 번 돌려두세요. "
+                "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다."
+            ),
+        )
+        if _ep_b5.button("", icon=":material/folder_open:", key="epub5_open_dir",
+                          help=tf("요약 문서 보관함 열기: `%s`", str(_epub_dir5))):
             open_path(_epub_dir5)
+    if _use_ep:
 
         # ── 자간정리(선택) — EPUB 생성에서 떼어낸 별도 단계 (2026-08-14) ──────
         # 스캔 PDF에서 뽑은 한글 본문은 인쇄된 줄마다 어절이 쪼개져 있다. 그 자리를
@@ -3609,18 +3621,26 @@ if _active_view == "5_wiki":
     st.caption(t("요약 문서 포맷"))
     _fmt_dx, _fmt_hx, _fmt_ob = st.columns(3)
     with _fmt_dx:
-        _dx_new5 = st.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
+        _dx_t5, _dx_b5 = st.columns([3, 1], gap="small")
+        _dx_new5 = _dx_t5.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
                           help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
-    if _use_dx:
-        st.caption(tf("Word 문서는 여기에 저장됩니다: `%s`", str(_docx_dir5)))
+        if _dx_b5.button("", icon=":material/folder_open:", key="wiki5_docx_open",
+                          help=tf("요약 문서 보관함 열기: `%s`", str(_docx_dir5))):
+            open_path(_docx_dir5)
     with _fmt_hx:
-        _hx_new5 = st.toggle(t("HWPX 문서 생성"), value=_use_hx, key="wiki5_use_hwpx",
+        _hx_t5, _hx_b5 = st.columns([3, 1], gap="small")
+        _hx_new5 = _hx_t5.toggle(t("HWPX 문서 생성"), value=_use_hx, key="wiki5_use_hwpx",
                           help=t("편집 가능한 한글(.hwpx) 문서로 저장합니다."))
-    if _use_hx:
-        st.caption(tf("한글 문서는 여기에 저장됩니다: `%s`", str(_hwpx_dir5)))
+        if _hx_b5.button("", icon=":material/folder_open:", key="wiki5_hwpx_open",
+                          help=tf("요약 문서 보관함 열기: `%s`", str(_hwpx_dir5))):
+            open_path(_hwpx_dir5)
     with _fmt_ob:
-        _ob_new5 = st.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
+        _ob_t5, _ob_b5 = st.columns([3, 1], gap="small")
+        _ob_new5 = _ob_t5.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
                           help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
+        if _ob_b5.button("", icon=":material/folder_open:", key="wiki5_obsidian_open",
+                          help=tf("요약 문서 보관함 열기: `%s`", str(_current_wiki_dir()))):
+            open_path(_current_wiki_dir())
     if (bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx
             or bool(_hx_new5) != _use_hx or bool(_ep_new5) != _use_ep):
         llm.set_pref("use_obsidian", bool(_ob_new5))
@@ -3932,9 +3952,6 @@ if _active_view == "settings":
 
     _settings_panel = st.session_state.get("settings_panel", "home")
     if _settings_panel == "home":
-        st.subheader(t("설정"))
-        st.caption(t("필요한 항목을 선택하세요."))
-
         # ── AI 설정은 목록에 넣지 않고 여기서 바로 보여 준다 (연구자 요청) ──
         st.markdown("#### " + t("AI 설정"))
         _wp, _wm = llm.wiki_provider_model()
@@ -3986,21 +4003,6 @@ if _active_view == "settings":
             else:
                 st.caption(t("미설치") + " · `npm i -g @openai/codex`")
 
-        # 선택 기능, 기본 꺼짐: Codex가 초고를 쓰고 Claude가 원문과 대조한다.
-        _chain_enabled = bool(llm.get_pref("wiki_codex_claude_review", False))
-        _chain_available = llm.wiki_codex_claude_review_available()
-        _new_chain = st.toggle(
-            t("Codex 작성 후 Claude 검증 (요약·위키만)"),
-            value=_chain_enabled and _chain_available,
-            disabled=not _chain_available,
-            key="compact_home_review_chain",
-            help=t("번역 단계에는 적용되지 않습니다. 장별 요약과 위키 생성에서만 사용합니다."),
-        )
-        if _new_chain != _chain_enabled:
-            llm.set_wiki_codex_claude_review_enabled(_new_chain)
-            st.rerun()
-        if _chain_enabled and not _chain_available:
-            st.caption(t("Codex와 Claude CLI를 모두 설치하고 켜면 다시 활성화됩니다."))
         _render_wiki_length_slider("compact_home_wiki_length")
 
         st.divider()
