@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as cfg            # noqa: E402
 import llm_providers as llm    # noqa: E402
+from services import note_i18n as NI   # 노트 구획 제목(언어별) — 2026-08-31
 
 WIKI = cfg.WIKI_DIR
 LOG_NAME = "_retrofit.log"
@@ -66,7 +67,11 @@ def classify(text: str, stem: str) -> str | None:
         return "제외(파이프라인 노트 아님)"
     if "refined:" in fm:
         return "건너뜀(이미 개선됨)"
-    if "## 핵심 요약" not in body and "## 주요 내용" not in body:
+    # 어느 언어의 제목이든 요약 노트로 인정한다 — 일본어 노트가 «구조 아님»으로
+    # 걸러지던 것을 막는다. (2026-08-31)
+    _has_section = any(NI.is_heading(ln, "summary") or NI.is_heading(ln, "main")
+                       for ln in body.splitlines())
+    if not _has_section:
         return "제외(요약 노트 구조 아님)"
     if "_번역" in stem or len(body) > 35_000:
         return "제외(전문/번역 수록 노트)"

@@ -734,7 +734,11 @@ def _lang_rules() -> dict:
     else:
         rule = (f"반드시 {tgt}로만 쓴다(고유명사 원어 병기 허용). "
                 f"{tgt}의 학술 문어체로 쓰고, 구어체·홍보체를 쓰지 않는다.")
-    return {"tgt": tgt, "lang_rule": rule}
+    from services import note_i18n as NI
+    return {"tgt": tgt, "lang_rule": rule,
+            "h_overview": NI.heading("overview", code), "h_main": NI.heading("main", code),
+            "h_quotes": NI.heading("quotes", code), "h_keywords": NI.heading("keywords", code),
+            "c_topic": NI.column("topic", code), "c_quote": NI.column("quote_raw", code)}
 
 
 def _glossary():
@@ -758,6 +762,7 @@ CHAPTER_PROMPT = """당신은 신학·인문학 학술 사서입니다. 아래�
 - ⭐⭐ "이 장은 ~라고 말한다/제시한다/다룬다", "이 글은 ~" 처럼 장(글) 자체를 문장의 주어로 삼아 여는 메타 서술을 쓰지 않는다. 주장·개념을 곧장 문장의 주어로 삼아 직접 서술한다 — 예: "이 장은 습관 형성을 다룬다" 대신 "습관은 작은 반복에서 시작된다"처럼 쓴다. 원문 저자의 1인칭 유보·질문을 표시할 때만 예외로 저자 이름이나 "화자"를 주어로 쓴다(예: "게이츠는 ~라고 본다").
 - ⭐ 원문이 명시하지 않은 인과관계나 세부 설명을 추론해 덧붙이지 않는다. 예: 원문에 없는 노동·존엄·자율성·정책 수단·특정 집단의 상황을 설명하지 말 것.
 - 이 장의 핵심 개념 정의, 논증 흐름, 근거·사례를 원문에 있는 범위에서 구체적으로. 책의 다른 장이나 무관한 주제는 끌어들이지 말 것.
+- ⭐ 구획 제목은 위 출력 형식에 적힌 그대로 쓴다. 임의로 바꾸거나 다른 말로 옮기지 말 것 — 프로그램이 이 제목으로 구획을 찾는다.
 - ⭐ 전문 용어는 처음 나올 때 {tgt} 번역(원어) 순서로 병기 — 예: 대신함(substitution), 말함(le Dire). 이후에는 {tgt}만 쓴다.{gloss_hint}
 - ⭐ 해당 분야 훈련이 없는 독자도 따라오도록 풀어 쓴다: 한 문장에 한 개념, 긴 문장은 나누고, 어려운 개념은 일상어로 한 번 더 설명한다.
 - ⭐ 앞선 사상가의 개념(예: 후설의 지향성, 하이데거의 존재 이해)은 먼저 그 개념이 무엇인지 한 문장으로 소개한 뒤에 그에 대한 비판·변형을 서술한다.
@@ -768,7 +773,7 @@ CHAPTER_PROMPT = """당신은 신학·인문학 학술 사서입니다. 아래�
 {{
   "summary": "이 장의 핵심 주장·결론을 2~3문장으로, 원문의 화자·유보·질문 형식이 중요하면 보존하여 서술",
   "author": "책의 저자 이름(본문·서지에서 확인될 때만. 확실치 않으면 빈 문자열)",
-  "body": "## 개요\\n(이 장의 핵심 문제의식에서 출발해 어떤 주장을 거쳐 어떤 결론에 이르는지 {sent_ov}문장. 원문의 화자·질문·유보가 중요하면 보존하고, 원문 밖의 해석을 더하지 않는다.)\\n\\n## 주요 내용\\n### (소제목 {n_sub}개 안팎)\\n(⭐ 분량 목표: '주요 내용' 전체를 원문(약 {src_chars}자)의 약 {pct}%인 약 {target_chars}자 분량으로 쓴다. 각 소제목은 대략 {per_sub}자 안팎으로, 원문에 실제 있는 개념 정의 → 논거·전제 → 근거·사례 → 결론 순서를 보존한다. 원문에 없는 함의·평가·정책·배경 설명으로 분량을 채우지 말 것. 원문에 없는 내용을 쓸 바에는 더 짧게 쓸 것.)\\n\\n## 핵심 인용\\n| 주제 | 인용(본문 그대로) |\\n|---|---|\\n\\n## 핵심 키워드\\n(이 장에서 실제로 설명되거나 반복되는 핵심 개념 {n_kw}개만. 한 줄에 하나씩 '#키워드 — 원문 범위의 개념 해설 1문장' 형식. 원문에 없는 정의·효과를 더하지 말 것. 키워드는 공백 없는 {tgt}, 원어는 원문에 있을 때만 해설 쪽에 병기.)"
+  "body": "## {h_overview}\\n(이 장의 핵심 문제의식에서 출발해 어떤 주장을 거쳐 어떤 결론에 이르는지 {sent_ov}문장. 원문의 화자·질문·유보가 중요하면 보존하고, 원문 밖의 해석을 더하지 않는다.)\\n\\n## {h_main}\\n### (소제목 {n_sub}개 안팎)\\n(⭐ 분량 목표: '주요 내용' 전체를 원문(약 {src_chars}자)의 약 {pct}%인 약 {target_chars}자 분량으로 쓴다. 각 소제목은 대략 {per_sub}자 안팎으로, 원문에 실제 있는 개념 정의 → 논거·전제 → 근거·사례 → 결론 순서를 보존한다. 원문에 없는 함의·평가·정책·배경 설명으로 분량을 채우지 말 것. 원문에 없는 내용을 쓸 바에는 더 짧게 쓸 것.)\\n\\n## {h_quotes}\\n| {c_topic} | {c_quote} |\\n|---|---|\\n\\n## {h_keywords}\\n(이 장에서 실제로 설명되거나 반복되는 핵심 개념 {n_kw}개만. 한 줄에 하나씩 '#키워드 — 원문 범위의 개념 해설 1문장' 형식. 원문에 없는 정의·효과를 더하지 말 것. 키워드는 공백 없는 {tgt}, 원어는 원문에 있을 때만 해설 쪽에 병기.)"
 }}
 
 ===장 전문===
@@ -785,7 +790,18 @@ def _gen_json(prompt, max_out, provider=None, model=None):
     return llm.complete_json(prov, current_model, "", prompt, max_tokens=max_out)
 
 
+# 이보다 짧은 장은 요약할 내용이 없다고 본다. 실제로 본문이 «.» 한 글자인 장을
+# 그대로 AI 에 넣어, «본문에 내용이 없다»고 설명하는 노트가 만들어진 적이 있다.
+# (2026-08-31)
+MIN_CHAPTER_CHARS = 200
+
+
 def generate_chapter(book, chap_title, chap_text):
+    if len((chap_text or "").strip()) < MIN_CHAPTER_CHARS:
+        n = len((chap_text or "").strip())
+        print(f"      ↳ 본문이 {n}자뿐 — 요약을 건너뛴다", flush=True)
+        return {"summary": "", "author": "", "body": "",
+                "skipped": f"본문이 {n}자뿐이라 요약하지 않았습니다."}
     prov, model = llm.wiki_provider_model()
     max_in = llm.MAX_INPUT_CHARS.get(prov, 500_000)
     eff = min(len(chap_text), max_in)                       # 모델이 실제로 보는 분량
@@ -977,8 +993,18 @@ def process_book(stem, mode="auto", txt_path=None):
         title = _clean_title(gw.nfc(ct))
         print(f"      [{i}/{len(chapters)}] {title[:40]} ({len(cb):,}자)…", flush=True)
         d = generate_chapter(book, title, cb)
+        if d.get("skipped"):
+            # 빈 장을 목차·개요에 빈 항목으로 남기지 않는다. 남기면 «내용 없음»
+            # 노트가 책 전체 개요까지 오염시킨다.
+            print(f"      ↳ 건너뜀: {d['skipped']}", flush=True)
+            continue
         sections.append({"idx": i, "hint": ct, "title": title,
                          "summary": gw.nfc(d.get("summary", "")), "body": gw.nfc(d.get("body", ""))})
+    if not sections:
+        # 전부 건너뛴 경우 — 원문이 비어 있는 책이다. 개요를 부르면 «내용 없음»
+        # 노트가 만들어지므로 여기서 멈춘다.
+        print(f"   ⚠️ {book}: 요약할 본문이 없다 — 노트를 만들지 않는다", flush=True)
+        return {"mode": mode, "chapters": 0, "cat": "", "error": "본문이 비어 있어 요약하지 않았습니다."}
     ov = generate_overview(book, sections)
     cat = (ov.get("category") or "기타").split("|")[0].strip()
     source_meta = smeta.pdf_dates_for_txt(txt) if txt else {}

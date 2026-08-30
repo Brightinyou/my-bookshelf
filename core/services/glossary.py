@@ -22,6 +22,8 @@ import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from services import note_i18n as NI   # 노트 구획 제목(언어별) — 2026-08-31
+
 # ── 노트에서 키워드 줄을 읽는다 ──
 # '## 핵심 키워드' 아래의 '#키워드 — 해설(원어 포함)' 형식
 KW_LINE = re.compile(r'^#(\S+)\s+—\s*(.+)$')
@@ -31,7 +33,13 @@ ORIG_IN_PAREN = re.compile(r'\(([A-Za-zÀ-ÿĀ-ſΑ-Ωα-ωἀ-ῼ][^)]{0,40})\)
 KO_BEFORE_PAREN = re.compile(
     r'([가-힣A-Za-z0-9][가-힣A-Za-z0-9\s]{0,24})\s*\(([A-Za-zÀ-ÿĀ-ſΑ-Ωα-ωἀ-ῼ][^)]{0,40})\)')
 
-KW_HEADING = "## 핵심 키워드"
+# 읽을 때는 어느 언어의 제목이든 받아들이고(옛 한국어 노트 + 새 일본어 노트가
+# 한 보관함에 섞인다), 쓸 때만 지금 언어를 쓴다.
+KW_HEADING = "## 핵심 키워드"          # 하위 호환용 상수 (직접 비교하지 말 것)
+
+
+def _is_kw_heading(line: str) -> bool:
+    return NI.is_heading(line, "keywords")
 
 
 def norm_key(s: str) -> str:
@@ -56,7 +64,7 @@ def iter_keyword_lines(text: str):
     """'## 핵심 키워드' 구획 안의 (한글, 해설) 을 훑는다."""
     inside = False
     for line in text.splitlines():
-        if line.startswith(KW_HEADING):
+        if _is_kw_heading(line):
             inside = True
             continue
         if inside and line.startswith("## "):
@@ -223,7 +231,7 @@ def apply_to_text(text: str, gloss: dict) -> tuple[str, int]:
     for raw in lines:
         line = raw.rstrip("\r\n")
         eol = raw[len(line):]
-        if line.startswith(KW_HEADING):
+        if _is_kw_heading(line):
             inside = True
             out.append(line + eol)
             continue

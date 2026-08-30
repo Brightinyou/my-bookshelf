@@ -1,6 +1,7 @@
 """Wiki 생성 — Gemini 위키 트리거, 챕터 요약 → Obsidian 노트, 보관함(Vault) 관리."""
 
 import json
+from services import note_i18n as NI   # 노트 구획 제목(언어별) — 2026-08-31
 import os
 import re as _re
 import subprocess
@@ -404,7 +405,7 @@ def build_wiki_from_chapter_summaries(ws_name: str, stem: str, wiki_dir: Path | 
     ]
 
     # 챕터 목차 (개별 노트 있으면 ✅, 없으면 📄)
-    toc_lines = ["## 📋 챕터 목차", ""]
+    toc_lines = [NI.md_heading("toc"), ""]
     for s in sections:
         exists = _has_ch_note(s["title"])
         marker = "✅" if exists else "📄"

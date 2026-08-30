@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path.home() / '.local/bin'))
 import config as cfg
 import llm_providers as llm
 import source_metadata as smeta
+from services import note_i18n as NI   # 노트 구획 제목(언어별) — 2026-08-31
 
 SRC_DIR  = cfg.PROCESSED_DIR        # 원본 TXT
 OUT_DIR  = cfg.WIKI_DIR             # 옵시디언 출력
@@ -66,15 +67,15 @@ PROMPT = """당신은 신학·인문학 학술 사서입니다. 아래는 책 �
 }}
 
 body 구조:
-## 핵심 요약
+## {h_summary}
 (3~4문장. 저자의 핵심 **주장과 결론** — 무엇을 다루는지가 아니라, 저자가 무엇을 주장하며 어떤 답에 이르는지.)
 
-## 주요 내용
+## {h_main}
 ### (소제목 — 책 전개 순서로 {n_sub}개 안팎. 책이 길수록 더 많이·각 항목도 더 길고 자세히)
 (각 소제목마다: 그 부분에서 **저자가 무엇을 주장하고 어떤 논거·과정으로 그 결론에 이르는지** + 핵심 개념의 정의를 3~5문장으로 구체적으로. 주제 호명·질문 나열 금지. 저자의 답·해결책이 반드시 드러나게.)
 
-## 핵심 인용
-| 주제 | 인용(책 본문 그대로) |
+## {h_quotes}
+| {c_topic} | {c_quote} |
 |---|---|
 (원문에 실제로 있는 깨끗한 문장 {n_cite}개. 한 줄에 한 인용)
 
@@ -134,23 +135,26 @@ def rebuild_citations(body: str, source_full: str, keywords: list, title: str, t
     in_cite = False
     for ln in body.split("\n"):
         s = ln.strip()
-        if s.startswith("## 핵심 인용"): in_cite = True; continue
+        if NI.is_heading(s, "quotes"): in_cite = True; continue
         if in_cite and s.startswith("## "): in_cite = False
         if in_cite and s.startswith("|") and "---" not in s:
             cols = [c.strip() for c in s.strip("|").split("|")]
-            if len(cols) >= 2 and cols[1] not in ("인용", "인용(책 본문 그대로)", "원문 인용", ""):
+            _hdrs = set(NI.TABLE["quote_raw"].values()) | set(NI.TABLE["quote_checked"].values())
+            _hdrs |= {"인용", "인용(책 본문 그대로)", "원문 인용", ""}
+            if len(cols) >= 2 and cols[1] not in _hdrs:
                 qclean = re.sub(r"\s+", " ", cols[1]).strip()
                 if len(_despace(qclean)) >= 10 and _despace(qclean) in Sx:
                     rows.append((cols[0], qclean))
     rows, n_over = _apply_cite_budget(rows, target, len(src))
     n_kept = len(rows)
     # 표 재구성 → 본문의 핵심 인용 자리에 교체 삽입
-    tbl = ["## 핵심 인용", "", "| 주제 | 원문 인용(대조 검증) |", "|---|---|"]
+    tbl = [NI.md_heading("quotes"), "",
+           f'| {NI.column("topic")} | {NI.column("quote_checked")} |', "|---|---|"]
     tbl += [f"| {th} | {q} |" for th, q in rows] or ["| (원문 확인된 직접 인용 없음) | |"]
     out, in_cite, inserted = [], False, False
     for ln in body.split("\n"):
         s = ln.strip()
-        if s.startswith("## 핵심 인용"):
+        if NI.is_heading(s, "quotes"):
             in_cite = True; out.extend(tbl); inserted = True; continue
         if in_cite:
             if s.startswith("## "): in_cite = False; out.append(ln)
@@ -179,7 +183,11 @@ def generate(txt_path):
     n_cite    = min(30, max(8, chars // 28000))      # 인용 후보 수
     cite_keep = min(15, max(4, chars // 110000))     # 보존 인용 상한
     max_out   = min(60000, max(16384, n_sub * 2200)) # 출력 토큰: 분량 비례
-    prompt = PROMPT.format(title=title_guess, book=raw, n_sub=n_sub, n_cite=n_cite)
+    prompt = PROMPT.format(
+        title=title_guess, book=raw, n_sub=n_sub, n_cite=n_cite,
+        h_summary=NI.heading("summary"), h_main=NI.heading("main"),
+        h_quotes=NI.heading("quotes"),
+        c_topic=NI.column("topic"), c_quote=NI.column("quote_raw"))
     prov, model = llm.wiki_provider_model()
     print(f"   📏 {chars:,}자 → 소제목~{n_sub}·인용후보{n_cite}·보존≤{cite_keep}·출력{max_out} [{prov}:{model}]")
     data = llm.complete_json(prov, model, "", prompt, max_tokens=max_out)
