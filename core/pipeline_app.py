@@ -1651,6 +1651,86 @@ def _current_epub_dir() -> Path:
     return cfg.EPUB_DIR
 
 
+def _pick_folder(title: str, current: Path) -> str:
+    """Open the native folder picker when the app is running locally."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        initial = current if current.exists() else Path.home()
+        selected = filedialog.askdirectory(title=title, initialdir=str(initial))
+        root.destroy()
+        return selected or ""
+    except Exception as exc:
+        st.warning(tf("폴더 선택 창을 열 수 없습니다: %s", exc))
+        return ""
+
+
+def _render_folder_setting(
+    panel_key: str,
+    title: str,
+    current: Path,
+    setter,
+    description: str,
+    *,
+    session_key: str,
+    wiki: bool = False,
+    choices: list[str] | None = None,
+) -> None:
+    """설정 목록에서 열리는 폴더 편집기 하나.
+
+    session_key는 Tab 5가 실제로 읽는 이름(`docx5_active_dir` 등)이어야 한다 —
+    panel_key로 지어내면 저장은 되지만 그 세션에서는 반영되지 않는다 (2026-08-30).
+    """
+    st.subheader(title)
+    st.caption(description)
+    st.code(str(current), language=None)
+    picked_key = f"{panel_key}_path"
+    if choices:
+        chosen = st.selectbox(
+            t("등록된 보관함(Vault)에서 고르기"), choices,
+            index=choices.index(str(current)) if str(current) in choices else 0,
+            key=f"{panel_key}_choice",
+        )
+        if st.button(t("이 보관함 사용"), icon=":material/check:", key=f"{panel_key}_choice_use",
+                     use_container_width=True):
+            st.session_state[picked_key] = chosen
+            st.rerun()
+    browse_col, path_col = st.columns([1, 3])
+    if browse_col.button(t("폴더 찾아보기"), icon=":material/folder_open:", key=f"{panel_key}_browse",
+                         use_container_width=True):
+        picked = _pick_folder(title, current)
+        if picked:
+            st.session_state[picked_key] = picked
+            st.rerun()
+    path = path_col.text_input(t("폴더 경로"), value=st.session_state.get(picked_key, ""),
+                               placeholder=str(current), key=f"{panel_key}_path_input",
+                               label_visibility="collapsed")
+    if st.button(t("저장하고 적용"), icon=":material/save:", key=f"{panel_key}_save",
+                  type="primary", use_container_width=True):
+        target = path.strip()
+        if not target:
+            st.warning(t("폴더를 선택하거나 경로를 입력하세요."))
+        elif target == str(current):
+            st.info(t("이미 이 폴더를 쓰고 있습니다."))
+        else:
+            setter(target)
+            st.session_state[session_key] = target
+            st.session_state.pop(picked_key, None)
+            if wiki:
+                ensure_obsidian_vault(Path(target).expanduser())
+            st.success(tf("저장됨: `%s`", target))
+            st.rerun()
+    st.caption(t("ℹ️ 기존에 만든 파일은 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요."))
+    if st.button(t("설정 목록으로 돌아가기"), icon=":material/arrow_back:", key=f"{panel_key}_back",
+                  use_container_width=True):
+        st.session_state["settings_panel"] = "home"
+        st.rerun()
+
+
 # ★완료 알림은 **화면 맨 아래**에서 그린다 (2026-08-26 연구자 요청).
 # 위에 두면 처리를 마친 뒤 «다음 단계» 버튼을 보려고 스크롤을 되올려야 했다.
 # 방금 처리한 목록 바로 아래에 있어야 눈이 가는 자리에 있다.
@@ -1890,7 +1970,12 @@ def _settings_engine_id() -> str:
     return f"{_wp}:{_wm}" if _wp and _wm else ""
 
 
-_loading_step("화면 구성 중…", "탭과 UI를 초기화하고 있습니다")
+if _active_view == "settings":
+    # Settings is a lightweight view; do not leave a full-screen loader over it.
+    _loading_ph.empty()
+    st.session_state["_app_loaded"] = True
+else:
+    _loading_step("화면 구성 중…", "탭과 UI를 초기화하고 있습니다")
 
 # ── 1: TXT변환 / 전체 실행 ───────────────────────────────
 if _active_view in {"1_txt", "all_run"}:
@@ -3522,15 +3607,19 @@ if _active_view == "5_wiki":
     st.divider()
 
     st.caption(t("요약 문서 포맷"))
-    _dx_new5 = st.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
+    _fmt_dx, _fmt_hx, _fmt_ob = st.columns(3)
+    with _fmt_dx:
+        _dx_new5 = st.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
                           help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
     if _use_dx:
         st.caption(tf("Word 문서는 여기에 저장됩니다: `%s`", str(_docx_dir5)))
-    _hx_new5 = st.toggle(t("HWPX 문서 생성"), value=_use_hx, key="wiki5_use_hwpx",
+    with _fmt_hx:
+        _hx_new5 = st.toggle(t("HWPX 문서 생성"), value=_use_hx, key="wiki5_use_hwpx",
                           help=t("편집 가능한 한글(.hwpx) 문서로 저장합니다."))
     if _use_hx:
         st.caption(tf("한글 문서는 여기에 저장됩니다: `%s`", str(_hwpx_dir5)))
-    _ob_new5 = st.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
+    with _fmt_ob:
+        _ob_new5 = st.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
                           help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
     if (bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx
             or bool(_hx_new5) != _use_hx or bool(_ep_new5) != _use_ep):
@@ -3800,12 +3889,17 @@ if _active_view == "5_wiki":
         st.caption("생성된 Wiki 없음")
 
 
-# ── 설정 (API 키) ─────────────────────────────────────
+# ── 설정 ─────────────────────────────────────────────
+# 설정은 «목록 → 개별 편집기» 한 갈래로만 그린다. 예전에 모든 항목을 한 화면에
+# 늘어놓던 블록이 이 아래에 그대로 남아 있었는데, 위 블록이 언제나 st.stop()으로
+# 끝나기 때문에 한 줄도 실행되지 않는 죽은 코드였다 (2026-08-30). 지우면서 거기에만
+# 살아 있던 것들 — t() 번역, CLI 설치·모델 안내, 옵시디언 보관함 목록, 저작권 전문 —
+# 을 이쪽으로 옮겼다.
 if _active_view == "settings":
     _lang_cur = get_lang()
-    _lang_sel = st.radio("🌐 언어 / Language", ["한국어", "English"],
+    _lang_sel = st.radio(t("🌐 언어 / Language"), ["한국어", "English"],
                          index=0 if _lang_cur == "ko" else 1,
-                         horizontal=True, key="ui_lang_radio")
+                         horizontal=True, key="compact_ui_lang_radio")
     _lang_new = "ko" if _lang_sel == "한국어" else "en"
     if _lang_new != _lang_cur:
         set_lang(_lang_new)
@@ -3820,7 +3914,7 @@ if _active_view == "settings":
     _tgt_new = st.selectbox(
         t("🎯 번역 도착언어"), _tgt_codes,
         index=_tgt_codes.index(_tgt_cur) if _tgt_cur in _tgt_codes else 0,
-        format_func=lambda c: dict(_tgt_opts).get(c, c), key="target_lang_select",
+        format_func=lambda c: dict(_tgt_opts).get(c, c), key="compact_target_lang",
         help=t("번역본·챕터 요약·위키 노트가 모두 이 언어로 만들어집니다. "
                 "원문 언어는 자동으로 감지하므로 따로 고르지 않아도 됩니다."),
     )
@@ -3830,228 +3924,212 @@ if _active_view == "settings":
     if _tgt_cur != "ko":
         st.caption(t("⚠️ 이미 만들어 둔 번역본·요약은 예전 도착언어 그대로 남아 있습니다 — "
                       "새 언어로 바꾸려면 해당 파일을 지우고 다시 처리하세요."))
-    st.divider()
 
-    # ── 업데이트 ──────────────────────────────────────────
-    st.markdown("#### " + t("업데이트"))
-    _upc1, _upc2 = st.columns([2, 1])
-    _upc1.caption(tf("현재 버전: %s", APP_VERSION))
-    if _upc2.button(t("업데이트 확인"), icon=":material/system_update:", key="settings_check_update",
-                    use_container_width=True):
-        _upd_info = updater.check_for_update()
-        if _upd_info:
-            st.session_state["_update_info"] = _upd_info
-            st.session_state.pop("_update_dismissed", None)
-            # 수동으로 확인한 거라, 예전에 이 버전을 '나중에'로 미뤄뒀어도
-            # 항상 팝업을 보여준다 (2026-07-25).
-            llm.set_pref("update_dismissed_version", "")
-            st.rerun()
-        elif sys.platform not in ("win32", "darwin"):
-            st.info(t("앱 내 업데이트는 Windows·macOS에서만 지원됩니다."))
-        else:
-            st.success(t("최신 버전을 사용 중입니다."))
-    st.divider()
+    def _finish_compact_settings():
+        _loading_ph.empty()
+        st.session_state["_app_loaded"] = True
+        st.stop()
 
-    st.caption(t(
-        "API 키는 이 화면에서 직접 저장한 값만 사용합니다. "
-        "저장 키는 `~/.config/mybookshelf/keys.json`에만 보관되며 저장소에 올라가지 않습니다."
-    ))
+    _settings_panel = st.session_state.get("settings_panel", "home")
+    if _settings_panel == "home":
+        st.subheader(t("설정"))
+        st.caption(t("필요한 항목을 선택하세요."))
 
-    # 위키 생성 모델 (공급자/모델) — 모노톤 AI 아이콘
-    _wp, _wm = llm.wiki_provider_model()
-    _wp_label = llm.PROVIDERS.get(_wp, {}).get("label", _wp)
-    st.markdown(f":material/smart_toy: **{t('위키 생성 모델')}** — {t('현재')}: `{_wp_label} · {_wm}`")
-    _avail = [(p, m) for p, info in llm.PROVIDERS.items() if llm.has_key(p) for m in info["models"]]
-    if _avail:
-        _labels = [f"{llm.PROVIDERS[p]['label']} · {m}" for p, m in _avail]
-        _curlbl = f"{llm.PROVIDERS.get(_wp, {}).get('label', _wp)} · {_wm}"
-        _idx = _labels.index(_curlbl) if _curlbl in _labels else 0
-        _sel = st.selectbox(t("위키 노트를 생성할 모델"), _labels, index=_idx, key="wiki_model_sel")
-        _p, _m = _avail[_labels.index(_sel)]
-        if (_p, _m) != (_wp, _wm) and st.button(t("이 모델로 위키 생성"), icon=":material/check:", use_container_width=True):
-            llm.set_wiki_model(_p, _m); st.success(f"위키 모델 = {_p} · {_m}"); st.rerun()
-    else:
-        st.info(t("사용 가능한 API 키나 활성화된 CLI가 없습니다. 아래에서 API 키를 입력하거나 CLI 사용을 켜세요."))
-    st.caption(t("번역과 별개로, 위키 노트 생성에 쓸 모델입니다. 구조화 출력은 공급자별로 자동 처리됩니다."))
-    st.divider()
-
-    # 요약 분량 — 원문 대비 % 슬라이더 (기본 설정 홈. 문서요약 탭과 pref 공유, 2026-07-23)
-    st.markdown(f":material/tune: **{t('요약 분량')}**")
-    _render_wiki_length_slider("wiki_length_pct_sl")
-    st.divider()
-
-    # 🖥 CLI 구독 도구 — API 등록보다 앞(우선) · Claude/Codex 컴팩트 토글 (2026-07-10)
-    st.markdown(t("### :material/hub: AI 구독 (CLI)"))
-    st.caption(t("API 키 없이 구독으로 사용 — 설치·로그인 후 켜세요. AI 키 등록보다 우선합니다."))
-    _cc1, _cc2 = st.columns(2)
-    with _cc1:
-        _claude_installed = llm.claude_cli_installed()
-        _claude_enabled = bool(llm.get_pref("use_claude_cli", False))
-        if _claude_installed:
-            _new_enabled = st.toggle("Claude", value=_claude_enabled, key="set_use_claude_cli",
-                                     help=f"설치됨: {llm.claude_cli_path()} · Claude 구독 로그인 시 켜세요")
-            st.caption(f"모델: `{_cli_model_label('claude_cli')}`")
-            if _new_enabled != _claude_enabled:
-                llm.set_claude_cli_enabled(_new_enabled)
+        # ── AI 설정은 목록에 넣지 않고 여기서 바로 보여 준다 (연구자 요청) ──
+        st.markdown("#### " + t("AI 설정"))
+        _wp, _wm = llm.wiki_provider_model()
+        _avail = [(p, m) for p, info in llm.PROVIDERS.items() if llm.has_key(p) for m in info["models"]]
+        if _avail:
+            _labels = [f"{llm.PROVIDERS[p]['label']} · {m}" for p, m in _avail]
+            _current_label = f"{llm.PROVIDERS.get(_wp, {}).get('label', _wp)} · {_wm}"
+            _idx = _labels.index(_current_label) if _current_label in _labels else 0
+            _sel = st.selectbox(t("위키 생성 모델"), _labels, index=_idx, key="compact_home_wiki_model")
+            _p, _m = _avail[_labels.index(_sel)]
+            if (_p, _m) != (_wp, _wm) and st.button(t("선택한 모델 적용"), icon=":material/check:",
+                                                       key="compact_home_wiki_model_save", use_container_width=True):
+                llm.set_wiki_model(_p, _m)
                 st.rerun()
         else:
-            st.toggle("Claude", value=False, disabled=True, key="set_use_claude_cli", help="미설치")
-            st.caption("미설치 · `npm i -g @anthropic-ai/claude-code`")
-    with _cc2:
-        _codex_installed = llm.codex_cli_installed()
-        _codex_enabled = bool(llm.get_pref("use_codex_cli", False))
-        if _codex_installed:
-            _new_codex_enabled = st.toggle("Codex", value=_codex_enabled, key="set_use_codex_cli",
-                                           help=f"설치됨: {llm.codex_cli_path()} · ChatGPT 로그인 시 켜세요")
-            st.caption(f"모델: `{_cli_model_label('codex_cli')}`"
-                       + ("  · " + t("Codex 설정(~/.codex/config.toml)을 따릅니다")
-                          if llm.codex_cli_model() else
-                          "  · " + t("ChatGPT 구독은 모델 지정이 안 됩니다")))
-            if _new_codex_enabled != _codex_enabled:
-                llm.set_codex_cli_enabled(_new_codex_enabled)
-                st.rerun()
-        else:
-            st.toggle("Codex", value=False, disabled=True, key="set_use_codex_cli", help="미설치")
-            st.caption("미설치 · `npm i -g @openai/codex`")
-    st.divider()
+            st.info(t("사용 가능한 API 키나 활성화된 CLI가 없습니다. 아래에서 API 키를 입력하거나 CLI 사용을 켜세요."))
 
-    # 🔑 API 등록 (CLI 공급자 제외)
-    st.markdown(t("### :material/key: API 키 등록"))
-    _cli_provs = {"claude_cli", "codex_cli"}
-    for _prov, _info in llm.PROVIDERS.items():
-        if _prov in _cli_provs:
-            continue
-        _cur = llm.masked(_prov)
-        _api_label = ("✅ " + t("저장됨") + " " + _cur) if _cur else t("미설정")
-        with st.expander(f"{_info['label']}  —  {_api_label}",
-                         expanded=False):
-            with st.form(f"keyform_{_prov}", clear_on_submit=True):
-                _newk = st.text_input(f"{_info['label']} API 키", type="password",
-                                      placeholder=_info["hint"], key=f"keyin_{_prov}")
-                _c1, _c2 = st.columns(2)
-                _save = _c1.form_submit_button(t("저장"), icon=":material/save:", use_container_width=True)
-                _del = _c2.form_submit_button(t("삭제"), icon=":material/delete:", use_container_width=True)
-                if _save:
-                    if _newk.strip():
-                        llm.save_key(_prov, _newk.strip())
-                        st.success(t("저장됨"))
-                        st.rerun()
-                    else:
-                        st.warning(t("키를 입력하세요."))
-                if _del:
-                    llm.save_key(_prov, "")
-                    st.info("저장 키 삭제됨")
+        # CLI 구독 도구 — 설치돼 있으면 실제로 쓸 모델명을, 아니면 설치 명령을 알려 준다.
+        _cc1, _cc2 = st.columns(2)
+        with _cc1:
+            _claude_installed = llm.claude_cli_installed()
+            _claude_enabled = bool(llm.get_pref("use_claude_cli", False))
+            _new_claude = st.toggle("Claude CLI", value=_claude_enabled and _claude_installed,
+                                    disabled=not _claude_installed, key="compact_home_claude",
+                                    help=(tf("설치됨: %s", llm.claude_cli_path()) if _claude_installed
+                                          else t("미설치")))
+            if _claude_installed:
+                st.caption(tf("모델: `%s`", _cli_model_label("claude_cli")))
+                if _new_claude != _claude_enabled:
+                    llm.set_claude_cli_enabled(_new_claude)
                     st.rerun()
-            if _cur:
-                st.caption("현재 앱 설정에 저장된 키를 사용합니다.")
-            st.caption(f"모델: {', '.join(_info['models'])}")
+            else:
+                st.caption(t("미설치") + " · `npm i -g @anthropic-ai/claude-code`")
+        with _cc2:
+            _codex_installed = llm.codex_cli_installed()
+            _codex_enabled = bool(llm.get_pref("use_codex_cli", False))
+            _new_codex = st.toggle("Codex CLI", value=_codex_enabled and _codex_installed,
+                                   disabled=not _codex_installed, key="compact_home_codex",
+                                   help=(tf("설치됨: %s", llm.codex_cli_path()) if _codex_installed
+                                         else t("미설치")))
+            if _codex_installed:
+                st.caption(tf("모델: `%s`", _cli_model_label("codex_cli"))
+                           + ("  · " + t("Codex 설정(~/.codex/config.toml)을 따릅니다")
+                              if llm.codex_cli_model() else
+                              "  · " + t("ChatGPT 구독은 모델 지정이 안 됩니다")))
+                if _new_codex != _codex_enabled:
+                    llm.set_codex_cli_enabled(_new_codex)
+                    st.rerun()
+            else:
+                st.caption(t("미설치") + " · `npm i -g @openai/codex`")
 
-    st.divider()
-    st.markdown(t("### :material/description: DOCX 보관함 설정"))
-    st.caption(
-        f"현재: `{_current_docx_dir()}` — 'DOCX 문서 생성'으로 만든 Word 문서가 여기 저장됩니다."
-    )
-    _dd_custom = st.text_input("폴더 경로 직접 입력", value="", key="docx_dir_custom",
-                               placeholder=str(_current_docx_dir()))
-    if st.button(t("DOCX 보관함 저장 (즉시 적용)"), icon=":material/save:", use_container_width=True, key="docx_dir_save"):
-        _dd_target = _dd_custom.strip()
-        if not _dd_target:
-            st.warning(t("경로를 입력하세요."))
-        elif _dd_target == str(_current_docx_dir()):
-            st.info("이미 이 폴더를 쓰고 있습니다.")
-        else:
-            set_docx_dir(_dd_target)
-            st.session_state["docx5_active_dir"] = _dd_target
-            st.success(f"✅ 저장됨: `{_dd_target}` — Tab 5에 즉시 반영됩니다")
-    st.caption("ℹ️ 기존에 만든 문서는 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
+        # 선택 기능, 기본 꺼짐: Codex가 초고를 쓰고 Claude가 원문과 대조한다.
+        _chain_enabled = bool(llm.get_pref("wiki_codex_claude_review", False))
+        _chain_available = llm.wiki_codex_claude_review_available()
+        _new_chain = st.toggle(
+            t("Codex 작성 후 Claude 검증 (요약·위키만)"),
+            value=_chain_enabled and _chain_available,
+            disabled=not _chain_available,
+            key="compact_home_review_chain",
+            help=t("번역 단계에는 적용되지 않습니다. 장별 요약과 위키 생성에서만 사용합니다."),
+        )
+        if _new_chain != _chain_enabled:
+            llm.set_wiki_codex_claude_review_enabled(_new_chain)
+            st.rerun()
+        if _chain_enabled and not _chain_available:
+            st.caption(t("Codex와 Claude CLI를 모두 설치하고 켜면 다시 활성화됩니다."))
+        _render_wiki_length_slider("compact_home_wiki_length")
 
-    st.divider()
-    st.markdown(t("### :material/description: HWPX 보관함 설정"))
-    st.caption(
-        f"현재: `{_current_hwpx_dir()}` — 'HWPX 문서 생성'으로 만든 한글 문서가 여기 저장됩니다."
-    )
-    _hd_custom = st.text_input("폴더 경로 직접 입력", value="", key="hwpx_dir_custom",
-                               placeholder=str(_current_hwpx_dir()))
-    if st.button(t("HWPX 보관함 저장 (즉시 적용)"), icon=":material/save:", use_container_width=True, key="hwpx_dir_save"):
-        _hd_target = _hd_custom.strip()
-        if not _hd_target:
-            st.warning(t("경로를 입력하세요."))
-        elif _hd_target == str(_current_hwpx_dir()):
-            st.info("이미 이 폴더를 쓰고 있습니다.")
-        else:
-            set_hwpx_dir(_hd_target)
-            st.session_state["hwpx5_active_dir"] = _hd_target
-            st.success(f"✅ 저장됨: `{_hd_target}` — Tab 5에 즉시 반영됩니다")
-    st.caption("ℹ️ 기존에 만든 문서는 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
+        st.divider()
+        _setting_buttons = [
+            ("api", t("API 키 등록"), ":material/key:",
+             t("Gemini, OpenAI 등 API 키를 등록하고 삭제합니다.")),
+            ("docx", t("DOCX 보관함 설정"), ":material/description:",
+             t("Word 문서가 저장될 폴더를 정합니다.")),
+            ("hwpx", t("HWPX 보관함 설정"), ":material/description:",
+             t("한글 HWPX 문서가 저장될 폴더를 정합니다.")),
+            ("epub", t("EPUB 전자책 설정"), ":material/menu_book:",
+             t("EPUB 전자책이 저장될 폴더를 정합니다.")),
+            ("wiki", t("Obsidian 보관함 설정"), ":material/book_2:",
+             t("Obsidian 위키 노트가 저장될 Vault를 정합니다.")),
+        ]
+        for _key, _label, _icon, _desc in _setting_buttons:
+            _bcol, _dcol = st.columns([1.35, 3])
+            if _bcol.button(_label, icon=_icon, key=f"compact_settings_open_{_key}",
+                            use_container_width=True):
+                st.session_state["settings_panel"] = _key
+                st.rerun()
+            _dcol.caption(_desc)
 
-    st.divider()
-    st.markdown(t("### :material/menu_book: EPUB 전자책 설정"))
-    st.caption(
-        f"현재: `{_current_epub_dir()}` — 'EPUB 전자책 생성'으로 만든 전자책이 여기 저장됩니다."
-    )
-    _ed_custom = st.text_input("폴더 경로 직접 입력", value="", key="epub_dir_custom",
-                               placeholder=str(_current_epub_dir()))
-    if st.button(t("EPUB 보관함 저장 (즉시 적용)"), icon=":material/save:", use_container_width=True, key="epub_dir_save"):
-        _ed_target = _ed_custom.strip()
-        if not _ed_target:
-            st.warning(t("경로를 입력하세요."))
-        elif _ed_target == str(_current_epub_dir()):
-            st.info("이미 이 폴더를 쓰고 있습니다.")
-        else:
-            set_epub_dir(_ed_target)
-            st.session_state["epub5_active_dir"] = _ed_target
-            st.success(f"✅ 저장됨: `{_ed_target}` — Tab 5에 즉시 반영됩니다")
-    st.caption("ℹ️ 기존에 만든 전자책은 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
+        st.divider()
+        st.markdown("#### " + t("업데이트"))
+        _upc1, _upc2 = st.columns([2, 1])
+        _upc1.caption(tf("현재 버전: %s", APP_VERSION))
+        if _upc2.button(t("업데이트 확인"), icon=":material/system_update:", key="compact_check_update",
+                        use_container_width=True):
+            _upd_info = updater.check_for_update()
+            if _upd_info:
+                st.session_state["_update_info"] = _upd_info
+                st.session_state.pop("_update_dismissed", None)
+                # 수동으로 확인한 거라, 예전에 이 버전을 '나중에'로 미뤄뒀어도
+                # 항상 팝업을 보여준다 (2026-07-25).
+                llm.set_pref("update_dismissed_version", "")
+                st.rerun()
+            elif sys.platform not in ("win32", "darwin"):
+                st.info(t("앱 내 업데이트는 Windows·macOS에서만 지원됩니다."))
+            else:
+                st.success(t("최신 버전을 사용 중입니다."))
 
-    st.divider()
-    st.markdown(t("### :material/book_2: 옵시디언(Obsidian) 보관함 설정"))
-    st.caption(
-        f"현재: `{_current_wiki_dir()}` — 생성된 위키 노트가 여기 저장되고, "
-        "Wiki 목록 탭의 [옵시디언에서 위키 보관함(Vault) 열기]도 이 폴더를 엽니다."
-    )
-    _default_wiki = str(cfg.BASE_DIR / "wiki")
-    _wiki_cands: list[str] = []
-    for _c in [_default_wiki] + list_obsidian_vaults():
-        if _c and _c not in _wiki_cands:
-            _wiki_cands.append(_c)
-    _cur_wiki = str(_current_wiki_dir())
-    _wd_sel = st.selectbox(
-        "폴더 선택 — 기본값 + 옵시디언에 등록된 보관함(Vault)들",
-        _wiki_cands,
-        index=_wiki_cands.index(_cur_wiki) if _cur_wiki in _wiki_cands else 0,
-        key="wiki_dir_sel",
-    )
-    _wd_custom = st.text_input("또는 폴더 경로 직접 입력 (비우면 위 선택 사용)", value="", key="wiki_dir_custom")
-    _wd_target = (_wd_custom.strip() or _wd_sel).strip()
-    if st.button(t("위키 보관함(Vault) 저장 (즉시 적용)"), icon=":material/save:", use_container_width=True, key="wiki_dir_save"):
-        if _wd_target == _cur_wiki:
-            st.info("이미 이 폴더를 쓰고 있습니다.")
-        else:
-            set_wiki_dir(_wd_target)
-            st.session_state["wiki5_active_dir"] = _wd_target
-            st.success(f"✅ 저장됨: `{_wd_target}` — Tab 5에 즉시 반영됩니다")
-    st.caption("ℹ️ 기존에 만든 노트는 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.")
+        with st.expander(t("저작권 및 사용 주의"), expanded=False):
+            st.markdown(t(
+                "**My Bookshelf** · © 2026 Brightinyou — 개인·비상업 연구 보조 용도. "
+                "이 프로그램의 저작권은 Brightinyou에게 있으며, 개인적·학술적 용도로 사용할 수 있으나 "
+                "서면 동의 없는 재판매·상업적 배포는 허용되지 않습니다. 프로그램은 '있는 그대로' 제공되며 "
+                "정확성·무결성을 보증하지 않습니다."
+            ))
+            st.write(t(
+                "원문 문서의 저작권·번역권·요약·재배포 가능 여부는 이용자 본인이 확인해야 합니다. "
+                "이 앱은 법률·출판·학술 제출 요건을 자동 판정하지 않습니다."
+            ))
+            st.write(t(
+                "AI API 또는 CLI 구독 도구를 활성화하면 문서 일부 또는 전체가 외부 AI 서비스로 전송됩니다. "
+                "개인정보, 비공개 원고, 배포 권한이 불명확한 자료는 넣지 마세요."
+            ))
+            st.write(t(
+                "생성된 번역·요약·위키 노트의 정확성·완전성은 보장되지 않습니다. "
+                "출판·제출·인용·대외 배포 전에는 반드시 원문과 결과물을 직접 대조해 검토하세요."
+            ))
+        _finish_compact_settings()
 
-    st.divider()
-    with st.expander(t("저작권 및 사용 주의"), expanded=False):
-        st.markdown(t(
-            "**My Bookshelf** · © 2026 Brightinyou — 개인·비상업 연구 보조 용도. "
-            "이 프로그램의 저작권은 Brightinyou에게 있으며, 개인적·학술적 용도로 사용할 수 있으나 "
-            "서면 동의 없는 재판매·상업적 배포는 허용되지 않습니다. 프로그램은 '있는 그대로' 제공되며 "
-            "정확성·무결성을 보증하지 않습니다."
+    if _settings_panel == "api":
+        st.subheader(t("API 키 등록"))
+        st.caption(t(
+            "API 키는 이 화면에서 직접 저장한 값만 사용합니다. "
+            "저장 키는 `~/.config/mybookshelf/keys.json`에만 보관되며 저장소에 올라가지 않습니다."
         ))
-        st.write(t(
-            "원문 문서의 저작권·번역권·요약·재배포 가능 여부는 이용자 본인이 확인해야 합니다. "
-            "이 앱은 법률·출판·학술 제출 요건을 자동 판정하지 않습니다."
-        ))
-        st.write(t(
-            "AI API 또는 CLI 구독 도구를 활성화하면 문서 일부 또는 전체가 외부 AI 서비스로 전송됩니다. "
-            "개인정보, 비공개 원고, 배포 권한이 불명확한 자료는 넣지 마세요."
-        ))
-        st.write(t(
-            "생성된 번역·요약·위키 노트의 정확성·완전성은 보장되지 않습니다. "
-            "출판·제출·인용·대외 배포 전에는 반드시 원문과 결과물을 직접 대조해 검토하세요."
-        ))
+        for _prov, _info in llm.PROVIDERS.items():
+            if _prov in {"claude_cli", "codex_cli"}:
+                continue
+            _cur = llm.masked(_prov)
+            _api_label = ("✅ " + t("저장됨") + " " + _cur) if _cur else t("미설정")
+            with st.expander(f"{_info['label']}  —  {_api_label}", expanded=False):
+                with st.form(f"compact_keyform_{_prov}", clear_on_submit=True):
+                    _newk = st.text_input(f"{_info['label']} API 키", type="password",
+                                          placeholder=_info["hint"])
+                    _c1, _c2 = st.columns(2)
+                    _save = _c1.form_submit_button(t("저장"), icon=":material/save:", use_container_width=True)
+                    _delete = _c2.form_submit_button(t("삭제"), icon=":material/delete:", use_container_width=True)
+                    if _save:
+                        if _newk.strip():
+                            llm.save_key(_prov, _newk.strip())
+                            st.success(t("저장됨"))
+                            st.rerun()
+                        else:
+                            st.warning(t("키를 입력하세요."))
+                    if _delete:
+                        llm.save_key(_prov, "")
+                        st.info("저장 키 삭제됨")
+                        st.rerun()
+                st.caption(tf("모델: %s", ", ".join(_info["models"])))
+        if st.button(t("설정 목록으로 돌아가기"), icon=":material/arrow_back:", key="compact_api_back",
+                     use_container_width=True):
+            st.session_state["settings_panel"] = "home"
+            st.rerun()
+        _finish_compact_settings()
+
+    if _settings_panel == "docx":
+        _render_folder_setting("compact_docx", t("DOCX 보관함 설정"), _current_docx_dir(), set_docx_dir,
+                               t("'DOCX 문서 생성'으로 만든 Word 문서가 여기 저장됩니다."),
+                               session_key="docx5_active_dir")
+        _finish_compact_settings()
+    if _settings_panel == "hwpx":
+        _render_folder_setting("compact_hwpx", t("HWPX 보관함 설정"), _current_hwpx_dir(), set_hwpx_dir,
+                               t("'HWPX 문서 생성'으로 만든 한글 문서가 여기 저장됩니다."),
+                               session_key="hwpx5_active_dir")
+        _finish_compact_settings()
+    if _settings_panel == "epub":
+        _render_folder_setting("compact_epub", t("EPUB 전자책 설정"), _current_epub_dir(), set_epub_dir,
+                               t("'EPUB 전자책 생성'으로 만든 전자책이 여기 저장됩니다."),
+                               session_key="epub5_active_dir")
+        _finish_compact_settings()
+    if _settings_panel == "wiki":
+        # 기본 폴더 + 옵시디언에 등록된 보관함을 후보로 함께 보여 준다 (2026-06-11).
+        _wiki_cands: list[str] = []
+        for _c in [str(cfg.BASE_DIR / "wiki")] + list_obsidian_vaults() + [str(_current_wiki_dir())]:
+            if _c and _c not in _wiki_cands:
+                _wiki_cands.append(_c)
+        _render_folder_setting("compact_wiki", t("Obsidian 보관함 설정"), _current_wiki_dir(), set_wiki_dir,
+                               t("생성된 위키 노트가 여기 저장되고, Wiki 목록 탭의 "
+                                 "[옵시디언에서 위키 보관함(Vault) 열기]도 이 폴더를 엽니다."),
+                               session_key="wiki5_active_dir", wiki=True, choices=_wiki_cands)
+        _finish_compact_settings()
+
+    # 알 수 없는 패널 이름이 남아 있으면 목록으로 되돌린다.
+    st.session_state["settings_panel"] = "home"
+    st.rerun()
 
 _render_stage_completion_notice()
 

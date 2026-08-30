@@ -923,3 +923,92 @@ _EN.update({
     "요약된 %d권을 Word(.docx) 문서로 내보낼까요?": "Export %d summarized books as Word (.docx) documents?",
     "요약된 문서를 Word(.docx) 문서로 내보낼까요?": "Export the summarized document as a Word (.docx) file?",
 })
+
+# ── 설정 화면 재구성 (2026-08-30) ──────────────────────
+# 설정을 «목록 → 개별 편집기»로 다시 짜면서 새로 생긴 문구들. 여기 없으면
+# 영어 화면에서 한국어가 그대로 보인다.
+_EN.update({
+    "AI 설정": "AI settings",
+    "필요한 항목을 선택하세요.": "Pick what you want to change.",
+    "선택한 모델 적용": "Use this model",
+    "설정 목록으로 돌아가기": "Back to settings",
+    "API 키 등록": "API keys",
+    "HWPX 보관함 설정": "HWPX folder settings",
+    "EPUB 전자책 설정": "EPUB folder settings",
+    "Obsidian 보관함 설정": "Obsidian vault settings",
+    "번역본·챕터 요약·위키 노트가 모두 이 언어로 만들어집니다. "
+    "원문 언어는 자동으로 감지하므로 따로 고르지 않아도 됩니다.":
+        "Translations, chapter summaries, and wiki notes are all produced in this language. "
+        "The source language is detected automatically, so you do not need to pick it.",
+
+    # 목록 버튼 옆 설명
+    "Gemini, OpenAI 등 API 키를 등록하고 삭제합니다.":
+        "Add or remove API keys for Gemini, OpenAI, and others.",
+    "Word 문서가 저장될 폴더를 정합니다.": "Choose the folder where Word documents are saved.",
+    "한글 HWPX 문서가 저장될 폴더를 정합니다.": "Choose the folder where HWPX documents are saved.",
+    "EPUB 전자책이 저장될 폴더를 정합니다.": "Choose the folder where EPUB ebooks are saved.",
+    "Obsidian 위키 노트가 저장될 Vault를 정합니다.":
+        "Choose the Obsidian vault where wiki notes are saved.",
+
+    # 폴더 편집기
+    "'DOCX 문서 생성'으로 만든 Word 문서가 여기 저장됩니다.":
+        "Word documents made by 'Create DOCX document' are saved here.",
+    "'HWPX 문서 생성'으로 만든 한글 문서가 여기 저장됩니다.":
+        "HWPX documents made by 'Create HWPX document' are saved here.",
+    "'EPUB 전자책 생성'으로 만든 전자책이 여기 저장됩니다.":
+        "Ebooks made by 'Create EPUB ebook' are saved here.",
+    "생성된 위키 노트가 여기 저장되고, Wiki 목록 탭의 "
+    "[옵시디언에서 위키 보관함(Vault) 열기]도 이 폴더를 엽니다.":
+        "Generated wiki notes are saved here, and [Open the wiki vault in Obsidian] "
+        "on the Wiki tab opens this folder.",
+    "등록된 보관함(Vault)에서 고르기": "Pick a vault registered in Obsidian",
+    "이 보관함 사용": "Use this vault",
+    "폴더 찾아보기": "Browse for a folder",
+    "폴더 경로": "Folder path",
+    "저장하고 적용": "Save and apply",
+    "폴더를 선택하거나 경로를 입력하세요.": "Pick a folder or type a path.",
+    "이미 이 폴더를 쓰고 있습니다.": "This folder is already in use.",
+    "저장됨: `%s`": "Saved: `%s`",
+    "ℹ️ 기존에 만든 파일은 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요.":
+        "ℹ️ Existing files are not moved automatically — move them yourself if you want them there.",
+    "폴더 선택 창을 열 수 없습니다: %s": "Could not open the folder picker: %s",
+
+    # CLI 이중 검증 (선택 기능, 기본 꺼짐)
+    "Codex 작성 후 Claude 검증 (요약·위키만)":
+        "Codex drafts, then Claude reviews (summaries and wiki only)",
+    "번역 단계에는 적용되지 않습니다. 장별 요약과 위키 생성에서만 사용합니다.":
+        "Not used for translation — only for chapter summaries and wiki notes.",
+    "Codex와 Claude CLI를 모두 설치하고 켜면 다시 활성화됩니다.":
+        "Install and enable both the Codex and Claude CLIs to turn this back on.",
+    "Codex 설정(~/.codex/config.toml)을 따릅니다": "follows your Codex config (~/.codex/config.toml)",
+    "ChatGPT 구독은 모델 지정이 안 됩니다": "a ChatGPT subscription cannot pick the model",
+    "미설치": "Not installed",
+    "모델: `%s`": "Model: `%s`",
+    "모델: %s": "Model: %s",
+    "설치됨: %s": "Installed: %s",
+
+    # 저작권 및 사용 주의
+    "**My Bookshelf** · © 2026 Brightinyou — 개인·비상업 연구 보조 용도. "
+    "이 프로그램의 저작권은 Brightinyou에게 있으며, 개인적·학술적 용도로 사용할 수 있으나 "
+    "서면 동의 없는 재판매·상업적 배포는 허용되지 않습니다. 프로그램은 '있는 그대로' 제공되며 "
+    "정확성·무결성을 보증하지 않습니다.":
+        "**My Bookshelf** · © 2026 Brightinyou — a personal, non-commercial research aid. "
+        "Brightinyou holds the copyright. You may use it for personal and academic purposes, "
+        "but resale or commercial distribution without written consent is not permitted. "
+        "The program is provided 'as is', with no warranty of accuracy or integrity.",
+    "원문 문서의 저작권·번역권·요약·재배포 가능 여부는 이용자 본인이 확인해야 합니다. "
+    "이 앱은 법률·출판·학술 제출 요건을 자동 판정하지 않습니다.":
+        "You are responsible for checking the copyright, translation, summarization, and "
+        "redistribution rights of your source documents. This app does not judge legal, "
+        "publishing, or academic submission requirements for you.",
+    "AI API 또는 CLI 구독 도구를 활성화하면 문서 일부 또는 전체가 외부 AI 서비스로 전송됩니다. "
+    "개인정보, 비공개 원고, 배포 권한이 불명확한 자료는 넣지 마세요.":
+        "Enabling an AI API or CLI subscription tool sends part or all of your document to an "
+        "external AI service. Do not feed it personal data, unpublished manuscripts, or "
+        "material whose distribution rights are unclear.",
+    "생성된 번역·요약·위키 노트의 정확성·완전성은 보장되지 않습니다. "
+    "출판·제출·인용·대외 배포 전에는 반드시 원문과 결과물을 직접 대조해 검토하세요.":
+        "The accuracy and completeness of generated translations, summaries, and wiki notes "
+        "are not guaranteed. Always check the output against the source yourself before "
+        "publishing, submitting, citing, or sharing it.",
+})
