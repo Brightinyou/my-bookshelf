@@ -302,9 +302,16 @@ if os.path.exists(keys_file):
     except ValueError:
         keys = {}
 # 고른 것만 건드린다 — 이미 맞춰 둔 다른 설정을 덮지 않는다.
-keys["pref_use_claude_cli"] = ai in ("claude", "both")
-keys["pref_use_codex_cli"] = ai in ("codex", "both")
-if ai != "none":
+if ai == "none":
+    # «나중에»는 «지금 고르지 않겠다»는 뜻이지 «쓰던 것을 끄겠다»가 아니다.
+    # 예전에는 여기서 두 토글을 False 로 덮어써, 업그레이드 설치 때 Enter 만
+    # 눌러도 쓰던 codex 설정이 꺼지고 wiki_provider 만 codex_cli 로 남아
+    # 앞뒤가 안 맞았다. 없을 때만 채운다. (2026-08-30)
+    keys.setdefault("pref_use_claude_cli", False)
+    keys.setdefault("pref_use_codex_cli", False)
+else:
+    keys["pref_use_claude_cli"] = ai in ("claude", "both")
+    keys["pref_use_codex_cli"] = ai in ("codex", "both")
     # 둘 다 고른 경우 무인 설치의 기본값과 같은 Codex를 기본 작업 AI로 둔다.
     prov = "claude_cli" if ai == "claude" else "codex_cli"
     keys["wiki_provider"] = prov
