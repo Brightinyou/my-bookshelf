@@ -67,14 +67,22 @@ def find_layout_md(stem: str):
     return None
 
 def find_txt(stem: str):
+    """이름으로 원본 TXT 찾기 — 지금 쓰는 폴더를 먼저 보고, 옛 폴더로 물러난다.
+
+    ★2026-08-30. 여기가 «Wiki 생성을 눌렀는데 아무 일도 안 난다»의 절반이었다.
+    앞의 두 자리(`*/1_txt/`, `raw/processed/`)는 v0.9.0에서 쓰기를 멈춘 옛 자리라
+    지금 설치본에는 파일이 하나도 없다. 그래서 이름으로 찾으면 언제나 None이 나왔고,
+    process_book은 «소스 없음 (재처리 필요)»로 죽었다. 실제 TXT는 2_변환TXT와
+    3_챕터/<책>/ 에 있다.
+    """
     target = gw.nfc(stem)
-    for f in DONE_DIR.glob("*/1_txt/*.txt"):
-        if gw.nfc(f.stem) == target:
-            return f
-    # 폴백: PROCESSED_DIR 평면 구조 (gemini_wiki 동일 소스)
-    for f in gw.SRC_DIR.glob("*.txt"):
-        if gw.nfc(f.stem) == target:
-            return f
+    for cand in (cfg.TXT_DIR.glob("*.txt"),          # 2_변환TXT — 지금 쓰는 자리
+                 cfg.CHAPTERS_DIR.glob("*/*.txt"),   # 3_챕터/<책>/ — 장 단위
+                 DONE_DIR.glob("*/1_txt/*.txt"),     # 옛 자리
+                 gw.SRC_DIR.glob("*.txt")):          # 옛 자리(PROCESSED_DIR)
+        for f in cand:
+            if gw.nfc(f.stem) == target:
+                return f
     return None
 
 def _strip_noise(md: str) -> str:
@@ -1012,18 +1020,24 @@ def find_all_pending(regen: bool = False):
         return all_txts
     return [f for f in all_txts if not wiki_note_exists(f.stem)]
 
-def _single_pass(stem):
+def _single_pass(stem, txt=None):
     """장 구조 없는 책 → gemini_wiki 단일 노트."""
-    txt = find_txt(stem)
+    txt = txt or find_txt(stem)
     if not txt:
         raise RuntimeError(f"단일 폴백 실패 — TXT 없음: {stem}")
     data = gw.generate(txt)
     out = gw.write_note(data, txt)
     return {"mode": "single", "a": str(out)}
 
-def process_book(stem, mode="auto"):
-    """mode: auto(장구조 있으면 A, 없으면 single) / A(인라인) / full(허브+B) / add(B+링크)."""
-    md = find_layout_md(stem); txt = find_txt(stem)
+def process_book(stem, mode="auto", txt_path=None):
+    """mode: auto(장구조 있으면 A, 없으면 single) / A(인라인) / full(허브+B) / add(B+링크).
+
+    txt_path: 부른 쪽이 이미 아는 원본 TXT 경로. UI의 «Wiki 생성»은 목록에서 고른
+    파일을 그대로 넘기는데, 예전에는 이 경로를 버리고 이름으로 다시 찾다가 «소스 없음»
+    으로 죽었다 — 건네받은 파일이 있으면 그것을 쓴다 (2026-08-30).
+    """
+    md = find_layout_md(stem)
+    txt = Path(txt_path) if txt_path and Path(txt_path).exists() else find_txt(stem)
     md_text = md.read_text(encoding="utf-8", errors="ignore") if md else None
     txt_text = txt.read_text(encoding="utf-8", errors="ignore") if txt else None
     if not md_text and not txt_text:
@@ -1031,11 +1045,11 @@ def process_book(stem, mode="auto"):
     smode, chapters = chapter_split(md_text, txt_text)
     if mode == "auto":
         if smode == "single" or not chapters:
-            return _single_pass(stem)
+            return _single_pass(stem, txt)
         mode = "A"
     if smode == "single" or not chapters:
         print("   ⚠️ 진짜 장 구조 없음 → 단일 노트로", flush=True)
-        return _single_pass(stem)
+        return _single_pass(stem, txt)
     book = gw.nfc(stem)
     print(f"   📚 {book}: {len(chapters)}장 (분할={smode}, mode={mode})", flush=True)
     sections = []
@@ -1104,7 +1118,7 @@ def main():
 
     stem = args.stem or gw.nfc(Path(args.file).stem)
     t0 = time.time()
-    r = process_book(stem, args.mode)
+    r = process_book(stem, args.mode, txt_path=args.file)
     print(f"   ✅ {r}  ({int(time.time()-t0)}초)", flush=True)
 
 if __name__ == "__main__":
