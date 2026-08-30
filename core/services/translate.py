@@ -668,6 +668,23 @@ def _paragraph_already_target(paragraph: str, threshold: float = 0.6,
 _PAGE_TOKEN = "[[PAGEBREAK]]"
 
 
+# 번호로 시작하지만 본문인 단락을 가려낸다 — 각주·참고문헌과 구별한다.
+_SENTENCE_END = _re.compile(r"[.!?。？！]\s*$|[다요음임함]\.?\s*$")
+
+
+def _looks_like_body_sentence(p: str) -> bool:
+    """앞의 번호를 떼어 낸 나머지가 «문장»으로 보이는가.
+
+    각주·참고문헌은 대개 짧고 서지 표기(같은 책·p. 12·ibid)를 달고 있다.
+    본문 목록·성경 절은 온전한 문장으로 끝난다."""
+    rest = _re.sub(r"^\s*\[?\d{1,3}\]?[\s.,):]+\s*", "", p).strip()
+    if len(rest) < 25:                    # 너무 짧으면 판단 보류 — 기존대로 각주 처리
+        return False
+    if _RE_EXPLICIT_CITE.search(rest):    # 서지 표기가 있으면 각주다
+        return False
+    return bool(_SENTENCE_END.search(rest))
+
+
 def should_skip_translation(paragraph: str) -> bool:
     """단락 번역 생략 조건: 인용·각주 (이미 목표 언어 단락은 캐시로 별도 처리)."""
     p = paragraph.strip()
@@ -680,7 +697,12 @@ def should_skip_translation(paragraph: str) -> bool:
     if _CITATION_BULLET.match(p):
         return True
     # OCR 분리 포함 각주 번호 시작 + 짧은 단락
-    if len(p) < 500 and _FOOTNOTE_NUM_START.match(p):
+    # 다만 번호로 시작한다고 다 각주가 아니다 — 번호 목록(«1. 사람은 …»)과
+    # 성경 절(«31 너희는 남에게 …»)은 본문이다. 설교문을 독일어로 번역했더니
+    # 그런 줄만 한국어로 남아 산출물에 섞였다. 번호를 떼어 낸 나머지가 온전한
+    # 문장이면 본문으로 본다 — 각주를 몇 개 더 번역하는 손해가, 본문을 통째로
+    # 빼먹는 손해보다 훨씬 작다. (2026-08-31)
+    if len(p) < 500 and _FOOTNOTE_NUM_START.match(p) and not _looks_like_body_sentence(p):
         return True
     # 짧고 URL 들어간 단락 = 인용일 가능성 (500자 이하 + arXiv/DOI/URL)
     if len(p) < 500 and _CITATION_URL_HEAVY.search(p):
