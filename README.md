@@ -359,6 +359,11 @@ claude
 - **"사용 가능한 AI가 없습니다"** — `⚙️ 설정`에서 API 키를 넣거나 CLI 구독(Claude/Codex)을 켜세요.
 - **업데이트했는데 옛 화면이 보임** — 앱을 완전히 종료 후 다시 여세요(실행 중인 서버가 남아 있을 수 있습니다).
 - **스캔 PDF** — 그대로 넣으시면 됩니다. 본문이 엉망으로 나오면 텍스트 변환 탭의 «🔬 본문 품질 검사»로 AI에 다시 읽히세요.
+- (macOS) **앱 안에서 «업데이트 확인»을 눌러도 판이 안 올라감** — v1.2.74 이전 `.pkg`로 설치했다면 앱이 관리자 소유로 깔려 있어 스스로 갈아끼우지 못합니다. 한 번만 아래를 실행하면 이후로는 자동으로 됩니다.
+  ```
+  sudo chown -R "$(whoami):staff" /Applications/MyBookshelf.app
+  ```
+  최신 `.pkg`를 받아 다시 설치해도 같은 처리가 자동으로 됩니다. 진행 기록은 `~/Library/Application Support/MyBookshelf/update.log`에 남습니다.
 - (Windows) 설치·실행 오류는 설치 폴더의 `install.log` / `launch-error.log`를 확인하세요.
 
 ---

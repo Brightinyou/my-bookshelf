@@ -361,6 +361,11 @@ Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`).
 - **"No AI available"** — enter an API key or enable a CLI subscription (Claude/Codex) in `⚙️ Settings`.
 - **Old screen after an update** — fully quit the app and reopen it (a server may still be running).
 - **Scanned PDFs** — feed them in as they are. If the text comes out badly, use «🔬 Text quality check» in the Text conversion tab to re-read them with AI.
+- (macOS) **"Check for updates" does nothing** — if you installed with a `.pkg` older than v1.2.74, the app is owned by root and cannot replace itself. Run this once and updates work from then on:
+  ```
+  sudo chown -R "$(whoami):staff" /Applications/MyBookshelf.app
+  ```
+  Reinstalling from the latest `.pkg` does the same thing automatically. See `~/Library/Application Support/MyBookshelf/update.log`.
 - (Windows) For install/launch errors, check `install.log` / `launch-error.log` in the install folder.
 
 ---

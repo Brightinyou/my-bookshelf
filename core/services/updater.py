@@ -270,15 +270,26 @@ if [ ! -d "$NEWAPP" ]; then
 fi
 
 # 4) 번들 교체(백업 후 ditto). 실패하면 백업 복원.
-rm -rf "$APP_PATH.old" 2>/dev/null
-if [ -d "$APP_PATH" ]; then mv "$APP_PATH" "$APP_PATH.old" 2>>"$LOG"; fi
+#    .old 를 고정 이름으로 쓰면, 앞선 실패가 남긴 root 소유 .old 를 지우지 못해
+#    mv 가 «Directory not empty» 로 막히고, 그 뒤 ditto 가 원본 위에 덮어쓰려다
+#    파일마다 Permission denied 를 낸다. pkg 로 깔면 번들이 root:wheel 이라
+#    실제로 그렇게 됐다. 매번 다른 이름을 써서 충돌을 없앤다. (2026-08-30)
+OLD_PATH="$APP_PATH.old.$(date +%s)"
+rm -rf "$APP_PATH".old 2>/dev/null
+if [ -d "$APP_PATH" ]; then
+  if ! mv "$APP_PATH" "$OLD_PATH" 2>>"$LOG"; then
+    log "cannot move old bundle aside (owned by another user?) - abort"
+    /usr/bin/open "$APP_PATH" 2>/dev/null
+    exit 1
+  fi
+fi
 if /usr/bin/ditto "$NEWAPP" "$APP_PATH" >>"$LOG" 2>&1; then
-  rm -rf "$APP_PATH.old" 2>/dev/null
+  rm -rf "$OLD_PATH" 2>/dev/null
   log "swap ok -> $APP_PATH"
 else
   log "swap failed - restoring backup"
   rm -rf "$APP_PATH" 2>/dev/null
-  [ -d "$APP_PATH.old" ] && mv "$APP_PATH.old" "$APP_PATH"
+  [ -d "$OLD_PATH" ] && mv "$OLD_PATH" "$APP_PATH"
 fi
 
 # 5) 격리 속성 제거(방어) + 재실행

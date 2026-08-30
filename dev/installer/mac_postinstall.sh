@@ -47,7 +47,21 @@ log() { echo "[$(date '+%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 # 보다가 권한이 없어 캐시를 통째로 포기한다.
 asuser() { /usr/bin/sudo -H -u "$USER_NAME" "$@"; }
 
+hand_over_bundle() {
+    # installer(8) 는 번들을 root:wheel 로 깔아 놓는다. 그러면 앱의 자동
+    # 업데이트가 번들을 갈아끼우지 못한다 — 교체 헬퍼의 ditto 가 파일마다
+    # Permission denied 를 냈다. 드래그로 설치한 앱은 원래 그 사용자 소유이고
+    # 이것도 사용자별 도구이므로 같은 상태로 맞춘다. (2026-08-30)
+    [ -d "$APP" ] || return 0
+    if /usr/sbin/chown -R "$USER_NAME:staff" "$APP" 2>>"$LOG"; then
+        log "번들 소유권을 $USER_NAME 에게 넘겼다 (자동 업데이트용)"
+    else
+        log "번들 소유권 이전 실패 — 자동 업데이트가 막힐 수 있다"
+    fi
+}
+
 launch_extras() {
+    hand_over_bundle
     # 이전 판이 root 소유 로그를 남긴 경우도 여기서 복구한다.
     /usr/bin/touch "$LOG" 2>/dev/null
     /usr/sbin/chown "$USER_NAME" "$LOG" 2>/dev/null
