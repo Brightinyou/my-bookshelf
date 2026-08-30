@@ -11,6 +11,7 @@ import llm_providers as llm
 from services.common import TXT_SUB, _nfc, append_log
 from services.files import find_md, find_txt, txt_dir
 from services.translate import DERIVED_SUFFIXES as _DERIVED, find_translation
+from services import note_i18n as NI   # 노트 구획 제목(언어별) — 2026-08-31
 from services.translate import _split_paragraphs_robust
 
 DONE_DIR = cfg.DONE_DIR
@@ -21,7 +22,7 @@ DONE_DIR = cfg.DONE_DIR
 # 위키반영 전에 손으로 고칠 수 있는 고정 형식 MD로 저장한다.
 # 구형 _wiki.json은 읽기 폴백으로만 지원 (재요약 시 삭제).
 
-_SUMMARY_PREFIX = "> **요약:**"
+_SUMMARY_PREFIX = "> **요약:**"          # 하위 호환용 (직접 비교하지 말 것)
 
 
 def _author_from_stem(stem: str) -> str:
@@ -45,7 +46,7 @@ def _format_summary_md(book: str, chapter: str, summary: str, body: str, author:
         f"model: {model}\n"
         f"generated: {date.today().isoformat()}\n"
         "---\n"
-        f"{_SUMMARY_PREFIX} {one_line}\n\n"
+        f"{NI.summary_prefix()} {one_line}\n\n"
         f"{(body or '').strip()}\n"
     )
 
@@ -61,8 +62,9 @@ def parse_summary_md(text: str) -> tuple[str, str]:
     summary = ""
     body_start = 0
     for i, ln in enumerate(lines):
-        if ln.strip().startswith(_SUMMARY_PREFIX):
-            summary = ln.strip()[len(_SUMMARY_PREFIX):].strip()
+        _pfx = next((p for p in NI.summary_prefixes() if ln.strip().startswith(p)), "")
+        if _pfx:
+            summary = ln.strip()[len(_pfx):].strip()
             body_start = i + 1
             break
     body = "\n".join(lines[body_start:]).strip()
@@ -573,9 +575,9 @@ def summarize_book_overview(ws_name: str, stem: str) -> tuple[bool, str]:
         + f"model: {model}\n"
         f"generated: {date.today().isoformat()}\n"
         "---\n"
-        f"{_SUMMARY_PREFIX} {summary}\n\n"
+        f"{NI.summary_prefix()} {summary}\n\n"
         f"{intro}\n"
-        + (f"\n## 핵심 키워드\n{keywords}\n" if keywords else ""),
+        + (f"\n{NI.md_heading('keywords')}\n{keywords}\n" if keywords else ""),
         encoding="utf-8",
     )
     return True, summary[:120]

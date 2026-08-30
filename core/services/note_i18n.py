@@ -80,6 +80,13 @@ TABLE: dict[str, dict[str, str]] = {
     },
 }
 
+# 노트 첫 줄의 요약 접두사. 제목처럼 코드가 되읽는 표지라 함께 관리한다.
+SUMMARY_PREFIX: dict[str, str] = {
+    "ko": "요약:", "en": "Summary:", "ja": "要約:", "zh": "摘要：",
+    "de": "Zusammenfassung:", "fr": "Résumé :", "es": "Resumen:",
+    "it": "Sintesi:", "pt": "Resumo:", "nl": "Samenvatting:", "ru": "Резюме:",
+}
+
 FALLBACK = "ko"
 
 
@@ -125,3 +132,14 @@ def is_heading(line: str, key: str) -> bool:
         return False
     body = s.lstrip("#").strip()
     return any(body.startswith(a) for a in aliases(key))
+
+
+def summary_prefix(lang: str | None = None) -> str:
+    """'> **요약:**' 처럼 노트 첫 줄에 붙는 요약 표지 — 지금 언어."""
+    return "> **" + (SUMMARY_PREFIX.get(_lang(lang)) or SUMMARY_PREFIX[FALLBACK]) + "**"
+
+
+def summary_prefixes() -> tuple[str, ...]:
+    """모든 언어의 요약 표지 — 노트를 읽을 때. 긴 것부터."""
+    return tuple(sorted({"> **" + v + "**" for v in SUMMARY_PREFIX.values()},
+                        key=len, reverse=True))

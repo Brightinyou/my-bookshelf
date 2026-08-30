@@ -115,9 +115,12 @@ def improve(path: Path) -> str:
     # 내용 유실 방어 — 개선본이 원본보다 크게 줄면 원본 유지
     if len(new_body) < max(600, int(len(body.strip()) * 0.6)) or "## " not in new_body:
         return "실패(검증 미달 — 원본 유지)"
-    new_body = re.sub(r"\n## 핵심 키워드\n[\s\S]*$", "", new_body).rstrip()
+    # 어느 언어의 키워드 구획이든 떼어 낸다 — 한국어만 지우면 독일어 노트에
+    # 구획이 둘로 늘어난다. 다시 붙일 때는 지금 도착언어의 제목을 쓴다.
+    _alts = "|".join(re.escape(a) for a in NI.aliases("keywords"))
+    new_body = re.sub(rf"\n#{{2,3}} (?:{_alts})\n[\s\S]*$", "", new_body).rstrip()
     if keywords:
-        new_body += "\n\n## 핵심 키워드\n" + keywords
+        new_body += "\n\n" + NI.md_heading("keywords") + "\n" + keywords
 
     used = llm.effective_wiki_model()
     head = fm.rstrip()
