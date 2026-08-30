@@ -26,6 +26,10 @@ SZ_CODEX="약 363 MB (Node.js 79 MB 포함)"
 SZ_BOTH="약 656 MB"
 SZ_OBSIDIAN="약 515 MB"
 
+# 지원 폴더가 없으면 로그 기록이 통째로 실패한다(zip 설치 등 pkg 를 거치지
+# 않은 경로). 먼저 만들어 둔다.
+mkdir -p "$SUPPORT" 2>/dev/null
+
 C_B=$'\033[1m'; C_C=$'\033[36m'; C_Y=$'\033[33m'; C_D=$'\033[2m'; C_0=$'\033[0m'
 say()  { echo "  $*"; }
 head_() { echo; echo "${C_C}${C_B}$*${C_0}"; }
