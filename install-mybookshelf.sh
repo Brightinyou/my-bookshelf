@@ -155,6 +155,13 @@ start_cli_login() {
     esac
 }
 
+obsidian_installed() {
+    # brew 의 종료 코드만 믿지 않는다. 이미 등록돼 있다는 이유로 0 을 돌려주고
+    # 실제로는 앱이 없는 경우가 있어, «설치 완료» 라고 해 놓고 앱이 없었다.
+    # 결과물이 있는지 눈으로 확인한다. (2026-08-31)
+    [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]
+}
+
 find_python() {
     # postinstall·런처와 같은 판정 — 호스트와 아키텍처가 같은 3.10 이상.
     local hostarch cand info fallback=""
@@ -308,12 +315,18 @@ fi
 step 5 "옵시디언"
 if [ "$OBSIDIAN" != "1" ]; then
     say "건너뜁니다 (--obsidian 을 주면 설치합니다)."
-elif [ -d "/Applications/Obsidian.app" ]; then
+elif obsidian_installed; then
     say "이미 설치돼 있습니다."
 elif have brew; then
-    brew install --cask obsidian >>"$LOG" 2>&1 \
-        && say "설치 완료 — 앱 설정 탭에서 보관함(Vault) 폴더를 지정하세요." \
-        || warn "설치 실패 — https://obsidian.md/download"
+    say "설치 중…"
+    brew install --cask obsidian >>"$LOG" 2>&1 || true
+    if obsidian_installed; then
+        say "설치 완료 — 앱 설정 탭에서 보관함(Vault) 폴더를 지정하세요."
+    else
+        warn "설치하지 못했습니다 — https://obsidian.md/download 에서 직접 받으세요."
+        warn "자세한 내용: $LOG"
+        MANUAL+=("옵시디언 설치 (https://obsidian.md/download)")
+    fi
 else
     warn "Homebrew 가 없어 자동 설치를 못 했습니다 — https://obsidian.md/download"
 fi

@@ -167,6 +167,13 @@ PYEOF
     return "$copied"
 }
 
+obsidian_installed() {
+    # brew 의 종료 코드만 믿지 않는다. 이미 등록돼 있다는 이유로 0 을 돌려주고
+    # 실제로는 앱이 없는 경우가 있어, «설치 완료» 라고 해 놓고 앱이 없었다.
+    # 결과물이 있는지 눈으로 확인한다. (2026-08-31)
+    [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]
+}
+
 PY="$VENV/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3 || true)"
 
@@ -262,7 +269,7 @@ fi
 # ── 2. 옵시디언 ──────────────────────────────────────────────
 head_ "2. 옵시디언"
 OBS=0
-if [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]; then
+if obsidian_installed; then
     say "이미 설치돼 있습니다."; OBS=1
 else
     echo "  요약 노트를 옵시디언 보관함에 위키로 쌓을 수 있습니다."
@@ -272,15 +279,22 @@ else
     if [[ "${yn:-n}" =~ ^[Yy] ]]; then
         if have brew; then
             say "설치 중…"
-            brew install --cask obsidian >>"$LOG" 2>&1 && OBS=1 \
-                || { warn "Homebrew 설치 실패 — 공식 DMG로 다시 시도합니다."
-                     if install_obsidian_local >>"$LOG" 2>&1; then OBS=1
-                     else warn "설치 실패 — https://obsidian.md/download 에서 직접 받으세요."
-                     fi; }
+            brew install --cask obsidian >>"$LOG" 2>&1 || true
+            if obsidian_installed; then
+                OBS=1
+            else
+                warn "Homebrew 로는 설치되지 않았습니다 — 공식 DMG로 다시 시도합니다."
+                install_obsidian_local >>"$LOG" 2>&1 || true
+                if obsidian_installed; then OBS=1
+                else warn "설치 실패 — https://obsidian.md/download 에서 직접 받으세요."
+                fi
+            fi
         else
             say "공식 최신 DMG를 받아 설치합니다…"
-            install_obsidian_local >>"$LOG" 2>&1 && OBS=1 \
-                || warn "설치 실패 — https://obsidian.md/download 에서 직접 받으세요."
+            install_obsidian_local >>"$LOG" 2>&1 || true
+            if obsidian_installed; then OBS=1
+            else warn "설치 실패 — https://obsidian.md/download 에서 직접 받으세요."
+            fi
         fi
     else
         say "건너뜁니다."
