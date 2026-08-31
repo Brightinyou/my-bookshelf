@@ -129,9 +129,9 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 > powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
 > ```
 >
-> Options: `-AI codex` (default) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian` · `-TargetLang en`.
+> Options: `-AI codex` (default) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian` · `-TargetLang en`. Installing Node.js may pop up a **UAC admin-confirmation window** once, and on a very old Windows 10 without winget the Node.js (→ Codex CLI) install may not happen automatically — it will show up in the on-screen "do this manually" list instead.
 >
-> The selected subscription CLI opens browser sign-in immediately. Use `-NoLogin` to skip it in automation; API keys are still entered in the app.
+> The selected subscription CLI opens browser sign-in immediately — `-AI both` attempts both Claude and Codex sign-in, so you need an actual Claude Pro/Max and ChatGPT Plus/Pro subscription for that. If you don't, pick a single `-AI codex`/`-AI claude`, or use `-AI none` and enter an API key in the app instead. The install itself takes 5–20 minutes, so leave the window open.
 
 ---
 
@@ -213,7 +213,7 @@ Then launch **My Bookshelf** from Launchpad or Applications. The `.pkg` build op
 >
 > ```bash
 > curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
-> bash install-mybookshelf.sh --ai both --launch
+> bash install-mybookshelf.sh --ai codex --launch
 > ```
 >
 > Options: `--ai codex` (default) · `--ai claude` · `--ai both` · `--ai none`. Repeating `--ai claude --ai codex` also installs both. See `bash install-mybookshelf.sh --help` for `--obsidian`, `--target-lang en`, and the full list.

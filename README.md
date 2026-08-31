@@ -126,12 +126,12 @@ CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`�
 >
 > ```powershell
 > irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
-> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI both -Launch
+> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI codex -Launch
 > ```
 >
-> `-AI codex`(기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다.
+> `-AI codex`(기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다. Node.js 설치 중 **관리자 확인(UAC) 창**이 한 번 뜰 수 있고, winget이 없는 아주 오래된 Windows 10에서는 Node.js(→ Codex CLI) 설치가 자동으로 되지 않아 화면에 "손으로 하실 일" 목록으로 안내될 수 있습니다.
 >
-> 기본적으로 선택한 구독 CLI의 브라우저 로그인도 바로 시작합니다. 자동화 환경에서는 `-NoLogin`으로 건너뛸 수 있으며, API 키는 앱에서 직접 입력합니다.
+> 기본적으로 선택한 구독 CLI의 브라우저 로그인도 바로 시작합니다 — `-AI both`는 Claude와 Codex 로그인을 모두 시도하므로 Claude Pro/Max, ChatGPT Plus/Pro 구독이 실제로 있어야 합니다. 없다면 `-AI codex`/`-AI claude`로 하나만 고르거나 `-AI none`으로 건너뛰고 API 키를 앱에서 직접 입력하세요. 설치 자체는 5~20분 걸리니 창을 닫지 말고 그대로 두세요.
 
 ---
 
@@ -213,7 +213,7 @@ CLI를 골랐다면 설치 창이 곧바로 브라우저 로그인 창을 엽니
 >
 > ```bash
 > curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
-> bash install-mybookshelf.sh --ai both --launch
+> bash install-mybookshelf.sh --ai codex --launch
 > ```
 >
 > `--ai codex`(기본) · `--ai claude` · `--ai both` · `--ai none`을 쓸 수 있습니다. `--ai claude --ai codex`처럼 두 번 적어도 둘 다 설치합니다. `--obsidian`(옵시디언도 설치) · `--target-lang en` 등은 `bash install-mybookshelf.sh --help`에서 볼 수 있습니다.
