@@ -18,6 +18,10 @@
 #   bash install-mybookshelf.sh
 #   bash install-mybookshelf.sh --ai both --obsidian --launch
 #   bash install-mybookshelf.sh --ai claude --ai codex --obsidian --launch
+#   bash install-mybookshelf.sh --no-login          # 로그인 창을 열지 않는다
+#
+#   이미 로그인된 CLI 는 창을 열지 않고 건너뛴다. 로그인이 필요하면 물어보고,
+#   원치 않으면 «손으로 하실 일» 목록에 넣고 다음 단계로 넘어간다.
 
 set -uo pipefail
 
@@ -57,6 +61,7 @@ while [ $# -gt 0 ]; do
         --target-lang) TARGET_LANG="${2:-ko}"; shift 2 ;;
         --wiki-pct)    WIKI_PCT="${2:-30}"; shift 2 ;;
         --no-prefs)    NO_PREFS=1; shift ;;
+        --no-login)    NO_LOGIN=1; shift ;;
         --launch)      LAUNCH=1; shift ;;
         -h|--help)     sed -n '2,22p' "$0"; exit 0 ;;
         *) echo "모르는 옵션: $1"; exit 2 ;;
@@ -142,16 +147,39 @@ PYEOF
     have node
 }
 
-start_cli_login() {
+cli_logged_in() {
+    # 이미 로그인돼 있으면 창을 다시 열지 않는다. 두 CLI 모두 상태 확인
+    # 명령이 로그인 여부를 종료 코드로 알려 준다(로그인 0 · 아니면 1).
     case "$1" in
-        claude)
-            say "Claude 브라우저 로그인 창을 엽니다. 로그인 후 이 Terminal로 돌아오세요."
-            claude auth login
-            ;;
-        codex)
-            say "Codex 브라우저 로그인 창을 엽니다. 로그인 후 이 Terminal로 돌아오세요."
-            codex login --device-auth
-            ;;
+        claude) claude auth status >/dev/null 2>&1 ;;
+        codex)  codex login status  >/dev/null 2>&1 ;;
+        *) return 1 ;;
+    esac
+}
+
+start_cli_login() {
+    local cli="$1" label
+    [ "$cli" = "claude" ] && label="Claude" || label="Codex"
+    if cli_logged_in "$cli"; then
+        say "$label 은 이미 로그인돼 있습니다 — 건너뜁니다."
+        return 0
+    fi
+    if [ "$NO_LOGIN" = "1" ]; then
+        say "$label 로그인을 건너뜁니다 (--no-login)."
+        MANUAL+=("터미널에서 '$cli' 로그인")
+        return 0
+    fi
+    local yn
+    read -r -p "  $label 로그인을 지금 하시겠습니까? [Y/n]: " yn
+    if [[ "${yn:-y}" =~ ^[Nn] ]]; then
+        say "건너뜁니다 — 나중에 터미널에서 '$cli' 를 실행하면 됩니다."
+        MANUAL+=("터미널에서 '$cli' 로그인")
+        return 0
+    fi
+    say "$label 브라우저 로그인 창을 엽니다. 로그인 후 이 Terminal로 돌아오세요."
+    case "$cli" in
+        claude) claude auth login ;;
+        codex)  codex login --device-auth ;;
     esac
 }
 

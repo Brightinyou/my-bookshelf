@@ -68,21 +68,36 @@ register_cli_path() {
     done
 }
 
+cli_logged_in() {
+    # 이미 로그인돼 있으면 창을 다시 열지 않는다. 두 CLI 모두 상태 확인
+    # 명령이 로그인 여부를 종료 코드로 알려 준다(로그인 0 · 아니면 1).
+    case "$1" in
+        claude) claude auth status >/dev/null 2>&1 ;;
+        codex)  codex login status  >/dev/null 2>&1 ;;
+        *) return 1 ;;
+    esac
+}
+
 start_cli_login() {
-    local cli="$1"
+    local cli="$1" label yn
+    [ "$cli" = "claude" ] && label="Claude" || label="Codex"
+    head_ "4. ${label} 로그인"
+    if cli_logged_in "$cli"; then
+        say "이미 로그인돼 있습니다 — 건너뜁니다."
+        log "${label} 이미 로그인됨 — 건너뜀"
+        return 0
+    fi
+    read -r -p "  지금 로그인하시겠습니까? [Y/n]: " yn
+    if [[ "${yn:-y}" =~ ^[Nn] ]]; then
+        say "건너뜁니다 — 나중에 터미널에서 '${cli}' 를 실행하면 됩니다."
+        log "${label} 로그인 건너뜀"
+        return 0
+    fi
+    say "브라우저 로그인 창을 엽니다. 로그인한 뒤 이 창으로 돌아오세요."
+    log "${label} 로그인 시작"
     case "$cli" in
-        claude)
-            head_ "4. Claude 로그인"
-            say "브라우저 로그인 창을 엽니다. Claude 계정으로 로그인한 뒤 이 창으로 돌아오세요."
-            log "Claude 로그인 시작"
-            claude auth login
-            ;;
-        codex)
-            head_ "4. Codex 로그인"
-            say "브라우저 로그인 창을 엽니다. ChatGPT 계정으로 로그인한 뒤 이 창으로 돌아오세요."
-            log "Codex 로그인 시작"
-            codex login --device-auth
-            ;;
+        claude) claude auth login ;;
+        codex)  codex login --device-auth ;;
     esac
 }
 
