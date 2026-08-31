@@ -17,7 +17,7 @@ Runs on both Windows and macOS. The same core (`core/`) is shared and **only the
 | | What to do |
 |---|---|
 | **1. Install** | Grab <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` or <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg` from the badges above and run it. You clear a **security warning once**, and the installer spends a few minutes preparing the Python environment. → [details](#2-installation) |
-| **2. Connect an AI** | After a macOS PKG install, Terminal asks you to choose **Claude, Codex, both, or later**. If you skip it, enable a CLI or enter an API key in `⚙️ Settings`. → [details](#3-first-time-setup--connect-an-ai) |
+| **2. Connect an AI** | After a macOS PKG install, Terminal asks you to choose **Claude, Codex (ChatGPT), both, or later**. If you skip it, enable a CLI or enter an API key in `⚙️ Settings`. → [details](#3-first-time-setup--connect-an-ai) |
 | **3. Add documents** | Drop files onto the `📄 Text conversion` tab and press **[▶ Start]**. From there, **the popups walk you through** each following stage. |
 | **4. Collect results** | In the `📖 Output` tab, switch on EPUB, Word, Hangul, or Obsidian and press **[▶ Start]**. |
 
@@ -104,7 +104,7 @@ At the end of the install you'll see *"Preparing Python environment"*, and it wi
 
 #### Step 6 — Connect an AI
 
-After installation, a **My Bookshelf - Additional setup** PowerShell window opens. Choose **Claude, Codex, both, or later**, then choose whether to install Obsidian. Setup installs the selected tools and immediately opens browser sign-in. Selecting **both** signs in to Claude first and then Codex, and enables the prepared CLIs and Obsidian in the app settings.
+After installation, a **My Bookshelf - Additional setup** PowerShell window opens. Choose **Claude, Codex (ChatGPT), both, or later**, then choose whether to install Obsidian. Setup installs the selected tools and immediately opens browser sign-in. Selecting **both** signs in to Claude first and then Codex, and enables the prepared CLIs and Obsidian in the app settings.
 
 To use an API instead, choose **later** and enter a Gemini, OpenAI, or Anthropic API key in `⚙️ Settings`.
 
@@ -129,7 +129,7 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 > powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
 > ```
 >
-> Options: `-AI codex` (default) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian` · `-TargetLang en`. Installing Node.js may pop up a **UAC admin-confirmation window** once, and on a very old Windows 10 without winget the Node.js (→ Codex CLI) install may not happen automatically — it will show up in the on-screen "do this manually" list instead.
+> Options: `-AI codex` (ChatGPT, default) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian` · `-TargetLang en`. Installing Node.js may pop up a **UAC admin-confirmation window** once, and on a very old Windows 10 without winget the Node.js (→ Codex CLI) install may not happen automatically — it will show up in the on-screen "do this manually" list instead.
 >
 > The selected subscription CLI opens browser sign-in immediately — `-AI both` attempts both Claude and Codex sign-in, so you need an actual Claude Pro/Max and ChatGPT Plus/Pro subscription for that. If you don't, pick a single `-AI codex`/`-AI claude`, or use `-AI none` and enter an API key in the app instead. The install itself takes 5–20 minutes, so leave the window open.
 
@@ -174,7 +174,7 @@ After Python preparation, a **My Bookshelf — Additional setup** Terminal windo
 |---|---|---:|
 | **1. Claude** | Claude Code CLI · Claude Pro/Max subscription | 293MB |
 | **2. Codex** | Codex CLI · ChatGPT Plus/Pro subscription | 363MB, including Node.js |
-| **3. Both** | Claude and Codex · Codex is the default working AI | 656MB |
+| **3. Both** | Claude and Codex · Codex (ChatGPT) is the default working AI | 656MB |
 | **4. Later** | No CLI; enter an API key in the app later | 0MB |
 
 Enter a number and press Return. Pressing Enter without a number selects the default, **4. Later**. An existing CLI is not downloaded again and is shown as 0MB additional space.
@@ -216,7 +216,7 @@ Then launch **My Bookshelf** from Launchpad or Applications. The `.pkg` build op
 > bash install-mybookshelf.sh --ai codex --launch
 > ```
 >
-> Options: `--ai codex` (default) · `--ai claude` · `--ai both` · `--ai none`. Repeating `--ai claude --ai codex` also installs both. See `bash install-mybookshelf.sh --help` for `--obsidian`, `--target-lang en`, and the full list.
+> Options: `--ai codex` (ChatGPT, default) · `--ai claude` · `--ai both` · `--ai none`. Repeating `--ai claude --ai codex` also installs both. See `bash install-mybookshelf.sh --help` for `--obsidian`, `--target-lang en`, and the full list.
 >
 > **This route never hits the security warning** — it installs with the `installer` command.
 > The selected CLI's browser sign-in opens during installation. Only API-key entry remains manual in the app settings.

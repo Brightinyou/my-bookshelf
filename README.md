@@ -17,7 +17,7 @@ Windows와 macOS 모두 지원합니다. 같은 코어(`core/`)를 쓰고 **설�
 | | 할 일 |
 |---|---|
 | **1. 설치** | 위 배지에서 <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` 또는 <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 설치 중 파이썬 환경 준비에 몇 분 걸립니다. → [자세히](#2-설치) |
-| **2. AI 연결** | macOS PKG는 설치 직후 터미널에서 **Claude·Codex·둘 다·나중에** 중 하나를 묻습니다. 건너뛰었다면 앱의 `⚙️ 설정` 탭에서 CLI를 켜거나 API 키를 넣습니다. → [자세히](#3-첫-설정--ai-연결) |
+| **2. AI 연결** | macOS PKG는 설치 직후 터미널에서 **Claude·Codex(ChatGPT)·둘 다·나중에** 중 하나를 묻습니다. 건너뛰었다면 앱의 `⚙️ 설정` 탭에서 CLI를 켜거나 API 키를 넣습니다. → [자세히](#3-첫-설정--ai-연결) |
 | **3. 문서 넣기** | `📄 텍스트 변환` 탭에 파일을 끌어다 놓고 **[▶ 시작]**. 이후 단계는 **팝업이 물어보는 대로** 이어집니다. |
 | **4. 결과 받기** | `📖 출력` 탭에서 EPUB·Word·한글·Obsidian 중 원하는 형식을 켜고 **[▶ 시작]**. |
 
@@ -104,7 +104,7 @@ PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(�
 
 #### 6단계 — AI 연결
 
-설치가 끝나면 **My Bookshelf - Additional setup** PowerShell 창이 열립니다. **Claude·Codex·둘 다·나중에** 중 하나를 고르면 선택한 CLI를 설치하고, 이어서 옵시디언 설치 여부를 묻습니다. 그 뒤 브라우저 로그인 창을 바로 엽니다. **둘 다**를 고르면 Claude 로그인 뒤 Codex 로그인이 이어지며, 준비된 CLI와 옵시디언은 앱 설정에도 자동으로 등록됩니다.
+설치가 끝나면 **My Bookshelf - Additional setup** PowerShell 창이 열립니다. **Claude·Codex(ChatGPT)·둘 다·나중에** 중 하나를 고르면 선택한 CLI를 설치하고, 이어서 옵시디언 설치 여부를 묻습니다. 그 뒤 브라우저 로그인 창을 바로 엽니다. **둘 다**를 고르면 Claude 로그인 뒤 Codex 로그인이 이어지며, 준비된 CLI와 옵시디언은 앱 설정에도 자동으로 등록됩니다.
 
 CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`에서 Gemini·OpenAI·Anthropic 중 하나의 API 키를 넣습니다.
 
@@ -129,7 +129,7 @@ CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`�
 > powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI codex -Launch
 > ```
 >
-> `-AI codex`(기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다. Node.js 설치 중 **관리자 확인(UAC) 창**이 한 번 뜰 수 있고, winget이 없는 아주 오래된 Windows 10에서는 Node.js(→ Codex CLI) 설치가 자동으로 되지 않아 화면에 "손으로 하실 일" 목록으로 안내될 수 있습니다.
+> `-AI codex`(ChatGPT·기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다. Node.js 설치 중 **관리자 확인(UAC) 창**이 한 번 뜰 수 있고, winget이 없는 아주 오래된 Windows 10에서는 Node.js(→ Codex CLI) 설치가 자동으로 되지 않아 화면에 "손으로 하실 일" 목록으로 안내될 수 있습니다.
 >
 > 기본적으로 선택한 구독 CLI의 브라우저 로그인도 바로 시작합니다 — `-AI both`는 Claude와 Codex 로그인을 모두 시도하므로 Claude Pro/Max, ChatGPT Plus/Pro 구독이 실제로 있어야 합니다. 없다면 `-AI codex`/`-AI claude`로 하나만 고르거나 `-AI none`으로 건너뛰고 API 키를 앱에서 직접 입력하세요. 설치 자체는 5~20분 걸리니 창을 닫지 말고 그대로 두세요.
 
@@ -174,7 +174,7 @@ CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`�
 |---|---|---:|
 | **1. Claude** | Claude Code CLI · Claude Pro/Max 구독 | 약 293MB |
 | **2. Codex** | Codex CLI · ChatGPT Plus/Pro 구독 | 약 363MB(Node.js 포함) |
-| **3. 둘 다** | Claude와 Codex 모두 설치 · 기본 작업 AI는 Codex | 약 656MB |
+| **3. 둘 다** | Claude와 Codex 모두 설치 · 기본 작업 AI는 Codex(ChatGPT) | 약 656MB |
 | **4. 나중에** | CLI를 설치하지 않고 앱에서 API 키 설정 | 0MB |
 
 번호를 입력한 뒤 Enter를 누릅니다. 아무것도 입력하지 않고 Enter를 누르면 기본값인 **4. 나중에**가 선택됩니다. 이미 설치된 CLI는 다시 받지 않으며 추가 용량도 0MB로 표시됩니다.
@@ -216,7 +216,7 @@ CLI를 골랐다면 설치 창이 곧바로 브라우저 로그인 창을 엽니
 > bash install-mybookshelf.sh --ai codex --launch
 > ```
 >
-> `--ai codex`(기본) · `--ai claude` · `--ai both` · `--ai none`을 쓸 수 있습니다. `--ai claude --ai codex`처럼 두 번 적어도 둘 다 설치합니다. `--obsidian`(옵시디언도 설치) · `--target-lang en` 등은 `bash install-mybookshelf.sh --help`에서 볼 수 있습니다.
+> `--ai codex`(ChatGPT·기본) · `--ai claude` · `--ai both` · `--ai none`을 쓸 수 있습니다. `--ai claude --ai codex`처럼 두 번 적어도 둘 다 설치합니다. `--obsidian`(옵시디언도 설치) · `--target-lang en` 등은 `bash install-mybookshelf.sh --help`에서 볼 수 있습니다.
 >
 > **이 방법은 보안 경고를 만나지 않습니다** — `installer` 명령으로 설치하기 때문입니다.
 > 선택한 CLI의 **브라우저 로그인 창도 설치 중 자동으로 열립니다.** API 키 입력만 앱 설정에서 직접 합니다.
