@@ -281,7 +281,10 @@ def build_translate_system(src_lang: str = "", target: str = "") -> str:
 
 # 번역 엔진 ID (UI 라디오와 1:1)
 # 번역 엔진 id = "provider:model". 공급자는 llm_providers.PROVIDERS + Claude CLI(구독).
-_translate_error_logged = False
+# 번역 엔진 오류는 «처음 한 번만» 남기면, 오류가 도중에 바뀌어도(모델 404 →
+# 사용량 한도 …) 뒷 오류가 통째로 묻힌다. 사유가 다르면 각각 한 번씩 남긴다.
+# 2026-09-07 실측: 6~8장 169단락이 gpt-5.5 404로 실패했는데 로그는 한 줄뿐이었다.
+_translate_errors_logged: set[str] = set()
 
 
 def translate_engine_options() -> list[tuple[str, str, bool, str]]:
@@ -458,7 +461,6 @@ def translate(text: str, engine: str, glossary: dict | None = None,
     """단락 하나를 'provider:model' 엔진으로 한국어 번역. 실패 시 None(원문 유지).
     glossary: 앞 단락들에서 이미 소개된 고유명사 {원어: 한글} — 한글만 쓰게 지시.
     src_lang: 감지된 원문 언어 코드(있으면 프롬프트에 명시)."""
-    global _translate_error_logged
     if not engine or ":" not in engine:
         return None
     provider, model = engine.split(":", 1)
@@ -467,13 +469,23 @@ def translate(text: str, engine: str, glossary: dict | None = None,
         # 이미 소개된 고유명사 — 목표 언어 표기만 쓰게 지시 (최근 80개 제한)
         _pairs = "; ".join(f"{en} = {ko}" for en, ko in list(glossary.items())[-80:])
         sys_prompt += " Already-introduced proper nouns (target-language form only, no parentheses): " + _pairs
+    def _log_once(sig: str, msg: str) -> None:
+        # 같은 사유는 한 번만 — 단락마다 같은 줄로 로그를 채우지 않으면서도
+        # 사유가 바뀌면 반드시 새 줄이 남게 한다.
+        if sig not in _translate_errors_logged:
+            _translate_errors_logged.add(sig)
+            append_log(msg)
     try:
         out = llm.complete(provider, model, sys_prompt, text, max_tokens=8192)
-        return out.strip() or None
+        if not (out or "").strip():
+            # 예외 없이 빈 응답이 오는 길목 — 예전에는 아무 흔적도 남지 않아
+            # 원문 그대로 흘러가는 것만 보였다 (2026-09-07).
+            _log_once(f"{engine}|empty", f"ERROR: 번역 실패 [{engine}]: 엔진이 빈 응답을 돌려줌")
+            return None
+        return out.strip()
     except Exception as e:
-        if not _translate_error_logged:
-            append_log(f"ERROR: 번역 실패 [{engine}] ({type(e).__name__}): {str(e)[:300]}")
-            _translate_error_logged = True
+        _log_once(f"{engine}|{type(e).__name__}|{str(e)[:120]}",
+                  f"ERROR: 번역 실패 [{engine}] ({type(e).__name__}): {str(e)[:300]}")
         return None
 
 
@@ -1021,7 +1033,15 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         if dropped_n:
             detail += f" · 삭제 {dropped_n}"
         if failed_n:
+            # 실패는 «원문 그대로»로 저장돼 파일이 완성된 것처럼 보인다. 한 건이라도
+            # 있으면 로그에 남기고, 비중이 크면 결과 문구 앞에 경고를 세운다 — 예전에는
+            # 6~8장의 절반이 영문인 채로 «완료»로 표시됐다 (2026-09-07).
             detail += f" · 실패보존 {failed_n}"
+            _ratio = failed_n / max(translated_n + failed_n, 1)
+            append_log(f"경고: 번역 실패 {failed_n}단락(시도분의 {_ratio:.0%}) — "
+                       f"해당 단락은 원문 그대로 남았다: {ch_path.name}")
+            if _ratio >= 0.20:
+                detail = f"⚠️ 실패 {failed_n}단락이 원문 그대로 남음 · " + detail
         if translated_n == 0:
             ko_path.unlink(missing_ok=True)
             bilingual_path.unlink(missing_ok=True)
