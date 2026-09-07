@@ -1005,3 +1005,19 @@ _EN.update({
         "are not guaranteed. Always check the output against the source yourself before "
         "publishing, submitting, citing, or sharing it.",
 })
+
+# 업데이트 실패 안내 (2026-09-07)
+_EN.update({
+    "업데이트 설치에 실패했습니다(%s). 지금은 이전 버전으로 실행 중입니다.":
+        "The update to %s could not be installed. You are still running the previous version.",
+    "새 버전": "the new version",
+    "원인을 알 수 없습니다": "The cause is unknown",
+    "자세한 기록: ~/Library/Application Support/MyBookshelf/update.log":
+        "Details: ~/Library/Application Support/MyBookshelf/update.log",
+    "내려받은 파일을 풀지 못했습니다": "The downloaded file could not be unpacked",
+    "내려받은 파일 안에 앱이 없습니다": "The downloaded file did not contain the app",
+    "설치 폴더에 쓸 권한이 없습니다(관리자로 설치된 앱일 수 있습니다)":
+        "No permission to write to the install folder (the app may have been installed as administrator)",
+    "앱 파일을 바꾸지 못했습니다(권한 문제일 수 있습니다)":
+        "The app files could not be replaced (possibly a permissions problem)",
+})

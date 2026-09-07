@@ -242,8 +242,16 @@ APP_PATH="$1"     # 교체 대상 .app 번들
 ZIP_PATH="$2"     # 내려받은 업데이트 zip
 SUPPORT="$HOME/Library/Application Support/MyBookshelf"
 LOG="$SUPPORT/update.log"
+RESULT="$SUPPORT/update_result.json"
 mkdir -p "$SUPPORT" 2>/dev/null
 log(){ echo "$(date '+%Y-%m-%d %H:%M:%S')  $*" >> "$LOG" 2>/dev/null; }
+# 교체 결과를 파일로 남긴다. 헬퍼는 앱이 죽은 뒤에 도는 별도 프로세스라
+# 실패해도 화면에 알릴 길이 없어, 예전 버전은 옛 앱을 그대로 다시 띄우고
+# 조용히 끝났다 — 사용자에겐 «눌러도 그대로»로만 보였다. 다음 실행 때
+# 앱이 이 파일을 읽어 알린다 (2026-09-07).
+result(){ printf '{"ok": %s, "reason": "%s", "target": "%s", "at": "%s"}\n' \
+  "$1" "$2" "$TARGET_VER" "$(date '+%Y-%m-%d %H:%M:%S')" > "$RESULT" 2>/dev/null; }
+TARGET_VER=""
 log "helper start APP=$APP_PATH ZIP=$ZIP_PATH"
 
 # 1) 앱 프로세스(streamlit pipeline_app.py + 창 desktop.py) 종료 대기(최대 ~10초)
@@ -259,15 +267,20 @@ sleep 1
 # 3) zip 해제
 TMPD="$(mktemp -d)"
 if ! /usr/bin/ditto -x -k "$ZIP_PATH" "$TMPD" >>"$LOG" 2>&1; then
-  log "extract failed"; /usr/bin/open "$APP_PATH" 2>/dev/null; exit 1
+  log "extract failed"; result false "내려받은 파일을 풀지 못했습니다"
+  /usr/bin/open "$APP_PATH" 2>/dev/null; exit 1
 fi
 NEWAPP="$TMPD/MyBookshelf.app"
 if [ ! -d "$NEWAPP" ]; then
   NEWAPP="$(/usr/bin/find "$TMPD" -maxdepth 3 -name 'MyBookshelf.app' -type d 2>/dev/null | head -1)"
 fi
 if [ ! -d "$NEWAPP" ]; then
-  log "new .app not found in zip"; /usr/bin/open "$APP_PATH" 2>/dev/null; exit 1
+  log "new .app not found in zip"; result false "내려받은 파일 안에 앱이 없습니다"
+  /usr/bin/open "$APP_PATH" 2>/dev/null; exit 1
 fi
+
+TARGET_VER="$(/usr/bin/sed -n 's/^APP_VERSION *= *"\(.*\)"/\1/p' \
+  "$NEWAPP/Contents/Resources/version.py" 2>/dev/null | head -1)"
 
 # 4) 번들 교체(백업 후 ditto). 실패하면 백업 복원.
 #    .old 를 고정 이름으로 쓰면, 앞선 실패가 남긴 root 소유 .old 를 지우지 못해
@@ -279,15 +292,17 @@ rm -rf "$APP_PATH".old 2>/dev/null
 if [ -d "$APP_PATH" ]; then
   if ! mv "$APP_PATH" "$OLD_PATH" 2>>"$LOG"; then
     log "cannot move old bundle aside (owned by another user?) - abort"
+    result false "설치 폴더에 쓸 권한이 없습니다(관리자로 설치된 앱일 수 있습니다)"
     /usr/bin/open "$APP_PATH" 2>/dev/null
     exit 1
   fi
 fi
 if /usr/bin/ditto "$NEWAPP" "$APP_PATH" >>"$LOG" 2>&1; then
   rm -rf "$OLD_PATH" 2>/dev/null
-  log "swap ok -> $APP_PATH"
+  log "swap ok -> $APP_PATH"; result true ""
 else
   log "swap failed - restoring backup"
+  result false "앱 파일을 바꾸지 못했습니다(권한 문제일 수 있습니다)"
   rm -rf "$APP_PATH" 2>/dev/null
   [ -d "$OLD_PATH" ] && mv "$OLD_PATH" "$APP_PATH"
 fi
@@ -299,6 +314,26 @@ sleep 1
 /usr/bin/open "$APP_PATH" 2>>"$LOG"
 log "relaunched; helper done"
 """
+
+
+def take_last_update_result() -> dict | None:
+    """직전 업데이트 시도의 결과를 한 번 읽고 지운다(macOS).
+
+    헬퍼는 앱이 종료된 뒤 도는 별도 프로세스라 실패를 화면에 알릴 수 없다.
+    파일로 남겨 두고 다음 실행 때 앱이 여기서 집어 간다 (2026-09-07)."""
+    if sys.platform != "darwin":
+        return None
+    marker = Path.home() / "Library/Application Support/MyBookshelf/update_result.json"
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    finally:
+        try:
+            marker.unlink()
+        except Exception:
+            pass
+    return data if isinstance(data, dict) else None
 
 
 def _mac_launch_helper_and_exit(zip_path: Path) -> bool:

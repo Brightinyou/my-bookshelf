@@ -915,6 +915,19 @@ def _render_update_notice() -> None:
     """새 버전 감지 시 반자동 업데이트 팝업 (Windows·macOS). 실패는 모두 안내형으로 폴백."""
     if sys.platform not in ("win32", "darwin"):
         return
+    # 직전 시도가 조용히 실패했으면(헬퍼가 남긴 결과 파일) 먼저 알린다.
+    # 알리지 않으면 «눌러도 버전이 그대로»로만 보인다 (2026-09-07).
+    if "_update_result" not in st.session_state:
+        st.session_state["_update_result"] = updater.take_last_update_result() or {}
+    _res = st.session_state.get("_update_result") or {}
+    if _res and not _res.get("ok"):
+        _tgt = _res.get("target") or ""
+        st.error(
+            tf("업데이트 설치에 실패했습니다(%s). 지금은 이전 버전으로 실행 중입니다.",
+               _tgt or t("새 버전"))
+            + " — " + (_res.get("reason") or t("원인을 알 수 없습니다"))
+        )
+        st.caption(t("자세한 기록: ~/Library/Application Support/MyBookshelf/update.log"))
     if "_update_info" not in st.session_state:
         st.session_state["_update_info"] = updater.check_for_update() or {}
     info = st.session_state.get("_update_info") or {}
