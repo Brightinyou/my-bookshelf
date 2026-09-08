@@ -147,6 +147,15 @@ if ! env_healthy; then
     osascript -e 'display notification "설치 완료! 앱 창을 엽니다." with title "My Bookshelf"'
 fi
 
+# ── 기존 환경의 신규 의존성만 보충 (venv 재생성 없이) ──
+if ! "$VENV/bin/python" -c 'import olefile, streamlit; from packaging.version import Version; assert Version(streamlit.__version__) >= Version("1.49")' >/dev/null 2>&1; then
+    mkdir -p "$SUPPORT"
+    if ! "$VENV/bin/python" -m pip install 'olefile>=0.47' 'streamlit>=1.49' >>"$LOG" 2>&1; then
+        osascript -e 'display alert "추가 패키지 설치 실패" message "네트워크 연결을 확인한 뒤 앱을 다시 실행하세요. 기존 문서와 설정은 보존됩니다." as warning'
+        exit 1
+    fi
+fi
+
 # ── 네이티브 창 실행 (desktop.py가 서버 기동·창·종료 관리) ──
 export PATH="$VENV/bin:$PATH"   # pdftotext 등 CLI 탐지
 mkdir -p "$SUPPORT"
