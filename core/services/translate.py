@@ -534,7 +534,11 @@ _RE_EXPLICIT_CITE = _re.compile(
     r"같은\s*책|위의\s*책|앞의\s*책|ibid|op\.\s*cit|"
     r"p\.\s*\d+|pp\.\s*\d+|각주\s*\d|"
     r"\d+\s*쪽|쪽[,. ]|"
-    r"[A-Z][a-z]{1,15},\s+[A-Z]|"          # Author, I. 패턴
+    # ★대소문자를 지켜야 뜻이 있는 패턴이다 (2026-09-08). 이 정규식 전체에
+    # IGNORECASE가 걸려 있어 이 줄이 사실상 «낱말, 낱말»이 됐고, 쉼표가 든 영어
+    # 문장이 죄다 서지 표기로 잡혔다(실측: 'however, i' 'example, i' 'Finally, t').
+    # `(?-i:…)`로 이 부분만 대소문자를 지킨다.
+    r"(?-i:[A-Z][a-z]{1,15},\s+[A-Z])|"    # Author, I. 패턴
     r"\b(19|20)\d{2}[),]|"                 # (2020) 또는 2020) 연도
     r"마태|누가복음|요한복음|로마서|고린도|갈라디|에베|"
     r"시편\s*\d|잠언\s*\d|창세기|출애굽|이사야|예레미야|"
@@ -730,31 +734,43 @@ def _looks_like_section_heading(p: str) -> bool:
     return len(_SECTION_NUM_TOKEN.findall(p)) <= 2
 
 
-def should_skip_translation(paragraph: str) -> bool:
-    """단락 번역 생략 조건: 인용·각주 (이미 목표 언어 단락은 캐시로 별도 처리)."""
+def skip_reason(paragraph: str) -> str | None:
+    """건너뛴다면 «어느 규칙 때문인지», 아니면 None.
+
+    ★판정을 한 곳으로 모으고 이유를 돌려준다 (2026-09-08). 예전에는 결과만 bool로
+    나와서, 원문이 그대로 남은 문단을 보고도 «규칙이 그리 정한 것»인지 «잘못 걸린
+    것»인지 알 길이 없었다. 실측 조사 때마다 규칙을 코드에서 다시 끌어와 재현해야
+    했다. 이유를 progress.json에 함께 적어 두면 나중에 훑어볼 수 있다."""
     p = paragraph.strip()
     if not p or p == _PAGE_TOKEN:
-        return True
+        return "빈칸"
     if _FOOTNOTE_DAGGER.match(p):
-        return True
+        return "단검표"
     if _CITATION_NUMBERED.match(p):
-        return True
+        return "번호인용"
     if _CITATION_BULLET.match(p):
-        return True
-    # OCR 분리 포함 각주 번호 시작 + 짧은 단락
-    # 다만 번호로 시작한다고 다 각주가 아니다 — 번호 목록(«1. 사람은 …»)과
-    # 성경 절(«31 너희는 남에게 …»)은 본문이다. 설교문을 독일어로 번역했더니
-    # 그런 줄만 한국어로 남아 산출물에 섞였다. 번호를 떼어 낸 나머지가 온전한
-    # 문장이면 본문으로 본다 — 각주를 몇 개 더 번역하는 손해가, 본문을 통째로
-    # 빼먹는 손해보다 훨씬 작다. (2026-08-31)
-    if (len(p) < 500 and _FOOTNOTE_NUM_START.match(p)
+        return "불릿인용"
+    # 번호로 시작한다고 다 각주가 아니다 — 번호 목록(«1. 사람은 …»)과 성경 절
+    # («31 너희는 남에게 …»)은 본문이다. 설교문을 독일어로 번역했더니 그런 줄만
+    # 한국어로 남아 산출물에 섞였다. 번호를 떼어 낸 나머지가 온전한 문장이면 본문으로
+    # 본다 — 각주를 몇 개 더 번역하는 손해가, 본문을 통째로 빼먹는 손해보다 훨씬
+    # 작다. (2026-08-31)
+    # ★그 원칙에 맞춰 길이 상한을 500 → 250으로 낮췄다 (2026-09-08). 진짜 각주는
+    # 짧다(실측 중앙 51자). 500자까지 각주로 인정하는 바람에 300자 넘는 본문 229문단이
+    # 라이브러리 전체에서 통째로 빠져 있었다 — 논문 주요 자료가 다수였다.
+    if (len(p) < 250 and _FOOTNOTE_NUM_START.match(p)
             and not _looks_like_body_sentence(p)
             and not _looks_like_section_heading(p)):
-        return True
-    # 짧고 URL 들어간 단락 = 인용일 가능성 (500자 이하 + arXiv/DOI/URL)
+        return "각주번호"
+    # 짧고 URL 들어간 단락 = 인용일 가능성 (arXiv/DOI/URL)
     if len(p) < 500 and _CITATION_URL_HEAVY.search(p):
-        return True
-    return False
+        return "URL·DOI"
+    return None
+
+
+def should_skip_translation(paragraph: str) -> bool:
+    """단락 번역 생략 조건: 인용·각주 (이미 목표 언어 단락은 캐시로 별도 처리)."""
+    return skip_reason(paragraph) is not None
 
 
 def should_drop_paragraph(paragraph: str) -> bool:
@@ -1045,11 +1061,16 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                 if progress_cb:
                     progress_cb(idx, total, translated_n, preserved_n, dropped_n, failed_n, resumed_n, api_calls)
                 continue
-            if should_skip_translation(p):
+            _skip = skip_reason(p)
+            if _skip:
                 out.append(p)
                 bilingual_pairs.append((p, p))
                 preserved_n += 1
-                cached_rows[idx] = {"idx": idx, "src": p, "tgt": p, "status": "preserved"}
+                # 어느 규칙이 건너뛰게 했는지 함께 남긴다 — 나중에 훑어볼 수 있도록
+                # (2026-09-08). 원문이 그대로 남은 문단을 보고 «규칙대로»인지
+                # «잘못 걸린 것»인지 가리려면 이 한 낱말이 필요하다.
+                cached_rows[idx] = {"idx": idx, "src": p, "tgt": p,
+                                    "status": "preserved", "reason": _skip}
             else:
                 try:
                     ko = _translate_paragraph(p, engine, src_lang=src_lang, target=_target)

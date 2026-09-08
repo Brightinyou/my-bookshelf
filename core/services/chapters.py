@@ -411,6 +411,21 @@ def diagnose_split(ws_name: str, stem: str) -> list:
                 left += 1
         if left and left / max(len(blocks), 1) >= 0.05:
             warns.append(f"«{p.stem}»의 {left}단락이 번역되지 않고 원문 그대로입니다")
+
+    # ⑤ «규칙이 건너뛴» 문단 중 수상하게 긴 것 — 진짜 각주는 짧다(실측 중앙 51자).
+    #    이건 실패가 아니라 «규칙대로 건너뛴» 것이라 ④에 안 걸린다. 그래서 조용히
+    #    본문이 사라진다 — 2026-09-08에 라이브러리 전체에서 229문단을 그렇게 잃고
+    #    있었다. 길이만으로 완전히 가릴 수는 없으니 «살펴보라»는 신호로만 쓴다.
+    from services.translate import skip_reason
+    _long = 0
+    for p in files:
+        for para in _re.split(r"\n\s*\n", bodies[p]):
+            t = para.strip()
+            if len(t) >= 300 and skip_reason(t):
+                _long += 1
+    if _long:
+        warns.append(f"각주·인용으로 보고 건너뛸 문단 중 300자가 넘는 것이 {_long}개입니다 "
+                     f"— 본문이 섞여 있을 수 있으니 확인해 보세요")
     return warns
 
 
