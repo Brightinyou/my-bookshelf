@@ -710,6 +710,26 @@ def _looks_like_body_sentence(p: str) -> bool:
     return bool(_SENTENCE_END.search(rest))
 
 
+# 절 번호는 각주 번호가 아니다 (2026-09-08).
+# `_FOOTNOTE_NUM_START`의 `\d{1,3}[\s.,):]`가 «3.4.2 Artificial Persons …»의 «3.»을
+# 각주 번호로 읽고, 절 제목은 문장이 아니라 `_looks_like_body_sentence` 관문도 못
+# 넘어 통째로 건너뛰었다. 실측(군켈 『Person, Thing, Robot』): 절 제목 42개가 영문으로
+# 남고, **제목에 본문이 붙어 있던 16문단은 본문까지 통째로** 번역되지 않았다.
+# 각주 번호는 홑 정수(`1.` `[1]` `12)`)지만 절 번호는 **숫자 사이에 점이 있다**.
+_SECTION_NUM_START = _re.compile(r"^\s*\d+(?:\.\d+){1,3}\s+\S")
+_SECTION_NUM_TOKEN = _re.compile(r"\b\d+(?:\.\d+){1,3}\b")
+
+
+def _looks_like_section_heading(p: str) -> bool:
+    """절 번호로 시작하는 본문 단락인가 — 차례 줄은 뺀다.
+
+    차례는 «1.1 제목 2 1.2 제목 5 …»처럼 절 번호를 여럿 달고 오지만, 본문의 절은
+    첫머리에 하나만 있다. 실측: 차례 줄 3~10개 vs 본문 절 문단 69개 전부 1개."""
+    if not _SECTION_NUM_START.match(p):
+        return False
+    return len(_SECTION_NUM_TOKEN.findall(p)) <= 2
+
+
 def should_skip_translation(paragraph: str) -> bool:
     """단락 번역 생략 조건: 인용·각주 (이미 목표 언어 단락은 캐시로 별도 처리)."""
     p = paragraph.strip()
@@ -727,7 +747,9 @@ def should_skip_translation(paragraph: str) -> bool:
     # 그런 줄만 한국어로 남아 산출물에 섞였다. 번호를 떼어 낸 나머지가 온전한
     # 문장이면 본문으로 본다 — 각주를 몇 개 더 번역하는 손해가, 본문을 통째로
     # 빼먹는 손해보다 훨씬 작다. (2026-08-31)
-    if len(p) < 500 and _FOOTNOTE_NUM_START.match(p) and not _looks_like_body_sentence(p):
+    if (len(p) < 500 and _FOOTNOTE_NUM_START.match(p)
+            and not _looks_like_body_sentence(p)
+            and not _looks_like_section_heading(p)):
         return True
     # 짧고 URL 들어간 단락 = 인용일 가능성 (500자 이하 + arXiv/DOI/URL)
     if len(p) < 500 and _CITATION_URL_HEAVY.search(p):
