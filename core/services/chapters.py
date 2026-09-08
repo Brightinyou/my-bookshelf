@@ -10,7 +10,7 @@ import llm_providers as llm
 
 from services.common import TXT_SUB, _nfc, append_log
 from services.files import find_md, find_txt, txt_dir
-from services.translate import DERIVED_SUFFIXES as _DERIVED, find_translation
+from services.translate import DERIVED_SUFFIXES as _DERIVED, find_translation, is_derived
 from services import note_i18n as NI   # 노트 구획 제목(언어별) — 2026-08-31
 from services.translate import _split_paragraphs_robust
 
@@ -337,6 +337,81 @@ def _purge_stale_chapter_files(ch_dir: Path, new_stems: set[str],
             f.unlink()
         except Exception:
             pass
+
+
+def _diag_key(s: str) -> str:
+    return _re.sub(r"[^0-9a-z가-힣]+", "", s.lower())
+
+
+def diagnose_split(ws_name: str, stem: str) -> list:
+    """책을 최종 산출물로 만들기 직전에 챕터 구성을 점검한다. 경고 문구 목록.
+
+    ★여기가 점검할 자리인 이유 (2026-09-08): 분할이 어긋나도 번역·요약은 그냥
+    돌아가고, 잘못은 **책을 펴 봐야** 드러난다. 실측(군켈 *Person, Thing, Robot*):
+    1·2·3장이 한 파일에 뭉치고 6장 자리에 1,767자짜리 껍데기가 섰는데도 번역과
+    요약이 끝까지 돌았고, EPUB을 열고 나서야 알았다. 요약은 AI를 실제로 쓰는
+    단계라 **그 앞에서 막아야** 값이 덜 든다. 네 검사 모두 AI를 쓰지 않는다."""
+    warns: list = []
+    ch_dir = chapters_dir(ws_name, stem)
+    if not ch_dir.exists():
+        return warns
+    files = [p for p in sorted(ch_dir.glob("*.txt")) if not is_derived(p.stem)]
+    if not files:
+        return warns
+    bodies = {p: p.read_text(encoding="utf-8", errors="ignore") for p in files}
+
+    # ① 원본을 다 담고 있는가 — 이어 붙여 공백을 뺀 뒤 원본과 견준다
+    src = find_txt(DONE_DIR, ws_name, stem)
+    if src:
+        want = _re.sub(r"\s+", "", src.read_text(encoding="utf-8", errors="ignore"))
+        got = _re.sub(r"\s+", "", "".join(bodies[p] for p in files))
+        if got != want:
+            lost = len(want) - len(got)
+            warns.append(f"챕터를 다 이어 붙여도 원본과 다릅니다 — "
+                         + (f"{lost:,}자 모자랍니다" if lost > 0 else "원본에 없는 글자가 있습니다"))
+
+    # ② 크기가 튀는 장 — 뭉쳐 있거나(2배 초과) 껍데기만 남은(중앙값의 15% 미만) 장
+    sizes = sorted(len(v) for v in bodies.values())
+    mid = sizes[len(sizes) // 2] or 1
+    for p in files:
+        n = len(bodies[p])
+        if n > mid * 2.2:
+            warns.append(f"«{p.stem}»이 다른 장의 {n / mid:.1f}배입니다 — 여러 장이 뭉쳤을 수 있습니다")
+        elif n < mid * 0.15 and n < 5000 and p not in (files[0], files[-1]):
+            # 절대 기준을 함께 둔다 — 머리말·Preface는 원래 짧아서 비율만으로는
+            # 오탐이 난다(실측: 10,561자 Preface가 걸렸다). 껍데기는 훨씬 작다.
+            warns.append(f"«{p.stem}»이 {n:,}자뿐입니다 — 잘못 생긴 껍데기일 수 있습니다")
+
+    # ③ 남의 장 시작 표제가 본문 안에 서 있는가 — 경계가 어긋났다는 직접 증거
+    keys = {_diag_key(_re.sub(r"^\d+_", "", p.stem)): p.stem for p in files}
+    for p in files[1:]:
+        mine = _diag_key(_re.sub(r"^\d+_", "", p.stem))
+        for para in _re.split(r"\n\s*\n", bodies[p]):
+            t = " ".join(para.split())
+            m = _re.fullmatch(r"\d{1,3}\s+(.+)", t)
+            if not m:
+                continue
+            k = _diag_key(m.group(1))
+            if k in keys and k != mine:
+                warns.append(f"«{p.stem}» 안에 «{keys[k]}» 장의 시작 표제가 있습니다 — 경계가 어긋났습니다")
+                break
+
+    # ④ 번역이 원문 그대로 남은 단락 — 대역 파일이 있으면 센다
+    from services.translate import should_skip_translation
+    for p in files:
+        bil = p.with_name(p.stem + "_bilingual.txt")
+        if not bil.exists():
+            continue
+        blocks = bil.read_text(encoding="utf-8", errors="ignore").split("\n\n---\n\n")
+        left = 0
+        for blk in blocks:
+            i = blk.find("\n\n")
+            a, b = (blk[:i], blk[i + 2:]) if i > 0 else (blk, "")
+            if a.strip() == b.strip() and not should_skip_translation(a):
+                left += 1
+        if left and left / max(len(blocks), 1) >= 0.05:
+            warns.append(f"«{p.stem}»의 {left}단락이 번역되지 않고 원문 그대로입니다")
+    return warns
 
 
 def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -> tuple[int, str, str]:

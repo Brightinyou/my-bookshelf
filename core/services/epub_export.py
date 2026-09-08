@@ -17,7 +17,7 @@ import config as cfg
 
 from services.common import append_log
 from services.translate import DERIVED_SUFFIXES as _DERIVED, find_translation
-from services.chapters import _author_from_stem, chapters_dir
+from services.chapters import _author_from_stem, chapters_dir, diagnose_split
 
 
 def set_epub_dir(path_str: str) -> None:
@@ -559,6 +559,11 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
     progress_cb(text: str)가 있으면 챕터 진행을 실시간으로 알려준다."""
     if not chapters_dir(ws_name, stem).exists():
         return False, "챕터 폴더 없음"
+    # 책으로 굳히기 직전 점검 — 분할이 어긋나도 번역·요약은 그냥 돌아서,
+    # 잘못은 책을 펴 봐야 드러났다 (2026-09-08).
+    _warns = diagnose_split(ws_name, stem)
+    for _w in _warns:
+        append_log(f"EPUB 점검 경고: {_w}")
     chapters = chapter_files(ws_name, stem)
     if not chapters:
         return False, "챕터 없음"
@@ -718,6 +723,9 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
             for arcname, content in text_entries:
                 z.writestr(arcname, content)
         tmp_path.replace(out_path)
+        if _warns:
+            # 로그에만 두면 못 본다 — 결과 문구에 세운다 (2026-09-08).
+            return True, f"{out_path} · ⚠️ 점검 {len(_warns)}건: " + " / ".join(_warns[:2])
         return True, str(out_path)
     except Exception as e:
         tmp_path.unlink(missing_ok=True)

@@ -67,7 +67,7 @@ from services.translate import (
 )
 from services.chapters import (
     _is_small_document_for_whole_translation,
-    _write_single_chapter_from_text, chapters_dir, list_done_books,
+    _write_single_chapter_from_text, chapters_dir, diagnose_split, list_done_books,
     find_overview_file, list_summary_files,
     load_summary_file, split_book_to_chapters, summarize_book_overview,
     summarize_one_chapter, summary_file_for, LAST_SPLIT_WARNING, SPLIT_MODE_LABELS,
@@ -3185,6 +3185,14 @@ if _active_view == "4_summary":
         if translation_status(_cf).get("state") in ("running", "partial", "failed"):
             return False, f"{_cf.name}: 번역을 완료한 뒤 요약해 주세요"
         _book = _nfc(_cf.parent.name)
+        # ★요약은 AI를 실제로 쓰는 단계다 — 분할이 어긋난 채로 돌면 값만 치르고
+        # 다시 해야 한다. 책마다 한 번만 점검해 알린다 (2026-09-08).
+        _seen = st.session_state.setdefault("_split_checked4", set())
+        if _book not in _seen:
+            _seen.add(_book)
+            for _w in diagnose_split(DEFAULT_WS, _book):
+                append_log(f"요약 전 점검 경고 [{_book}]: {_w}")
+                st.warning(f"{_book} — {_w}", icon=":material/rule:")
         _ok, _msg = summarize_one_chapter(_cf, _book)
         if _ok:
             queue_remove("tab4_ready", [rel])
