@@ -41,7 +41,7 @@ class JobStorageTest(unittest.TestCase):
             q._QUEUE_FILE.write_text("broken", encoding="utf-8")
             with self.assertRaises(ValueError):
                 q.queue_add("tab3_ready", ["new"])
-            self.assertEqual(q._QUEUE_FILE.read_text(), "broken")
+            self.assertEqual(q._QUEUE_FILE.read_text(encoding="utf-8"), "broken")
 
 
 if __name__ == "__main__":

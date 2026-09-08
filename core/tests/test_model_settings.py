@@ -68,12 +68,12 @@ class ModelSettingsTest(unittest.TestCase):
         (root / "models_cache.json").write_text(json.dumps({"models": [
             {"slug": "available-model", "display_name": "Available Model", "visibility": "list"},
             {"slug": "hidden-model", "visibility": "hide"},
-        ]}))
+        ]}), encoding="utf-8")
         with patch.dict(os.environ, {"CODEX_HOME": str(root)}):
             self.assertIn("available-model", llm.model_choices("codex_cli"))
             self.assertNotIn("hidden-model", llm.model_choices("codex_cli"))
             self.assertEqual(llm.model_label("codex_cli", "available-model"), "Available Model")
-            (root / "models_cache.json").write_text("invalid")
+            (root / "models_cache.json").write_text("invalid", encoding="utf-8")
             self.assertIn("default", llm.model_choices("codex_cli"))
 
     def test_parallel_preferences_preserve_model_and_api_key(self):

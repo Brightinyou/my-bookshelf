@@ -9,7 +9,7 @@ from services import i18n
 
 
 def app_source():
-    source = (Path(__file__).parents[1] / "pipeline_app.py").read_text()
+    source = (Path(__file__).parents[1] / "pipeline_app.py").read_text(encoding="utf-8")
     names = {"_responsive_columns", "_checklist_keys", "_checklist"}
     definitions = "\n\n".join(ast.get_source_segment(source, node)
         for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name in names)

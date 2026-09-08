@@ -36,7 +36,7 @@ class PartialTranslationTest(unittest.TestCase):
         self.assertEqual(translate.call_count, 1)
         self.assertIn("Second", translate.call_args.args[0])
         self.assertEqual(tr.translation_status(self.path)["state"], "complete")
-        self.assertIn("첫 번째", tr.find_translation(self.path).read_text())
+        self.assertIn("첫 번째", tr.find_translation(self.path).read_text(encoding="utf-8"))
 
     def test_model_error_stops_before_next_paragraph(self):
         with patch.object(tr, "_translate_paragraph", side_effect=llm.ModelConfigurationError("model 404")) as translate:
@@ -51,7 +51,7 @@ class PartialTranslationTest(unittest.TestCase):
         old.write_text("이전 결과", encoding="utf-8")
         with patch.object(tr, "_translate_paragraph", return_value=None):
             tr.translate_one_chapter(self.path, "codex_cli:default")
-        self.assertEqual(old.read_text(), "이전 결과")
+        self.assertEqual(old.read_text(encoding="utf-8"), "이전 결과")
         self.assertIsNone(tr.find_translation(self.path))
 
 

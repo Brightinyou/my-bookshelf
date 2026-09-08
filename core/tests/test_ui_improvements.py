@@ -113,7 +113,7 @@ class UIImprovementsTest(unittest.TestCase):
             self.assertFalse(self.app.exception)
             self.assertEqual(self.app.button(key="w5_folder").label, "Wiki 저장 폴더 열기")
             # Not wrapped in icon_*: the descriptive text must remain visible.
-            source = (Path(__file__).parents[1] / "pipeline_app.py").read_text()
+            source = (Path(__file__).parents[1] / "pipeline_app.py").read_text(encoding="utf-8")
             self.assertIn('_wv_col2.button(t("Wiki 저장 폴더 열기")', source)
 
     def test_model_dropdown_saves_selection_without_text_input(self):
