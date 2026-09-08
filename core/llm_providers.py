@@ -12,9 +12,11 @@ import shutil
 import subprocess
 import tempfile
 import time
+import threading
 from pathlib import Path
+from services.storage import file_lock, write_json_atomic
 
-CONFIG_DIR = Path.home() / ".config" / "mybookshelf"
+CONFIG_DIR = Path(os.environ.get("MYBOOKSHELF_CONFIG_DIR") or (Path.home() / ".config" / "mybookshelf"))
 KEYS_FILE = CONFIG_DIR / "keys.json"
 
 API_PROVIDERS = ("gemini", "openai", "anthropic")
@@ -39,12 +41,12 @@ PROVIDERS: dict[str, dict] = {
     },
     "claude_cli": {
         "label": "Claude CLI",
-        "models": ["claude-sonnet-4-6", "claude-opus-4-8"],
+        "models": ["default", "sonnet", "opus", "haiku"],
         "hint": "",
     },
     "codex_cli": {
         "label": "Codex CLI (ChatGPT)",
-        "models": ["default"],  # ChatGPT 계정은 모델 지정 불가(o3/o4-mini 400오류) → 기본 모델 사용
+        "models": ["default"],  # Account-specific IDs are supplied by settings, not guessed.
         "hint": "",
     },
 }
@@ -97,18 +99,25 @@ def key_source(provider: str) -> str:
 
 def save_key(provider: str, key: str) -> None:
     """Save keys to keys.json. Empty values clear the saved key."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    data = _load_all()
-    key = (key or "").strip()
-    if key:
-        data[provider] = key
-    else:
-        data.pop(provider, None)
-    KEYS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    try:
-        os.chmod(KEYS_FILE, 0o600)
-    except Exception:
-        pass
+    _update_saved({provider: (key or "").strip() or None})
+
+
+def _update_saved(updates):
+    # Desktop resize events and UI settings can arrive in different processes.
+    with file_lock(KEYS_FILE.with_suffix(".lock")):
+        data = json.loads(KEYS_FILE.read_text(encoding="utf-8")) if KEYS_FILE.exists() else {}
+        if all(data.get(k) == v for k, v in updates.items()):
+            return
+        for key, value in updates.items():
+            if value is None:
+                data.pop(key, None)
+            else:
+                data[key] = value
+        write_json_atomic(KEYS_FILE, data)
+        try:
+            os.chmod(KEYS_FILE, 0o600)
+        except OSError:
+            pass
 
 
 def has_key(provider: str) -> bool:
@@ -135,26 +144,82 @@ def first_available_provider_model() -> tuple[str, str]:
     return "gemini", PROVIDERS["gemini"]["models"][0]
 
 
-def wiki_provider_model() -> tuple[str, str]:
-    """위키 생성에 쓸 (provider, model). 설정 없으면 사용 가능한 공급자를 우선 선택."""
+def default_provider_model() -> tuple[str, str]:
+    """App default. Preserve explicit model IDs, including IDs outside presets."""
     d = _load_all()
     prov = d.get("wiki_provider") or ""
-    if prov not in PROVIDERS or not has_key(prov):
+    if prov not in PROVIDERS:
         return first_available_provider_model()
     model = d.get("wiki_model") or PROVIDERS[prov]["models"][0]
-    if model not in PROVIDERS[prov]["models"]:
-        model = PROVIDERS[prov]["models"][0]
     return prov, model
 
-def set_wiki_model(provider: str, model: str) -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    d = _load_all()
-    d["wiki_provider"], d["wiki_model"] = provider, model
-    KEYS_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def task_provider_model(task: str) -> tuple[str, str]:
+    override = get_pref("task_models", {}).get(task)
+    if isinstance(override, dict) and override.get("provider") in PROVIDERS and override.get("model"):
+        # Do not silently switch a deliberately configured but unavailable provider.
+        return override["provider"], override["model"]
+    return default_provider_model()
+
+
+def wiki_provider_model() -> tuple[str, str]:
+    return task_provider_model("summary")
+
+
+def set_task_model(task: str, provider: str = "", model: str = "") -> None:
+    models = dict(get_pref("task_models", {}))
+    if provider:
+        models[task] = {"provider": provider, "model": _validate_model(provider, model)}
+    else:
+        models.pop(task, None)
+    set_pref("task_models", models)
+
+
+def _validate_model(provider: str, model: str) -> str:
+    model = str(model).strip()
+    if provider not in PROVIDERS or not model or any(c.isspace() for c in model):
+        raise ValueError("공급자와 공백 없는 모델 ID를 입력하세요")
+    return model
+
+
+def codex_model_catalog() -> dict[str, str]:
+    """Read the CLI's local model catalog without contacting an AI provider."""
+    root = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
     try:
-        os.chmod(KEYS_FILE, 0o600)
-    except Exception:
-        pass
+        data = json.loads((root / "models_cache.json").read_text(encoding="utf-8"))
+        return {m["slug"]: (m.get("display_name") or m["slug"])
+                for m in data.get("models", [])
+                if isinstance(m, dict) and isinstance(m.get("slug"), str)
+                and m["slug"] and m.get("visibility", "list") == "list"}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+
+
+def model_label(provider: str, model: str) -> str:
+    if provider == "codex_cli":
+        return codex_model_catalog().get(model, model)
+    if provider == "claude_cli":
+        return {"sonnet": "Claude Sonnet", "opus": "Claude Opus", "haiku": "Claude Haiku"}.get(model, model)
+    return model
+
+
+def model_choices(provider: str) -> list[str]:
+    choices = list(PROVIDERS[provider]["models"])
+    if provider == "codex_cli":
+        choices.extend(codex_model_catalog())
+    if provider in CLI_PROVIDERS:
+        choices.append(cli_configured_model(provider))
+    data = _load_all()
+    if data.get("wiki_provider") == provider:
+        choices.append(data.get("wiki_model", ""))
+    for selected in (data.get("pref_task_models") or {}).values():
+        if isinstance(selected, dict) and selected.get("provider") == provider:
+            choices.append(selected.get("model", ""))
+    return list(dict.fromkeys(m for m in choices if m))
+
+def set_wiki_model(provider: str, model: str) -> None:
+    model = _validate_model(provider, model)
+    _update_saved({"wiki_provider": provider, "wiki_model": model})
 
 
 # ── UI 선호 설정 (번역 토글 등 — 재시작해도 유지, 2026-06-11) ──
@@ -163,16 +228,7 @@ def get_pref(key: str, default=None):
 
 
 def set_pref(key: str, value) -> None:
-    d = _load_all()
-    if d.get("pref_" + key) == value:
-        return
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    d["pref_" + key] = value
-    KEYS_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
-    try:
-        os.chmod(KEYS_FILE, 0o600)
-    except Exception:
-        pass
+    _update_saved({"pref_" + key: value})
 
 
 def cli_model_or_default(provider: str) -> str:
@@ -183,14 +239,15 @@ def cli_model_or_default(provider: str) -> str:
 
 
 # CLI가 'default' 모델로 돌 때 세션 헤더에서 확인된 실제 모델명 (요약 노트 기록용)
-_LAST_CLI_MODEL = ""
+_CLI_RESULT = threading.local()
 
 
 def effective_wiki_model() -> str:
     """노트 frontmatter 기록용 실제 모델명 — 'default'면 CLI 헤더에서 잡은 이름."""
     _p, model = wiki_provider_model()
-    if model in ("default", "") and _LAST_CLI_MODEL:
-        return _LAST_CLI_MODEL
+    actual = getattr(_CLI_RESULT, "model", "")
+    if model in ("default", "") and getattr(_CLI_RESULT, "provider", "") == _p and actual:
+        return actual
     return model
 
 
@@ -260,7 +317,8 @@ def _usable_cli(path: Path) -> bool:
             return False
         if path.suffix.lower() in (".cmd", ".bat", ".ps1"):
             return True                      # 윈도우는 셸이 해석한다
-        head = path.open("rb").read(4)
+        with path.open("rb") as stream:
+            head = stream.read(4)
     except OSError:
         return False
     return head.startswith(b"#!") or any(head.startswith(m) for m in _EXEC_MAGIC)
@@ -329,11 +387,7 @@ def codex_cli_path() -> str | None:
 
 
 def codex_cli_model() -> str:
-    """Codex CLI가 실제로 쓸 모델 이름 (~/.codex/config.toml의 최상위 `model`).
-
-    ChatGPT 구독 계정은 우리가 `-m`으로 모델을 지정할 수 없어(400 오류) 모델 목록이
-    "default" 하나뿐이다. 그렇다고 화면에 "기본"이라고만 적으면 정작 어떤 모델로
-    도는지 알 수 없다 — Codex 자신의 설정을 읽어 보여준다 (2026-08-17)."""
+    """Configured CLI default, not proof of the model used by a request."""
     try:
         cfg_path = Path.home() / ".codex" / "config.toml"
         for line in cfg_path.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -426,9 +480,12 @@ def _claude_cli(model: str, system: str, prompt: str) -> str:
     cli = claude_cli_path()
     if not cli:
         raise RuntimeError("claude CLI 없음")
+    _CLI_RESULT.provider, _CLI_RESULT.model = "claude_cli", ""
+    args = [cli, "-p", "--tools", "", "--system-prompt", system, "--output-format", "text"]
+    if model not in ("", "default"):
+        args += ["--model", model]
     returncode, stdout, stderr = _run_cli_safe(
-        [cli, "-p", "--model", model,
-         "--system-prompt", system, "--output-format", "text"],
+        args,
         prompt, timeout=600, cwd=tempfile.gettempdir(),
     )
     if returncode != 0:
@@ -448,41 +505,35 @@ def _codex_cli(model: str, system: str, prompt: str) -> str:
     if not cli:
         raise RuntimeError("codex CLI 없음")
     full_prompt = f"{system}\n\n{prompt}" if system else prompt
-    out_file = Path(tempfile.gettempdir()) / f"codex_out_{os.getpid()}.txt"
-    base_args = [cli, "exec", "--skip-git-repo-check", "--ephemeral",
-                 "--dangerously-bypass-approvals-and-sandbox",
-                 "-o", str(out_file)]
-    # ChatGPT 계정은 모델 명시 시 400 오류 → default 또는 불지원 오류면 모델 없이 실행.
-    # 긴 장 본문은 Windows 명령줄 길이 제한을 넘으므로 prompt 인자가 아니라 stdin으로 전달한다.
-    if model in ("default", ""):
-        attempts = [["-"]]
-    else:
-        attempts = [["-m", model, "-"], ["-"]]
-    try:
-        last_err = None
-        for extra in attempts:
-            returncode, stdout, stderr = _run_cli_safe(
-                base_args + extra, full_prompt, timeout=600, cwd=tempfile.gettempdir(),
-            )
-            if returncode == 0:
-                mh = re.search(r"(?m)^model:\s*(\S+)", (stdout or "") + (stderr or ""))
-                if mh:
-                    global _LAST_CLI_MODEL
-                    _LAST_CLI_MODEL = mh.group(1)
-                if out_file.exists():
-                    return out_file.read_text(encoding="utf-8").strip()
-                return (stdout or "").strip()
-            err = (stderr or "")
-            if "not supported" in err or "invalid_request" in err:
-                last_err = err
-                out_file.unlink(missing_ok=True)
-                continue  # 모델 없이 재시도
-            # 실제 사유(usage limit 등)는 버전 배너 뒤에 나오므로 끝부분을 보존 (2026-07-09)
-            detail = (err.strip() + " | " + (stdout or "").strip())[-400:]
-            raise RuntimeError(f"codex CLI exit {returncode}: …{detail}")
-        raise RuntimeError(f"codex CLI 실패: {(last_err or '')[:300]}")
-    finally:
-        out_file.unlink(missing_ok=True)
+    _CLI_RESULT.provider, _CLI_RESULT.model = "codex_cli", ""
+    with tempfile.TemporaryDirectory(prefix="mb_codex_") as work:
+        out_file = Path(work) / "out.txt"
+        args = [cli, "exec", "--skip-git-repo-check", "--ephemeral",
+                "--sandbox", "read-only", "--disable", "shell_tool",
+                "--disable", "unified_exec", "--disable", "view_image", "-o", str(out_file)]
+        if model not in ("default", ""):
+            args += ["-m", model]
+        returncode, stdout, stderr = _run_cli_safe(args + ["-"], full_prompt, timeout=600, cwd=work)
+        if returncode:
+            detail = ((stderr or "").strip() + " | " + (stdout or "").strip())[-600:]
+            raise RuntimeError(f"codex CLI exit {returncode}: {detail}")
+        match = re.search(r"(?m)^model:\s*(\S+)", (stdout or "") + (stderr or ""))
+        if match:
+            _CLI_RESULT.model = match.group(1)
+        return out_file.read_text(encoding="utf-8").strip() if out_file.exists() else (stdout or "").strip()
+
+
+class ModelConfigurationError(RuntimeError):
+    """A non-retryable provider/model/authentication problem."""
+
+
+def configuration_error(error: Exception) -> bool:
+    status = getattr(error, "status_code", None)
+    text = str(error).lower()
+    return status in (401, 403, 404) or any(token in text for token in (
+        "does not exist", "do not have access", "model_not_found", "not supported",
+        "invalid model", "invalid api key", "incorrect api key", "authentication",
+        "not logged in", "401 unauthorized", "403 forbidden", "404 not found", "cli 없음"))
 
 
 def _strip_fence(t: str) -> str:

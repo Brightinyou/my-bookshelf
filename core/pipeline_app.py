@@ -9,13 +9,13 @@ import shutil
 import ssl
 import subprocess
 import sys
-import threading
 import time
 import unicodedata
 import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from html import escape as _html_escape
 
 CORE_DIR = Path(__file__).resolve().parent
 if str(CORE_DIR) not in sys.path:
@@ -23,7 +23,6 @@ if str(CORE_DIR) not in sys.path:
 
 import pandas as pd
 import streamlit as st
-from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 import config as cfg
 import llm_providers as llm
@@ -32,6 +31,8 @@ from version import APP_VERSION
 # ── 처리 로직 서비스 (2026-07-03 pipeline_app.py에서 분리) ──
 # UI 코드가 기존 이름 그대로 쓰도록 명시적으로 재노출한다.
 from services import ai_ocr
+from services import jobs
+from services.ui_layout import navigation_html, status_chip, font_scale, COMPACT_CSS
 from services import chapter_map as cmap
 from services import textquality
 from services import toc as toc_svc
@@ -55,7 +56,7 @@ from services.pipeline_queue import (
 from services.convert import OCR_REQUIRED_MSG, _do_ocr_only, pdf_to_txt
 from services import updater
 from services.translate import (
-    DERIVED_SUFFIXES as _DERIVED, find_translation, has_translation, out_suffix,
+    DERIVED_SUFFIXES as _DERIVED, find_translation, has_translation, out_suffix, translation_status,
     _needs_translation, _paragraph_already_target, _split_paragraphs_robust,
     _translate_paragraph, _translation_is_valid, book_language, build_translate_system,
     engine_label, find_sequential_footnotes, find_skip_section_paragraphs,
@@ -147,22 +148,16 @@ st.set_page_config(page_title="My Bookshelf", page_icon=_page_icon, layout="wide
 # (.streamlit/config.toml + 실행 플래그)로 개발자 툴바·단축키를 끄면서 제거된다. (2026-07-10)
 
 if "ui_font_scale" not in st.session_state:
-    st.session_state["ui_font_scale"] = 1.0
+    st.session_state["ui_font_scale"] = font_scale(llm.get_pref("ui_font_scale", 1.0))
 
 def _font_scale_controls():
-    cur = float(st.session_state.get("ui_font_scale", 1.0))
-    c1, c2, c3 = st.columns([0.75, 1, 0.75])
-    if c1.button("", icon=":material/text_decrease:", key="font_size_minus", use_container_width=True, help="글자 크기 줄이기"):
-        st.session_state["ui_font_scale"] = max(0.85, round(cur - 0.05, 2))
-        st.rerun()
-    c2.markdown(
-        f"<div style='text-align:center;color:#6b7280;font-size:0.82rem;line-height:2.35'>"
-        f"{int(cur * 100)}%</div>",
-        unsafe_allow_html=True,
-    )
-    if c3.button("", icon=":material/text_increase:", key="font_size_plus", use_container_width=True, help="글자 크기 키우기"):
-        st.session_state["ui_font_scale"] = min(1.35, round(cur + 0.05, 2))
-        st.rerun()
+    def save():
+        scale = st.session_state["settings_font_percent"] / 100
+        llm.set_pref("ui_font_scale", scale)
+        st.session_state["ui_font_scale"] = scale
+    st.slider(t("글자 크기"), 85, 135, int(round(st.session_state["ui_font_scale"] * 100)),
+              step=5, format="%d%%", key="settings_font_percent", on_change=save,
+              help=t("앱을 다시 열어도 유지됩니다. 기본값은 100%입니다."))
 
 # 로딩 오버레이 — 세션 최초 진입 시에만 표시 (LLM 작업 중 재렌더링 때는 건너뜀)
 _loading_ph = st.empty()
@@ -383,19 +378,14 @@ div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) > div:
 /* 사용자 글자 크기 조절 */
 [data-testid="stMarkdownContainer"] p,
 [data-testid="stMarkdownContainer"] li,
-[data-testid="stMarkdownContainer"] span,
-[data-testid="stMarkdownContainer"] div,
 [data-testid="stText"],
 [data-testid="stCaptionContainer"],
 label,
 input,
 textarea,
 .stButton button,
-[data-testid="stSelectbox"] *,
-[data-testid="stRadio"] *,
-[data-testid="stCheckbox"] *,
-[data-testid="stMetric"] * {
-    font-size: calc(1em * var(--mb-font-scale)) !important;
+[data-testid="stSelectbox"] input {
+    font-size: calc(1rem * var(--mb-font-scale)) !important;
 }
 [data-testid="stMarkdownContainer"] h1 {
     font-size: calc(2.0rem * var(--mb-font-scale)) !important;
@@ -410,11 +400,13 @@ textarea,
     font-size: calc(1.08rem * var(--mb-font-scale)) !important;
 }
 
+.stage-nav { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:4px 0 12px; }
 .stage-nav-link {
-    display: block;
-    width: 100%;
+    display: inline-flex;
+    align-items:center; justify-content:center; gap:8px;
+    position:relative; min-width:42px; min-height:42px; box-sizing:border-box;
     text-align: center;
-    padding: 10px 4px;
+    padding: 9px;
     border-radius: 9px;
     border: 1px solid rgba(0, 0, 0, 0.12);
     background: #ffffff;
@@ -423,10 +415,25 @@ textarea,
     font-weight: 600;
     font-size: 0.78em;
     line-height: 1.15;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.stage-nav-link svg { width:22px; height:22px; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.nav-current-label { max-width:230px; overflow-wrap:anywhere; font-size:calc(.9rem * var(--mb-font-scale)); }
+.stage-nav-link:focus-visible, .status-chip:focus-visible { outline:3px solid #2563eb; outline-offset:3px; }
+.stage-nav-link[aria-disabled="true"] { opacity:.55; cursor:not-allowed; }
+.nav-tooltip { display:none; position:absolute; top:calc(100% + 5px); left:0; z-index:30; background:#111827; color:white; padding:6px 9px; border-radius:5px; white-space:nowrap; font-size:.85rem; }
+.stage-nav-link:last-child .nav-tooltip { left:auto; right:0; }
+.stage-nav-link:hover .nav-tooltip, .stage-nav-link:focus-visible .nav-tooltip { display:block; }
+.status-chip { display:inline-block; max-width:100%; box-sizing:border-box; overflow-wrap:anywhere; background:#f3f4f6; color:#6b7280; border:1px solid #e5e7eb; border-radius:16px; padding:4px 10px; font-size:calc(.8rem * var(--mb-font-scale)); }
+.failure-count { color:#6b7280; font-weight:600; }
+.failure-count.has-failures { color:#b91c1c; }
+[class*="st-key-icon_"] button [data-testid="stMarkdownContainer"] { position:absolute !important; width:1px; height:1px; margin:-1px; clip-path:inset(50%); overflow:hidden; white-space:nowrap; }
+@media (max-width:850px) {
+    .block-container { padding-left:1rem !important; padding-right:1rem !important; }
+    [data-testid="stHorizontalBlock"] { gap:.5rem; }
+    [data-testid="stColumn"] { min-width:0; }
+    [data-testid="stMarkdownContainer"] { overflow-wrap:anywhere; }
+    [data-testid="stDataFrame"] { min-height:240px !important; }
 }
 .stage-nav-link:hover {
     border-color: rgba(0, 0, 0, 0.28);
@@ -486,8 +493,9 @@ textarea,
 .st-key-wiki5_use_obsidian label, .st-key-wiki5_use_epub label {
     white-space: nowrap;
 }
+__MB_COMPACT_CSS__
 </style>
-""".replace("__MB_FONT_SCALE__", str(_ui_font_scale)), unsafe_allow_html=True)
+""".replace("__MB_FONT_SCALE__", str(_ui_font_scale)).replace("__MB_COMPACT_CSS__", COMPACT_CSS), unsafe_allow_html=True)
 
 _logo_path = _find_app_icon("icon_128x128.png")
 if _logo_path:
@@ -496,14 +504,12 @@ if _logo_path:
     _logo_html = f'<img src="data:image/png;base64,{_logo_b64}" width="52" style="vertical-align:middle;margin-right:10px">'
 else:
     _logo_html = "📚 "
-_brand_col, _font_col = st.columns([6, 1.6])
-_brand_col.markdown(
-    f"# {_logo_html}My Bookshelf <span style='font-size:0.42em;color:#9aa0a6;"
-    f"font-weight:400;vertical-align:middle'>{APP_VERSION}</span>",
-    unsafe_allow_html=True,
-)
-with _font_col:
-    _font_scale_controls()
+with st.container(key="app_brand"):
+    st.markdown(
+        f"# {_logo_html}My Bookshelf <span class='mb-version' style='color:#9aa0a6;"
+        f"font-weight:400;vertical-align:middle'>{APP_VERSION}</span>",
+        unsafe_allow_html=True,
+    )
 # ★번역 단계는 화면 언어와 상관없이 늘 켜 둔다 (2026-08-26).
 # 2026-07-10에는 "영어 UI면 영→한 번역이 무의미하다"며 숨겼는데, 그때는 도착언어가
 # 한국어 하나뿐이었다. 지금은 설정에서 11개 언어 중 고르므로 — 영어 화면으로 쓰면서
@@ -527,7 +533,6 @@ def _out_flow() -> str:
     parts = [nm for on, nm in [(_use_dx, "Word(.docx)"), (_use_hx, "한글(.hwpx)"),
                                 (_use_ep, "EPUB"), (_use_ob, "Obsidian Wiki")] if on]
     return " + ".join(parts) if parts else "출력 미선택"
-st.caption(tf("PDF → TXT변환 → 장별 분할 → 번역 → 요약생성 → %s", _out_flow()))
 
 
 def _book_chapters(stem: str) -> list[Path]:
@@ -566,7 +571,7 @@ def _route_translate(stem: str) -> bool:
     챕터 파일을 아직 못 찾을 때만 옛 파일명 휴리스틱으로 폴백한다."""
     if not _book_chapters(stem):
         return _needs_translation(stem)
-    _code, _ = _book_language_cached(stem)
+    _code, _ = book_language(_book_chapters(stem)) if jobs.current_state() is not None else _book_language_cached(stem)
     # ★기준은 화면 언어가 아니라 **설정의 도착언어**다 (2026-08-26). 예전에는
     # "ko"가 박혀 있어서, 도착언어를 스페인어로 바꿔도 한국어 책은 번역 대기로
     # 가지 않았다.
@@ -612,22 +617,22 @@ def _cli_model_label(prov: str) -> str:
 
 _avail_cli_short = [f"{_CLI_SHORT.get(p, llm.PROVIDERS[p]['label'])} {_cli_model_label(p)}"
                     for p in llm.CLI_PROVIDERS if llm.has_key(p)]
-# CLI 칸은 모델명까지 들어가 길다 — 왼쪽 여백을 줄여 폭을 준다. 값 글자 크기는 네 칸을
-# 한꺼번에 줄여 라벨·값 간격과 줄 높이가 서로 어긋나지 않게 한다 (2026-08-17).
-st.markdown("""<style>
-.st-key-statusrow [data-testid="stMetricValue"] { font-size: 1.15rem; }
-</style>""", unsafe_allow_html=True)
-_status_row = st.container(key="statusrow")
-_status_spacer, col_s1, col_s2, col_s3, col_s4 = _status_row.columns([1.2, 2.6, 1.05, 1.05, 1.05])
-# CLI 구독을 우선(왼쪽)에, API 키를 다음에 배치
-col_s1.metric(t("AI 구독(CLI)"),
-              ", ".join(_avail_cli_short) if _avail_cli_short else t("✕ 없음"))
-col_s2.metric(t("AI API 키"), tf("%d개", len(_avail_api_providers)) if _avail_api_providers else t("✕ 없음"))
-col_s3.metric(t("위키 생성기"), t("생성 중") if wg_ok else t("대기"))
-col_s4.metric(t("Wiki 완성"), sum(1 for _ in WIKI_DIR.rglob("*.md")))
+_status_task = {"1_txt": "ocr", "2_split": "toc", "3_translate": "translate", "5_wiki": "summary"}.get(st.session_state.get("active_view"), "summary")
+_status_p, _status_m = llm.task_provider_model(_status_task)
+_status_name = llm.model_label(_status_p, llm.cli_configured_model(_status_p) if _status_m == "default" else _status_m) or t("기본")
+_wiki_count = sum(1 for _ in WIKI_DIR.rglob("*.md"))
+_status_details = (t("설정된 AI (연결 상태 아님)") + f": {llm.PROVIDERS[_status_p]['label']} · {_status_name}\n"
+                   + t("AI 구독(CLI)") + ": " + (", ".join(_avail_cli_short) or t("없음")) + "\n"
+                   + t("AI API 키") + f": {len(_avail_api_providers)}\n"
+                   + t("위키 생성기") + ": " + t("생성 중" if wg_ok else "대기"))
+st.markdown(status_chip(f"{_status_name} · Wiki {_wiki_count}", _status_details), unsafe_allow_html=True)
 if not _avail_ai_providers:
     st.error(t("사용 가능한 AI가 없습니다 — :material/settings: 설정 탭에서 API 키를 입력하거나 CLI 구독 도구를 활성화하세요."),
              icon=":material/warning:")
+elif not llm.has_key(_status_p):
+    st.error(t("선택한 AI 연결을 사용할 수 없습니다. 설정을 확인하세요."))
+if st.session_state.get("_job_halt"):
+    st.error(st.session_state["_job_halt"])
 
 # ── 초기 메뉴 ─────────────────────────────────────────────
 # 탭 → Material Symbols 아이콘 이름 (내비·메뉴·제목 공통, 무채색 통일, 2026-07-10)
@@ -700,17 +705,15 @@ if not _active_view:
 </style>
 """, unsafe_allow_html=True)
     st.markdown(t("#### 작업 메뉴"))
-    st.info(t(
-        "처음 사용 전 확인: 이 앱은 사용자가 제공한 PDF·DOCX·HWP·HWPX·TXT를 정리, 번역, 요약, 위키 노트로 재구성하는 개인 작업 도구입니다. "
-        "원문 저작권과 이용허락은 사용자 책임으로 확인해야 하며, 외부 AI/CLI로 전송되는 텍스트에는 민감정보나 배포 권한이 불분명한 내용을 넣지 마세요."
-    ))
+    st.caption(t("AI 작업은 문서 내용을 외부 서비스로 전송합니다. 민감정보와 이용허락을 확인하세요."))
     for _tid, _title, _desc in TASKS:
         _clicked = st.query_params.get("view") == _tid
         _mico = f'<span class="msr" style="font-size:1.2rem">{_stage_icon(_tid)}</span>'
         st.markdown(
-            f'<a class="menu-card" href="?view={_tid}" target="_self">'
-            f'<span class="menu-title">{_mico}{t(_stage_label(_tid, _title))}</span>'
-            f'<span class="menu-desc">{t(_stage_desc(_tid, _desc))}</span>'
+            f'<a class="menu-card" href="?view={_tid}" target="_self" '
+            f'title="{_html_escape(t(_stage_desc(_tid, _desc)), quote=True)}" '
+            f'aria-label="{_html_escape(t(_stage_label(_tid, _title)), quote=True)}">'
+            f'<span class="menu-title">{_mico}{_html_escape(t(_stage_label(_tid, _title)))}</span>'
             f'</a>',
             unsafe_allow_html=True,
         )
@@ -735,26 +738,12 @@ _STAGE_TASKS = [
 # 영어 UI면 번역 탭(3_translate)을 내비에서 제외 (2026-07-10)
 _run_lock = st.session_state.get("_run_lock")
 _nav_tasks = list(_STAGE_TASKS)
-_nav_cols = st.columns(len(_nav_tasks))
-for _col, (_tid, _label) in zip(_nav_cols, _nav_tasks):
-    _active_cls = " active" if _active_view == _tid else ""
-    _label = _stage_label(_tid, _label)
-    _ico = f'<span class="msr">{_stage_icon(_tid)}</span>'
-    with _col:
-        if _run_lock:
-            st.markdown(
-                f'<span class="stage-nav-link{_active_cls}" '
-                f'style="opacity:0.4;pointer-events:none;cursor:not-allowed">{_ico}{t(_label)}</span>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f'<a class="stage-nav-link{_active_cls}" href="?view={_tid}" target="_self">{_ico}{t(_label)}</a>',
-                unsafe_allow_html=True,
-            )
+st.markdown(navigation_html(
+    [(tid, t("문서출력") if tid == "5_wiki" else t(label)) for tid, label in _nav_tasks],
+    _active_view, bool(_run_lock), t("작업 단계")), unsafe_allow_html=True)
 if st.query_params.get("view") in {tid for tid, _ in _STAGE_TASKS}:
     _view = st.query_params.get("view")
-    if _view != _active_view:
+    if _view != _active_view and not _run_lock:
         if _view == "menu":
             st.session_state.pop("active_view", None)
         else:
@@ -763,7 +752,29 @@ if st.query_params.get("view") in {tid for tid, _ in _STAGE_TASKS}:
     st.query_params.clear()
     st.rerun()
 
-with st.expander(t("📁 저장 위치"), expanded=False):
+def _icon_button(label, *, icon, key, container=None, **kwargs):
+    """Keep a real accessible label while visually showing only the icon."""
+    with (container or st).container(key=f"icon_{key}"):
+        return st.button(label, icon=icon, key=key, help=kwargs.pop("help", label), **kwargs)
+
+
+def _responsive_columns(spec, key):
+    """Named row lets compact CSS retain checkbox/title/action relationships."""
+    return st.container(key=key).columns(spec)
+
+
+def _output_format_toggle(label, *, value, key, folder, folder_key, help):
+    """Format rows always stack vertically; each folder stays on the right."""
+    toggle_col, folder_col = _responsive_columns([8, 1], f"format_row_{key}")
+    selected = toggle_col.toggle(label, value=value, key=key, help=help)
+    if _icon_button(tf("%s 폴더 열기", label), container=folder_col,
+                    icon=":material/folder_open:", key=folder_key,
+                    help=str(folder), width="stretch"):
+        open_path(folder)
+    return selected
+
+
+def _render_storage_locations():
     _loc_rows = [
         ("0_업로드대기", cfg.UPLOAD_TMP),
         ("1_원본PDF", cfg.PDF_DIR),
@@ -776,9 +787,9 @@ with st.expander(t("📁 저장 위치"), expanded=False):
     ]
     for _lname, _lpath in _loc_rows:
         _lc1, _lc2 = st.columns([0.85, 2.2])
-        _lc1.markdown(f"**{_lname}**")
-        _lc2.caption(str(_lpath))
-        if _lc1.button(t("열기"), icon=":material/folder_open:", key=f"open_loc_{_lname}", use_container_width=True, disabled=not _lpath.exists()):
+        _lc1.markdown(f"**{t(_lname)}**")
+        _lc2.code(str(_lpath), language=None)
+        if _icon_button(t("폴더 열기"), container=_lc1, icon=":material/folder_open:", key=f"open_loc_{_lname}", width="stretch", disabled=not _lpath.exists()):
             open_path(_lpath)
 
 
@@ -848,7 +859,7 @@ def _set_stage_completion(title: str, message: str, next_stage: str | None = Non
 
 def _track_flow_book(stem: str) -> None:
     """현재 처리 중인 책을 기록 — on_done이 다음 단계 대상(next_items)으로 넘긴다."""
-    lst = st.session_state.setdefault("_flow_books", [])
+    lst = _job_state().setdefault("_flow_books", [])
     _s = _nfc(stem)
     if _s not in lst:
         lst.append(_s)
@@ -874,7 +885,7 @@ def _render_ocr_notice() -> None:
         for _n in names:
             st.write(f"• {_n}")
         if st.button(t("닫기"), icon=":material/close:", key="ocr_notice_close",
-                     use_container_width=True, type="primary"):
+                     width="stretch", type="primary"):
             st.session_state.pop("_ocr_notice", None)
             st.rerun()
 
@@ -892,6 +903,11 @@ def _do_update(info: dict) -> None:
     """다운로드(진행바) → 검증 → 헬퍼 실행/앱 종료.
     팝업(다이얼로그) 밖의 본문에서 호출된다 — 성공하면 앱이 종료·재시작되고,
     실패하면 팝업을 다시 띄운다 (2026-07-25)."""
+    _preflight_error = updater.install_preflight()
+    if _preflight_error:
+        st.session_state["_updating"] = False
+        st.session_state["_update_error"] = _preflight_error
+        st.rerun()
     st.markdown(f"### {t('업데이트 설치 중')}")
     st.info(t("설치 파일을 내려받는 중입니다…"))
     _bar = st.progress(0.0)
@@ -956,15 +972,15 @@ def _render_update_notice() -> None:
                 st.markdown(info["notes"][:1500])
         st.caption(t("업데이트하면 앱이 닫혔다가 자동으로 다시 열립니다."))
         _c1, _c2, _c3 = st.columns(3)
-        if _c1.button(t("지금 업데이트"), type="primary", use_container_width=True, key="upd_now"):
+        if _c1.button(t("지금 업데이트"), type="primary", width="stretch", key="upd_now"):
             st.session_state["_updating"] = True
             st.rerun()
-        if _c2.button(t("브라우저로 받기"), use_container_width=True, key="upd_browser"):
+        if _c2.button(t("브라우저로 받기"), width="stretch", key="upd_browser"):
             updater.open_release_page(info.get("page_url", ""))
             llm.set_pref("update_dismissed_version", info.get("latest", ""))
             st.session_state["_update_dismissed"] = True
             st.rerun()
-        if _c3.button(t("나중에"), use_container_width=True, key="upd_later"):
+        if _c3.button(t("나중에"), width="stretch", key="upd_later"):
             llm.set_pref("update_dismissed_version", info.get("latest", ""))
             st.session_state["_update_dismissed"] = True
             st.rerun()
@@ -1001,12 +1017,12 @@ def _render_stage_completion_notice() -> None:
             for _col, _ch in zip(_cols, _choices):
                 if _col.button(_ch["label"], icon=_ch.get("icon"),
                                key=f"stage_choice_{_ch['label'][:12]}",
-                               use_container_width=True,
+                               width="stretch",
                                type="primary" if _ch.get("primary") else "secondary"):
                     _clear_stage_completion()
                     _ch["action"]()
             if st.button(t("닫기"), icon=":material/close:", key="stage_close3",
-                         use_container_width=True):
+                         width="stretch"):
                 _clear_stage_completion()
                 st.rerun()
             return
@@ -1022,20 +1038,20 @@ def _render_stage_completion_notice() -> None:
         # 사람이 고른다. 아래 표준 블록([다음 단계]·[결과 폴더 열기]·[닫기])이 그 일을 한다.
         c1, c2, c3 = st.columns(3)
         if payload.get("next_stage"):
-            if c1.button(t("다음 단계"), icon=":material/arrow_forward:", key="stage_done_next", use_container_width=True, type="primary"):
+            if c1.button(t("다음 단계"), icon=":material/arrow_forward:", key="stage_done_next", width="stretch", type="primary"):
                 next_stage = payload["next_stage"]
                 _clear_stage_completion()
                 _goto_view(next_stage)
         _open_action = payload.get("open_action")
         if _open_action or payload.get("open_target"):
             _open_label = payload.get("open_label") or t("결과 폴더 열기")
-            if c2.button(_open_label, icon=":material/folder_open:", key="stage_done_open", use_container_width=True):
+            if c2.button(_open_label, icon=":material/folder_open:", key="stage_done_open", width="stretch"):
                 if _open_action:
                     _open_action()
                 else:
                     _target = Path(payload["open_target"])
                     open_path(_target, reveal=_target.is_file())
-        if c3.button(t("닫기"), icon=":material/close:", key="stage_done_close", use_container_width=True):
+        if c3.button(t("닫기"), icon=":material/close:", key="stage_done_close", width="stretch"):
             _clear_stage_completion()
             st.rerun()
 
@@ -1221,27 +1237,13 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
             "순번": cf.stem[:2],
             "부": part if part != prev_part else "",   # 같은 부는 첫 장에만 적는다
             "제목": cmap.chapter_title(cf),
-            "분량": f"{len(body):,}자",
+            "분량": tf("%s자", f"{len(body):,}"),
             "시작 부분": _re.sub(r"\s+", " ", body[:80]).strip(),
             "앞 장에 합치기": False,
         })
         prev_part = part
-    cols = ["순번", "부", "제목", "분량", "시작 부분"] + (["앞 장에 합치기"] if full else [])
-    edited = st.data_editor(
-        pd.DataFrame(rows)[cols], key=f"{key}_editor_{book}",
-        use_container_width=True, hide_index=True, num_rows="fixed",
-        column_config={
-            "순번": st.column_config.TextColumn(disabled=True, width="small"),
-            "부": st.column_config.TextColumn(
-                t("부(部)"), width="small",
-                help=t("이 장부터 시작하는 부의 이름. 같은 부가 이어지면 비워 두세요")),
-            "제목": st.column_config.TextColumn(t("제목 (고칠 수 있음)"), width="large"),
-            "분량": st.column_config.TextColumn(disabled=True, width="small"),
-            "시작 부분": st.column_config.TextColumn(disabled=True, width="large"),
-            "앞 장에 합치기": st.column_config.CheckboxColumn(
-                t("앞 장에 합치기"), help=t("이 장을 지우고 본문을 바로 앞 장 뒤에 붙입니다")),
-        },
-    )
+    from services.ui_chapter_editor import chapter_editor
+    edited = chapter_editor(rows, f"{key}_editor_{book}", full=full)
     def _apply_edits() -> tuple[int, list[tuple[str, str]]]:
         """표에서 고친 것을 실제 파일에 반영한다. (반영 건수, 이름이 바뀐 것들)"""
         recs = edited.to_dict("records")
@@ -1288,7 +1290,7 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
     _next_name = t("번역") if _next_view == "3_translate" else t("문서요약")
     b1, b2, b3 = st.columns([2, 1, 1])
     if b1.button(tf("확정하고 %s(으)로", _next_name), icon=":material/check_circle:",
-                 key=f"{key}_confirm", use_container_width=True, type="primary",
+                 key=f"{key}_confirm", width="stretch", type="primary",
                  help=t("표에서 고친 것을 저장하고 장 구분을 확정한 뒤 다음 단계로 넘어갑니다.")):
         _changed, _adjusted = _apply_edits()
         cmap.confirm(DEFAULT_WS, book)
@@ -1299,14 +1301,13 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
         else:
             _goto_view(_next_view)
     if b2.button(t("저장만"), icon=":material/save:", key=f"{key}_apply",
-                 use_container_width=True,
+                 width="stretch",
                  help=t("고친 것만 저장하고 이 화면에 남습니다 — 계속 다듬을 때.")):
         _changed, _adjusted = _apply_edits()
         _report(_changed, _adjusted)
         if not _adjusted:
             st.rerun()
-    if b3.button(t("폴더 열기"), icon=":material/folder_open:", key=f"{key}_open",
-                 use_container_width=True):
+    if _icon_button(t("폴더 열기"), container=b3, icon=":material/folder_open:", key=f"{key}_open", width="stretch"):
         open_path(chapters_dir(DEFAULT_WS, book))
 
     if not full:
@@ -1454,18 +1455,16 @@ def _stage_flow_panel(app_title: str, app_desc: str,
                       cards: list[tuple[str, Path, str]], key_prefix: str) -> None:
     """앱 헤더 + (작게) 진행 요약·폴더 열기. 실제 작업 공간이 눈에 띄도록
     폴더 열기란은 접이식으로 작게 처리한다 (2026-07-09). cards=[(라벨, 경로, 개수문구)]"""
-    st.markdown(f"### {t(app_title)}")
-    st.caption(t(app_desc))
+    st.subheader(t(app_title), help=t(app_desc))
     # ★진행 요약 줄("① 처리전 · … · ② 처리후 · …")은 뺐다 (2026-08-26 연구자 요청).
     # 다섯 탭 머리마다 숫자가 늘어서 있어 정작 할 일이 눈에 안 들어왔다.
     # 폴더 열기는 그대로 둔다 — 그건 실제로 쓰는 기능이다.
-    with st.expander(t("📁 폴더 열기"), expanded=False):
-        _fcols = st.columns(len(cards))
-        for i, (label, path, _count_txt) in enumerate(cards):
-            if _fcols[i].button(t(label), icon=":material/folder_open:", key=f"{key_prefix}_open_{i}",
-                                use_container_width=True, disabled=not path.exists(),
-                                help=str(path)):
-                open_path(path)
+    with st.container(key=f"stage_folders_{key_prefix}"):
+        with st.expander(t("📁 폴더 열기"), expanded=False):
+            for i, (label, path, _count_txt) in enumerate(cards):
+                if st.button(t(label), icon=":material/folder_open:", key=f"{key_prefix}_open_{i}",
+                             width="stretch", disabled=not path.exists(), help=str(path)):
+                    open_path(path)
     st.divider()
 
 
@@ -1482,10 +1481,12 @@ def _run_start(tab: str, work: list) -> None:
     """선택한 작업 목록으로 처리 시작. work=처리기 인자 목록."""
     if not work:
         return
+    st.session_state.pop("_job_halt", None)
     st.session_state[f"{tab}_running"] = True
     st.session_state[f"{tab}_queue"] = list(work)
     st.session_state[f"{tab}_total"] = len(work)
     st.session_state[f"{tab}_log"] = []
+    st.session_state[f"{tab}_failed_items"] = []
     st.session_state[f"{tab}_start_ts"] = time.time()
     st.session_state["_run_lock"] = tab
     st.rerun()
@@ -1511,61 +1512,29 @@ def _fmt_elapsed(secs: float) -> str:
     return tf("%d초", s)
 
 
-def _run_with_elapsed_ticker(fn, elapsed_place, start_ts: float):
-    """fn()을 별도 스레드에서 실행하는 동안, 메인 스레드는 1초마다 경과 시간을 독립적으로
-    갱신한다. AI 배치 호출 하나가 수십 초씩 걸리면 그 사이엔 진행 콜백이 전혀 안 불려서
-    경과 시간도 같이 멈춘 것처럼 보이던 문제 — 콜백과 무관하게 똑딱이는 타이머가 필요해
-    스레드로 분리했다(2026-08-11). add_script_run_ctx로 워커 스레드에서도 다른 placeholder
-    (진행 텍스트 등)를 안전하게 갱신할 수 있다."""
-    result: dict = {}
+def _job_state():
+    state = jobs.current_state()
+    return state if state is not None else st.session_state
 
-    def _target():
-        try:
-            result["value"] = fn()
-        except Exception as e:
-            result["error"] = e
 
-    thread = threading.Thread(target=_target, daemon=True)
-    add_script_run_ctx(thread)
-    thread.start()
-    while thread.is_alive():
-        elapsed_place.caption(tf("⏱ %s 경과", _fmt_elapsed(time.time() - start_ts)))
-        thread.join(timeout=1.0)
-    elapsed_place.caption(tf("⏱ %s 경과", _fmt_elapsed(time.time() - start_ts)))
-    if "error" in result:
-        raise result["error"]
-    return result["value"]
+_JOB_STATE_KEYS = ("_flow_books", "_split_dup_confirmed", "_split_dup_dismissed",
+                   "split2_nosplit", "split2_any_en", "_review_books",
+                   "summ4_touched", "wiki5_touched")
 
 
 def _run_panel(tab: str, title: str, process_one, on_done=None,
                item_progress_text=None, detail_progress: bool = False) -> None:
-    """처리 화면 렌더 + 항목 1개 처리 + rerun. process_one(item)->(ok, msg 문자열).
-    on_done(): 큐 소진 시 1회 실행(전체요약 등 후처리).
-    item_progress_text: 번역처럼 고정된 8개 인자 콜백(기존 방식, 그대로 유지).
-    detail_progress=True: 자유 문자열 콜백 process_one(item, cb) — cb(text)를 호출하는
-    쪽마다 경과 시간과 함께 실시간으로 보여준다(EPUB 등, 2026-08-11). 처리 중엔 회전
-    스피너도 같이 떠서 '멈춘 게 아니다'가 한눈에 보이게 했다."""
+    """Poll a session-owned job; UI reruns never create another copy of live work."""
     queue = list(st.session_state.get(f"{tab}_queue", []))
     total = st.session_state.get(f"{tab}_total", len(queue)) or 1
     done = total - len(queue)
     log = list(st.session_state.get(f"{tab}_log", []))
     _start_ts = st.session_state.get(f"{tab}_start_ts", time.time())
-
     st.markdown(f"### ⏳ {t(title)}")
-    _elapsed_place = st.empty()
-    _elapsed_place.caption(tf("⏱ %s 경과", _fmt_elapsed(time.time() - _start_ts)))
-    st.progress(min(done / total, 1.0), text=tf("%d/%d 처리 중", done, total))
-    _stopped = st.button(t("중단"), icon=":material/stop:", key=f"{tab}_stopbtn", type="primary")
-    st.caption(t("처리 중에는 다른 기능이 잠깁니다. '중단'을 누르면 현재 항목까지 마친 뒤 멈추고, 남은 작업은 다시 '시작'으로 이어집니다."))
-    # 완료 로그가 없으면 빈 테두리 박스만 남아 혼란스러워 아예 안 그린다(2026-08-11).
     if log:
         with st.container(height=300, border=True):
             for _ln in log[-80:]:
                 st.markdown(_ln)
-
-    if _stopped:
-        _run_finish(tab)
-        st.rerun()
     if not queue:
         _run_finish(tab)
         if on_done:
@@ -1574,43 +1543,48 @@ def _run_panel(tab: str, title: str, process_one, on_done=None,
             except Exception as _e:
                 st.warning(str(_e)[:200])
         st.rerun()
+    job_key = f"{tab}_job"
+    if job_key not in st.session_state:
+        item = queue[0]
+        state = {k: st.session_state[k] for k in _JOB_STATE_KEYS if k in st.session_state}
+        worker = (lambda cb: process_one(item, cb)) if (item_progress_text or detail_progress) else (lambda cb: process_one(item))
+        st.session_state[job_key] = jobs.BackgroundJob(worker, state).start()
+    job = st.session_state[job_key]
 
-    _item = queue[0]
-    try:
-        if item_progress_text:
-            _item_progress = st.progress(0.0)
-
-            def _progress_cb(done, total, translated, preserved, dropped, failed, resumed, api_calls):
-                fraction = min(max(done / total, 0.0), 1.0) if total else 0.0
-                _item_progress.progress(
-                    fraction,
-                    text=item_progress_text(
-                        done, total, translated, preserved, dropped, failed, resumed, api_calls
-                    ),
-                )
-
-            with st.spinner(t("처리 중…")):
-                _ok, _msg = _run_with_elapsed_ticker(
-                    lambda: process_one(_item, _progress_cb), _elapsed_place, _start_ts)
-        elif detail_progress:
-            _detail_place = st.empty()
-
-            def _detail_cb(text: str):
-                _detail_place.caption(text)
-
-            with st.spinner(t("처리 중…")):
-                _ok, _msg = _run_with_elapsed_ticker(
-                    lambda: process_one(_item, _detail_cb), _elapsed_place, _start_ts)
-        else:
-            with st.spinner(t("처리 중…")):
-                _ok, _msg = _run_with_elapsed_ticker(
-                    lambda: process_one(_item), _elapsed_place, _start_ts)
-    except Exception as _e:
-        _ok, _msg = False, f"{type(_e).__name__}: {str(_e)[:150]}"
-    log.append(f"{'✅' if _ok else '❌'} {_msg}")
-    st.session_state[f"{tab}_log"] = log
-    st.session_state[f"{tab}_queue"] = queue[1:]
-    st.rerun()
+    @st.fragment(run_every=0.5)
+    def poll():
+        st.caption(tf("⏱ %s 경과", _fmt_elapsed(time.time() - _start_ts)))
+        st.progress(min(done / total, 1.0), text=tf("%d/%d 처리 중", done, total))
+        if st.button(t("현재 항목 후 중단"), key=f"{tab}_stopbtn", disabled=job.stop_after):
+            job.stop_after = True
+        if job.stop_after:
+            st.info(t("중단 요청됨 — 현재 항목을 저장한 뒤 멈춥니다."))
+        progress = job.progress
+        failed_items = len(st.session_state.get(f"{tab}_failed_items", []))
+        failed_paragraphs = progress[5] if tab == "tr3" and len(progress or ()) >= 6 else 0
+        failed_label = tf("실패 항목 %d개", failed_items)
+        if tab == "tr3":
+            failed_label += " · " + tf("현재 문서 실패 문단 %d개", failed_paragraphs)
+        st.markdown(f'<div class="failure-count{" has-failures" if failed_items or failed_paragraphs else ""}" role="status">{_html_escape(failed_label)}</div>', unsafe_allow_html=True)
+        if progress and item_progress_text:
+            count, size = progress[:2]
+            st.progress(min(max(count / max(size, 1), 0.0), 1.0), text=item_progress_text(*progress))
+        elif progress:
+            st.caption(str(progress[0]))
+        if not job.done.is_set():
+            return
+        st.session_state.update(job.state)
+        ok, msg = job.result if job.error is None else (False, f"{type(job.error).__name__}: {str(job.error)[:200]}")
+        log.append(f"{'✅' if ok else '❌'} {msg}")
+        if not ok:
+            st.session_state[f"{tab}_failed_items"] = list(st.session_state.get(f"{tab}_failed_items", [])) + [queue[0]]
+        st.session_state[f"{tab}_log"] = log
+        st.session_state[f"{tab}_queue"] = queue[1:]
+        st.session_state.pop(job_key, None)
+        if job.stop_after or job.state.get("_job_halt"):
+            _run_finish(tab)
+        st.rerun(scope="app")
+    poll()
 
 
 _DND_HINT = "📎 파일 선택 또는 이 영역으로 끌어다 놓기(Drag & Drop) 가능"
@@ -1710,7 +1684,6 @@ def _render_folder_setting(
     panel_key로 지어내면 저장은 되지만 그 세션에서는 반영되지 않는다 (2026-08-30).
     """
     st.subheader(title)
-    st.caption(description)
     st.code(str(current), language=None)
     picked_key = f"{panel_key}_path"
     if choices:
@@ -1720,21 +1693,21 @@ def _render_folder_setting(
             key=f"{panel_key}_choice",
         )
         if st.button(t("이 보관함 사용"), icon=":material/check:", key=f"{panel_key}_choice_use",
-                     use_container_width=True):
+                     width="stretch"):
             st.session_state[picked_key] = chosen
             st.rerun()
     browse_col, path_col = st.columns([1, 3])
     if browse_col.button(t("폴더 찾아보기"), icon=":material/folder_open:", key=f"{panel_key}_browse",
-                         use_container_width=True):
+                         width="stretch"):
         picked = _pick_folder(title, current)
         if picked:
             st.session_state[picked_key] = picked
             st.rerun()
     path = path_col.text_input(t("폴더 경로"), value=st.session_state.get(picked_key, ""),
                                placeholder=str(current), key=f"{panel_key}_path_input",
-                               label_visibility="collapsed")
+                               label_visibility="collapsed", help=description)
     if st.button(t("저장하고 적용"), icon=":material/save:", key=f"{panel_key}_save",
-                  type="primary", use_container_width=True):
+                  type="primary", width="stretch"):
         target = path.strip()
         if not target:
             st.warning(t("폴더를 선택하거나 경로를 입력하세요."))
@@ -1750,7 +1723,7 @@ def _render_folder_setting(
             st.rerun()
     st.caption(t("ℹ️ 기존에 만든 파일은 자동으로 옮겨지지 않습니다. 옮기려면 폴더에서 직접 이동하세요."))
     if st.button(t("설정 목록으로 돌아가기"), icon=":material/arrow_back:", key=f"{panel_key}_back",
-                  use_container_width=True):
+                  width="stretch"):
         st.session_state["settings_panel"] = "home"
         st.rerun()
 
@@ -1782,7 +1755,7 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
     잘못된 제목은 대개 요약을 돌리려다 눈에 띄므로, 다른 화면으로 옮겨가지 않고 그
     자리에서 고치는 편이 낫다(2026-08-17). 항목에 "rename": (책 stem, 장 번호)를 담아야
     동작한다.
-    "group"이 있으면 같은 값이 연속될 때마다 책 이름 소제목을 붙이고, 그 옆에
+    "group"이 있으면 책별로 접이식 챕터 목록을 만들고, 책 제목 옆에
     책 전체를 한 번에 선택/해제하는 체크박스를 함께 둔다(선택 단위 자체는 항목별
     그대로 — 위키탭처럼 책 단위로 고를 수 있게, 2026-07-25).
     Returns: 선택된 obj 목록."""
@@ -1792,87 +1765,91 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
         _g = it.get("group")
         if _g is not None:
             _group_indices.setdefault(_g, []).append(idx)
-    _has_groups = bool(_group_indices)  # 항목을 책 제목 아래 하위 트리처럼 들여쓸지 (2026-07-25)
 
     def _toggle_group(grp: str, grp_key: str) -> None:
         _val = st.session_state.get(grp_key, False)
         for j in _group_indices.get(grp, []):
             st.session_state[_keys[j]] = _val
 
-    h1, h2, h3 = st.columns([1.3, 1, 4])
-    if h1.button(t("전체 선택"), icon=":material/select_all:", key=f"{prefix}_sa", use_container_width=True):
+    h1, h2, h3 = _responsive_columns([1.3, 1, 4], f"list_header_{prefix}")
+    if h1.button(t("전체 선택"), icon=":material/select_all:", key=f"{prefix}_sa", width="stretch"):
         for _k in _keys:
             st.session_state[_k] = True
         st.rerun()
-    if h2.button(t("해제"), icon=":material/deselect:", key=f"{prefix}_da", use_container_width=True):
+    if h2.button(t("해제"), icon=":material/deselect:", key=f"{prefix}_da", width="stretch"):
         for _k in _keys:
             st.session_state[_k] = False
         st.rerun()
     h3.caption(tf("총 %d개", len(items)))
-    selected = []
+    def _render_item(idx):
+        it = items[idx]
+        k = _keys[idx]
+        # 그룹(책)이 있는 목록이면 항목 행을 들여써서 책 제목 아래 하위
+        # 트리처럼 보이게 한다 — 그룹 헤더와 나란한 평평한 목록으로 안 보이도록.
+        _rn_here = renamable and it.get("rename") is not None
+        _rn_w = [0.07] if renamable else []
+        _spec = [0.05, (0.82 if viewable else 0.95) - sum(_rn_w)] + _rn_w + ([0.13] if viewable else [])
+        cols = _responsive_columns(_spec, f"document_row_{prefix}_{idx}")
+        c1, c2 = cols[0], cols[1]
+        _rn_col = cols[-2] if (renamable and viewable) else (cols[-1] if renamable else None)
+        _view_col = cols[-1] if viewable else None
+        c1.checkbox(it['label'], key=k, label_visibility="collapsed")
+        _editing = _rn_here and st.session_state.get(f"{prefix}_rn_open") == k
+        if _editing:
+            _rn_book, _rn_idx = it["rename"]
+            _rn_val = c2.text_input(t("장 제목"), value=it.get("title", it["label"]),
+                                    key=f"{prefix}_rn_val_{idx}", label_visibility="collapsed")
+            if _rn_col.button("", icon=":material/check:", key=f"{prefix}_rn_ok_{idx}",
+                              help=t("제목 저장")):
+                if _rn_val.strip():
+                    cmap.rename_chapter(DEFAULT_WS, _rn_book, _rn_idx, _rn_val.strip())
+                st.session_state.pop(f"{prefix}_rn_open", None)
+                st.rerun()
+        else:
+            c2.markdown(
+                f"**{it['label']}** &nbsp;<small style='color:#9ca3af'>{it['meta']}</small>",
+                unsafe_allow_html=True,
+            )
+            if _rn_here and _rn_col.button("", icon=":material/edit:", key=f"{prefix}_rn_{idx}",
+                                           help=t("장 제목 고치기")):
+                st.session_state[f"{prefix}_rn_open"] = k
+                st.rerun()
+        if viewable:
+            target = _view_target_from_item(it)
+            safe_key = _re.sub(r"[^a-zA-Z0-9가-힣_-]+", "_", str(it["key"]))[:80]
+            if _icon_button(t("보기"), container=_view_col, icon=":material/description:", key=f"{prefix}_view_{idx}_{safe_key}", width="stretch",
+                                 disabled=target is None, help=t("보기") + ": " + it["label"]):
+                open_path(target, reveal=target.is_file())
+
+    # Render every chapter even inside closed expanders. Streamlit then retains
+    # its checkbox state; closing a book must never deselect its chapters.
+    from hashlib import sha256
     with st.container(height=height, border=True):
-        _prev_group = object()  # 실제 group 값과 절대 같을 수 없는 표식
+        rendered_groups = set()
         for idx, it in enumerate(items):
-            _grp = it.get("group")
-            if _grp is not None and _grp != _prev_group:
-                _grp_key = f"{prefix}_grpchk_{_re.sub(r'[^a-zA-Z0-9가-힣_-]+', '_', str(_grp))[:60]}"
-                _agg = all(st.session_state.get(_keys[j], False) for j in _group_indices[_grp])
-                if st.session_state.get(_grp_key) != _agg:
-                    st.session_state[_grp_key] = _agg
-                _ghc1, _ghc2 = st.columns([0.05, 0.95])
-                _ghc1.checkbox(" ", key=_grp_key, label_visibility="collapsed",
-                               on_change=_toggle_group, args=(_grp, _grp_key),
-                               help=t("이 책 전체 선택/해제"))
-                _ghc2.markdown(f"**📚 {_grp}**")
-                _prev_group = _grp
-            k = _keys[idx]
-            # 그룹(책)이 있는 목록이면 항목 행을 들여써서 책 제목 아래 하위
-            # 트리처럼 보이게 한다 — 그룹 헤더와 나란한 평평한 목록으로 안 보이도록.
-            _rn_here = renamable and it.get("rename") is not None
-            _rn_w = [0.07] if renamable else []
-            if _has_groups:
-                _spec = [0.04, 0.05, 0.78 - sum(_rn_w)] + _rn_w + ([0.13] if viewable else [])
-                if not viewable:
-                    _spec = [0.04, 0.05, 0.91 - sum(_rn_w)] + _rn_w
-                cols = st.columns(_spec)
-                c1, c2 = cols[1], cols[2]
-            else:
-                _spec = [0.05, (0.82 if viewable else 0.95) - sum(_rn_w)] + _rn_w + ([0.13] if viewable else [])
-                cols = st.columns(_spec)
-                c1, c2 = cols[0], cols[1]
-            _rn_col = cols[-2] if (renamable and viewable) else (cols[-1] if renamable else None)
-            _view_col = cols[-1] if viewable else None
-            chk = c1.checkbox(" ", key=k, label_visibility="collapsed")
-            _label_prefix = "↳ " if _has_groups else ""
-            _editing = _rn_here and st.session_state.get(f"{prefix}_rn_open") == k
-            if _editing:
-                _rn_book, _rn_idx = it["rename"]
-                _rn_val = c2.text_input(t("장 제목"), value=it.get("title", it["label"]),
-                                        key=f"{prefix}_rn_val_{idx}", label_visibility="collapsed")
-                if _rn_col.button("", icon=":material/check:", key=f"{prefix}_rn_ok_{idx}",
-                                  help=t("제목 저장")):
-                    if _rn_val.strip():
-                        cmap.rename_chapter(DEFAULT_WS, _rn_book, _rn_idx, _rn_val.strip())
-                    st.session_state.pop(f"{prefix}_rn_open", None)
-                    st.rerun()
-            else:
-                c2.markdown(
-                    f"{_label_prefix}**{it['label']}** &nbsp;<small style='color:#9ca3af'>{it['meta']}</small>",
-                    unsafe_allow_html=True,
-                )
-                if _rn_here and _rn_col.button("", icon=":material/edit:", key=f"{prefix}_rn_{idx}",
-                                               help=t("장 제목 고치기")):
-                    st.session_state[f"{prefix}_rn_open"] = k
-                    st.rerun()
-            if viewable:
-                target = _view_target_from_item(it)
-                safe_key = _re.sub(r"[^a-zA-Z0-9가-힣_-]+", "_", str(it["key"]))[:80]
-                if _view_col.button(t("보기"), icon=":material/visibility:", key=f"{prefix}_view_{idx}_{safe_key}", use_container_width=True,
-                                     disabled=target is None):
-                    open_path(target, reveal=target.is_file())
-            if chk:
-                selected.append(it["obj"])
-    return selected
+            grp = it.get("group")
+            if grp is None:
+                _render_item(idx)
+                continue
+            if grp in rendered_groups:
+                continue
+            rendered_groups.add(grp)
+            group_id = sha256(str(grp).encode("utf-8")).hexdigest()[:20]
+            grp_key = f"{prefix}_grpchk_{group_id}"
+            indices = _group_indices[grp]
+            chosen = sum(bool(st.session_state.get(_keys[j], False)) for j in indices)
+            st.session_state[grp_key] = chosen == len(indices)
+            book_check, book_label = _responsive_columns([0.05, 0.95], f"list_group_{prefix}_{group_id}")
+            book_check.checkbox(str(grp), key=grp_key, label_visibility="collapsed",
+                                on_change=_toggle_group, args=(grp, grp_key),
+                                help=t("이 책 전체 선택/해제"))
+            book_label.markdown(f"**📚 {grp}**")
+            book_label.caption(tf("%d / %d개 선택", chosen, len(indices)))
+            with st.container(key=f"chapter_children_{prefix}_{group_id}"):
+                with st.expander(tf("챕터 %d개", len(indices)), expanded=False):
+                    for chapter_idx in indices:
+                        _render_item(chapter_idx)
+    return [it["obj"] for idx, it in enumerate(items) if st.session_state.get(_keys[idx], False)]
 
 
 
@@ -1988,10 +1965,88 @@ def _wiki_model_radio(key: str) -> tuple[str, str]:
     return _p, _m
 
 
-def _settings_engine_id() -> str:
+def _settings_engine_id(task: str = "translate") -> str:
     """설정에서 선택된 AI의 번역 엔진 id (provider:model)."""
-    _wp, _wm = llm.wiki_provider_model()
+    _wp, _wm = llm.task_provider_model(task)
     return f"{_wp}:{_wm}" if _wp and _wm else ""
+
+
+def _render_model_editor(key: str, task: str = "") -> None:
+    current = llm.task_provider_model(task) if task else llm.default_provider_model()
+    providers = [p for p in llm.PROVIDERS if llm.has_key(p)
+                 and (task != "ocr" or p in llm.CLI_PROVIDERS)]
+    if not providers:
+        st.info(t("사용 가능한 API 키나 활성화된 CLI가 없습니다. 아래에서 API 키를 입력하거나 CLI 사용을 켜세요."))
+        return
+    if task:
+        overrides = llm.get_pref("task_models", {})
+        inherit = st.checkbox(t("기본 AI 설정 사용"), value=task not in overrides, key=f"{key}_inherit")
+        if inherit:
+            if task in overrides:
+                llm.set_task_model(task)
+                st.rerun()
+            p, m = llm.default_provider_model()
+            st.caption(f"{llm.PROVIDERS[p]['label']} · {m}")
+            if task == "ocr" and p not in llm.CLI_PROVIDERS:
+                st.warning(t("이미지 재판독은 CLI 모델을 선택해 주세요."))
+            return
+    provider = st.selectbox(t("AI 연결"), providers,
+                            index=providers.index(current[0]) if current[0] in providers else 0,
+                            format_func=lambda p: llm.PROVIDERS[p]["label"], key=f"{key}_provider")
+    choices = llm.model_choices(provider)
+    selected = current[1] if current[0] == provider and current[1] in choices else choices[0]
+    model = st.selectbox(t("모델"), choices, index=choices.index(selected),
+                           format_func=lambda m: t("CLI 기본 설정 따르기") if m == "default" else llm.model_label(provider, m),
+                           key=f"{key}_{provider}_choice",
+                           help=t("Codex가 저장한 모델 목록입니다. 실제 사용 권한은 ‘연결·모델 확인’으로 확인하세요.") if provider == "codex_cli" else None)
+    if model == "default":
+        st.caption(t("CLI 설정값") + ": " + (llm.cli_configured_model(provider) or t("실행 시 결정")))
+    save_col, check_col = st.columns(2)
+    if save_col.button(t("모델 적용"), key=f"{key}_save", disabled=not model.strip(), width="stretch"):
+        try:
+            if task:
+                llm.set_task_model(task, provider, model)
+            else:
+                llm.set_wiki_model(provider, model)
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+    if check_col.button(t("연결·모델 확인"), key=f"{key}_check", disabled=not model.strip(), width="stretch",
+                        help=t("짧은 요청 1회로 사용 가능 여부를 확인합니다. 사용량이 소모됩니다.")):
+        try:
+            with st.spinner(t("확인 중…")):
+                answer = llm.complete(provider, model.strip(), "Reply only OK.", "Connection test.", max_tokens=16)
+            if not answer.strip():
+                raise ValueError(t("모델이 빈 응답을 반환했습니다."))
+            st.success(t("선택한 설정으로 응답을 받았습니다."))
+        except Exception as exc:
+            st.error(t("모델 또는 로그인 설정을 확인하세요.") + " " + str(exc)[-350:])
+
+
+def _task_model_caption(task: str):
+    p, m = llm.task_provider_model(task)
+    label = t("CLI 기본 설정 따르기") if m == "default" else llm.model_label(p, m)
+    st.caption(t("적용 AI") + f": {llm.PROVIDERS[p]['label']} · {label}")
+
+
+def _render_recent_failures():
+    tab = {"2_split": "split2", "3_translate": "tr3", "4_summary": "summ4", "5_wiki": "wiki5"}.get(_active_view)
+    if not tab or _run_active(tab):
+        return
+    failed = st.session_state.get(f"{tab}_failed_items", [])
+    if not failed:
+        return
+    st.error(tf("완료하지 못한 항목 %d개 — 결과를 확인하고 다시 시도하세요.", len(failed)))
+    if tab == "tr3":
+        remaining = sum(int(translation_status(cfg.BASE_DIR / rel).get("failed", 0))
+                        + int(translation_status(cfg.BASE_DIR / rel).get("pending", 0)) for rel in failed)
+        if remaining:
+            st.warning(tf("미번역 문단 %d개가 남았습니다. 완료본으로 확정하지 않았습니다.", remaining))
+    if st.button(t("실패 항목 다시 시도"), icon=":material/refresh:", key=f"{tab}_retry_recent"):
+        _run_start(tab, failed)
+
+
+_render_recent_failures()
 
 
 if _active_view == "settings":
@@ -2025,8 +2080,8 @@ if _active_view in {"1_txt", "all_run"}:
     _uploads1 = st.file_uploader(
         t("PDF·DOCX·HWP·HWPX·TXT 업로드 (여러 파일 가능)"),
         type=["pdf", "docx", "hwp", "hwpx", "txt", "md"], accept_multiple_files=True, key="ocr_uploader",
+        help=t(_DND_HINT),
     )
-    st.caption(t(_DND_HINT))
     if _uploads1:
         # 파일명이 아니라 내용 해시(토큰)로 "이미 대기열에 올렸는지" 추적한다 — 처리 완료 후
         # 이 추적을 지워버리면(예전 방식), 업로더 위젯은 파일을 계속 들고 있어서 다음
@@ -2063,19 +2118,18 @@ if _active_view in {"1_txt", "all_run"}:
             st.rerun()  # 대기 목록 갱신 (세션스테이트로 중복 저장 방지됨)
 
     with st.expander(t("🔎 논문 출처로 가져오기"), expanded=False):
-        _paper_src1 = st.text_input(
-            t("논문 출처"),
-            key="ocr1_paper_source",
-            placeholder=t("URL, DOI(10.xxxx/...), doi:..., arXiv 번호 또는 arxiv.org 링크"),
-        )
-        st.caption(t(
+        _paper_help = t(
             "💡 URL이 잘 안 될 때: ① 로그인·구독이 필요한 페이지(대학도서관·유료 저널)나 "
             "본문이 아닌 소개 페이지 링크는 받아올 수 없습니다 — PDF를 내려받아 위에서 직접 업로드하세요. "
             "② DOI(10.xxxx/…)나 arXiv 번호(예: 2412.12107)가 있으면 그 값을 넣는 편이 가장 안정적입니다. "
             "③ 링크 끝이 `.pdf`인 직접 주소를 쓰세요. ④ 그래도 안 되면 브라우저에서 PDF를 저장한 뒤 업로드하는 방법이 가장 확실합니다."
-        ))
+        )
+        _paper_src1 = st.text_input(
+            t("논문 출처"), key="ocr1_paper_source", help=_paper_help,
+            placeholder=t("URL, DOI(10.xxxx/...), doi:..., arXiv 번호 또는 arxiv.org 링크"),
+        )
         if st.button(t("다운로드 확인 후 TXT 저장"), icon=":material/download:", key="ocr1_source_prepare",
-                     use_container_width=True, type="primary",
+                     width="stretch", type="primary",
                      disabled=not _paper_src1.strip()):
             _ok_prep1 = False
             with st.status(t("논문 출처 확인 중…"), expanded=True):
@@ -2106,19 +2160,19 @@ if _active_view in {"1_txt", "all_run"}:
         with st.container(border=True):
             _prh1, _prh2 = st.columns([5, 1])
             _prh1.markdown(tf("**🔎 최근 가져온 논문:** %s", _pr1["name"]))
-            if _prh2.button(t("닫기"), icon=":material/close:", key="paper1_result_close", use_container_width=True):
+            if _prh2.button(t("닫기"), icon=":material/close:", key="paper1_result_close", width="stretch"):
                 st.session_state.pop("paper1_result", None)
                 st.rerun()
             _txt_p1 = Path(_pr1["txt"]) if _pr1.get("txt") else None
             _pdf_p1 = Path(_pr1["pdf"]) if _pr1.get("pdf") else None
             _pra1, _prb1 = st.columns([4.2, 1])
             _pra1.caption(tf("📝 변환 TXT: %s", _txt_p1 if _txt_p1 else "—"))
-            if _prb1.button(t("위치 열기"), icon=":material/folder_open:", key="paper1_open_txt", use_container_width=True,
+            if _prb1.button(t("위치 열기"), icon=":material/folder_open:", key="paper1_open_txt", width="stretch",
                             disabled=not (_txt_p1 and _txt_p1.exists())):
                 open_path(_txt_p1, reveal=True)
             _pra2, _prb2 = st.columns([4.2, 1])
             _pra2.caption(tf("📄 원본 PDF: %s", _pdf_p1 if _pdf_p1 else t("— (TXT 출처라 PDF 없음)")))
-            if _prb2.button(t("위치 열기"), icon=":material/folder_open:", key="paper1_open_pdf", use_container_width=True,
+            if _prb2.button(t("위치 열기"), icon=":material/folder_open:", key="paper1_open_pdf", width="stretch",
                             disabled=not (_pdf_p1 and _pdf_p1.exists())):
                 open_path(_pdf_p1, reveal=True)
 
@@ -2163,11 +2217,11 @@ if _active_view in {"1_txt", "all_run"}:
             _dc1, _dc2, _dc3 = st.columns([4, 1.3, 1.3])
             _dc1.markdown(f"`{_dupf1.name}`")
             if _dc2.button(t("다시 처리"), icon=":material/refresh:", key=f"dup_redo_{_dupf1.name}",
-                            use_container_width=True, type="primary"):
+                            width="stretch", type="primary"):
                 _dup_confirmed1.add(_dupf1.name)
                 st.rerun()
             if _dc3.button(t("건너뛰기"), icon=":material/close:", key=f"dup_skip_{_dupf1.name}",
-                            use_container_width=True):
+                            width="stretch"):
                 _dup_dismissed1.add(_dupf1.name)
                 _dupf1.unlink(missing_ok=True)
                 st.rerun()
@@ -2189,9 +2243,9 @@ if _active_view in {"1_txt", "all_run"}:
         _sel1 = _checklist(_items1, "ocr1", height=250, viewable=True)
         _b1c1, _b1c2 = st.columns(2)
         _run_sel1 = _b1c1.button(tf("텍스트 변환 처리 (%d개)", len(_sel1)), icon=":material/play_arrow:", key="ocr1_run_sel",
-                                   use_container_width=True, type="primary", disabled=len(_sel1)==0)
+                                   width="stretch", type="primary", disabled=len(_sel1)==0)
         _del1 = _b1c2.button(tf("삭제 (%d개)", len(_sel1)), icon=":material/delete:", key="ocr1_del_sel",
-                             use_container_width=True, disabled=len(_sel1)==0)
+                             width="stretch", disabled=len(_sel1)==0)
         if _del1 and _sel1:
             for _dobj1 in _sel1:
                 try:
@@ -2333,7 +2387,7 @@ if _active_view in {"1_txt", "all_run"}:
                 #   누르면 백그라운드 갈래가 곧바로 실패하는데, 화면은 st.rerun() 으로
                 #   이미 다시 그려진 뒤라 **오류도 진행바도 없이 아무 일도 안 일어난
                 #   것처럼** 보였다. 이제 설정값을 그대로 따른다.
-                _prov_tq, _ = llm.wiki_provider_model()
+                _prov_tq, _model_tq = llm.task_provider_model("ocr")
                 if not llm.has_key(_prov_tq):
                     st.error(t("쓸 수 있는 AI가 없어 다시 읽을 수 없습니다 — "
                                ":material/settings: 설정 탭에서 API 키를 넣거나 "
@@ -2401,7 +2455,7 @@ if _active_view in {"1_txt", "all_run"}:
                     _bak_tq = _out_tq.with_suffix(".txt.before_reocr")
                     if _out_tq.exists() and not _bak_tq.exists():
                         shutil.copy2(_out_tq, _bak_tq)      # 옛 본문은 반드시 남긴다
-                    ai_ocr.start_background(_pdf_tq, _out_tq, _prov_tq, "", _pages_tq)
+                    ai_ocr.start_background(_pdf_tq, _out_tq, _prov_tq, _model_tq, _pages_tq)
                     st.rerun()
                 if _b2_tq.button(t("중단"), icon=":material/stop:", key="tq_stop",
                                  disabled=not _running_tq):
@@ -2447,7 +2501,7 @@ if _active_view in {"1_txt", "all_run"}:
                         _rows_chk = [{t("쪽"): r.page, t("앞말"): d["before"],
                                       t("1차 판독"): d["a"], t("2차 판독"): d["b"]}
                                      for r in _chk_tq for d in r.disagreements]
-                        st.dataframe(pd.DataFrame(_rows_chk), use_container_width=True,
+                        st.dataframe(pd.DataFrame(_rows_chk), width="stretch",
                                      hide_index=True, height=_df_height(len(_rows_chk)))
                     # 두 판독이 같이 틀린 경우까지 보려면 — 시끄러우므로 접어 둔다
                     _jn_tq = [(r.page, d) for r in _rep_tq for d in (r.judge_notes or [])]
@@ -2461,7 +2515,7 @@ if _active_view in {"1_txt", "all_run"}:
                                 pd.DataFrame([{t("쪽"): p, t("앞말"): d["before"],
                                                t("채택본"): d["a"], t("로컬 판독"): d["b"]}
                                               for p, d in _jn_tq[:400]]),
-                                use_container_width=True, hide_index=True,
+                                width="stretch", hide_index=True,
                                 height=_df_height(min(len(_jn_tq), 12)))
                     if _unv_tq:
                         st.caption(tf("대조 불가 %d쪽은 원본 레이어가 너무 깨져 견줄 수가 없던 "
@@ -2476,7 +2530,7 @@ if _active_view in {"1_txt", "all_run"}:
                                            t("글자수"): f"{r.chars} / {r.base_chars}",
                                            t("사유"): r.note}
                                           for r in (_warn_tq + _fail_tq)]),
-                            use_container_width=True, hide_index=True)
+                            width="stretch", hide_index=True)
                     _new_tq = textquality.assess_file(_out_tq)
                     st.info(f"{_new_tq.badge} " + t("재OCR 후 진단: ") + _new_tq.summary())
                     st.caption(t("옛 본문은 `.before_reocr` 로 남겨 두었습니다. "
@@ -2527,19 +2581,19 @@ if _active_view == "2_split":
         # 재분할 확인을 받은 책이면, 옛 챕터·번역·요약이 새 챕터와 뒤섞이지 않도록
         # 먼저 폴더를 비운다(2026-08-09) — split_book_to_chapters는 같은 이름의
         # 챕터 파일만 덮어쓰고, 새 분할의 챕터 수가 줄면 옛 파일이 그대로 남는다.
-        if _stem in st.session_state.get("_split_dup_confirmed", set()):
+        if _stem in _job_state().get("_split_dup_confirmed", set()):
             _old_ch_dir = chapters_dir(_ws, _stem)
             if _old_ch_dir.exists():
                 shutil.rmtree(_old_ch_dir, ignore_errors=True)
             # 재확인 없이 계속 통과되지 않도록, 처리 성공 여부와 무관하게 1회용으로 소진한다.
-            st.session_state.get("_split_dup_confirmed", set()).discard(_stem)
-            st.session_state.get("_split_dup_dismissed", set()).discard(_stem)
+            _job_state().get("_split_dup_confirmed", set()).discard(_stem)
+            _job_state().get("_split_dup_dismissed", set()).discard(_stem)
         _sn, _serr, _smode = split_book_to_chapters(_ws, _stem)
         if _serr:
             if _smode == "single":  # 장 구조 감지 실패 — 아래 '장 구조 미감지'에서 선택하게 함
-                _pend_ns2 = st.session_state.get("split2_nosplit", [])
+                _pend_ns2 = _job_state().get("split2_nosplit", [])
                 if _stem not in _pend_ns2:
-                    st.session_state["split2_nosplit"] = _pend_ns2 + [_stem]
+                    _job_state()["split2_nosplit"] = _pend_ns2 + [_stem]
             return False, f"{_stem}: {_serr}"
         _cdir = chapters_dir(_ws, _stem)
         _new = [str(f.relative_to(cfg.BASE_DIR)) for f in sorted(_cdir.glob("??_*.txt"))
@@ -2548,15 +2602,15 @@ if _active_view == "2_split":
             return False, f"{_stem}: 챕터 생성 안 됨"
         queue_remove("tab2_ready", [_stem])
         if _route_translate(_stem):
-            st.session_state["split2_any_en"] = True
+            _job_state()["split2_any_en"] = True
             queue_add("tab3_ready", _new)
         else:
             queue_add("tab4_ready", _new)
         _archive_split_source(_stem)
         _track_flow_book(_stem)
         # 방금 나눈 책은 «장 구분 확인» 목록에 바로 뜨게 한다
-        st.session_state["_review_books"] = sorted(
-            set(st.session_state.get("_review_books", [])) | {_nfc(_stem)})
+        _job_state()["_review_books"] = sorted(
+            set(_job_state().get("_review_books", [])) | {_nfc(_stem)})
         # 커버리지 미달 경고는 로그가 아니라 화면에 붙인다 — 본문 일부가 빠진 채로
         # 번역·요약·EPUB까지 진행되던 사고 방지 (2026-08-17)
         _cov_warn = LAST_SPLIT_WARNING.pop(_stem, "")
@@ -2610,12 +2664,11 @@ if _active_view == "2_split":
         ],
         "flow2",
     )
-    _sp_prov2, _sp_model2 = llm.wiki_provider_model()
+    _sp_prov2, _sp_model2 = llm.task_provider_model("toc")
 
     # TXT 직접 업로드
     _up2 = st.file_uploader(t("TXT 직접 업로드"),
-                              type=["txt", "md"], accept_multiple_files=True, key="split_uploader")
-    st.caption(t(_DND_HINT))
+                              type=["txt", "md"], accept_multiple_files=True, key="split_uploader", help=t(_DND_HINT))
     if _up2:
         # 내용 해시(토큰)로 "이미 이 업로드를 반영했는지" 추적한다 — 업로더 위젯은 파일을
         # 계속 들고 있으므로, 추적 없이 매 rerun마다 다시 저장 + 재분할 확인 상태를
@@ -2721,11 +2774,11 @@ if _active_view == "2_split":
             _bc1, _bc2, _bc3 = st.columns([4, 1.3, 1.3])
             _bc1.markdown(f"`{_dupb2['stem']}` ({_dupb2['meta']})")
             if _bc2.button(t("다시 분할"), icon=":material/refresh:", key=f"splitdup_redo_{_dupb2['stem']}",
-                            use_container_width=True, type="primary"):
+                            width="stretch", type="primary"):
                 _split_dup_confirmed2.add(_dupb2["stem"])
                 st.rerun()
             if _bc3.button(t("건너뛰기"), icon=":material/close:", key=f"splitdup_skip_{_dupb2['stem']}",
-                            use_container_width=True):
+                            width="stretch"):
                 _split_dup_dismissed2.add(_dupb2["stem"])
                 st.rerun()
         st.divider()
@@ -2735,12 +2788,12 @@ if _active_view == "2_split":
         _sel2 = _checklist(_split_pend2, "split2", height=280, viewable=True)
         _b2c1, _b2c2, _b2c3 = st.columns(3)
         _rs2 = _b2c1.button(tf("분할 처리 (%d권)", len(_sel2)), icon=":material/play_arrow:", key="split2_run_sel",
-                              use_container_width=True, type="primary", disabled=len(_sel2)==0)
+                              width="stretch", type="primary", disabled=len(_sel2)==0)
         _next2 = _b2c2.button(tf("다음단계로 이동 (%d권)", len(_sel2)), icon=":material/arrow_forward:", key="split2_next",
-                              use_container_width=True, disabled=len(_sel2)==0,
+                              width="stretch", disabled=len(_sel2)==0,
                               help=t("분할 없이 단일장으로 저장하고 한국어가 아니면 번역, 한국어면 문서요약으로 이동"))
         _del2 = _b2c3.button(tf("삭제 (%d권)", len(_sel2)), icon=":material/delete:", key="split2_del",
-                             use_container_width=True, disabled=len(_sel2)==0)
+                             width="stretch", disabled=len(_sel2)==0)
         if _del2 and _sel2:
             for _dobj2 in _sel2:
                 _dstem2 = _dobj2["stem"]
@@ -2795,12 +2848,12 @@ if _active_view == "2_split":
         _sel_short2 = _checklist(_split_short2, "shortsplit2", height=240, viewable=True)
         _shc1, _shc2, _shc3 = st.columns(3)
         _sh_split2 = _shc1.button(tf("분할 처리 (%d권)", len(_sel_short2)), icon=":material/play_arrow:",
-                                  key="shortsplit2_split", use_container_width=True, disabled=len(_sel_short2) == 0)
+                                  key="shortsplit2_split", width="stretch", disabled=len(_sel_short2) == 0)
         _sh_next2 = _shc2.button(tf("다음단계로 이동 (%d권)", len(_sel_short2)), icon=":material/arrow_forward:",
-                                 key="shortsplit2_next", type="primary", use_container_width=True, disabled=len(_sel_short2) == 0,
+                                 key="shortsplit2_next", type="primary", width="stretch", disabled=len(_sel_short2) == 0,
                                  help=t("분할 없이 단일장으로 저장하고 한국어가 아니면 번역, 한국어면 문서요약으로 이동"))
         _sh_del2 = _shc3.button(tf("삭제 (%d권)", len(_sel_short2)), icon=":material/delete:",
-                                key="shortsplit2_del", use_container_width=True, disabled=len(_sel_short2) == 0)
+                                key="shortsplit2_del", width="stretch", disabled=len(_sel_short2) == 0)
 
         if _sh_split2 and _sel_short2:
             _short_done2 = 0
@@ -2882,7 +2935,7 @@ if _active_view == "2_split":
         for _ns2 in list(_nosplit2):
             _nc1, _nc2, _nc3 = st.columns([4, 1.6, 0.7])
             _nc1.markdown(f"**{_ns2}**")
-            if _nc2.button(t("단일장으로 저장"), icon=":material/article:", key=f"nosplit_save_{_ns2}", use_container_width=True):
+            if _nc2.button(t("단일장으로 저장"), icon=":material/article:", key=f"nosplit_save_{_ns2}", width="stretch"):
                 _sn2b, _smsg2b, _ = split_book_to_chapters(DEFAULT_WS, _ns2, allow_short=True)
                 if _sn2b > 0:
                     queue_remove("tab2_ready", [_ns2])
@@ -2923,6 +2976,7 @@ if _active_view == "2_split":
 # ── 3: 번역 ─────────────────────────────────────────────
 if _active_view == "3_translate":
     _tr_eng3 = _settings_engine_id()
+    _task_model_caption("translate")
     # 번역 출력 방식(독립 토글, 여러 개 가능) — 그냥 번역이 기본, 영한대역은 선택 (2026-08-11)
     _want_plain3 = bool(llm.get_pref("translate_want_plain", True))
     _want_bil3 = bool(llm.get_pref("translate_want_bilingual", False))
@@ -2935,6 +2989,8 @@ if _active_view == "3_translate":
             return False, f"{Path(rel).name}: {t('출력 방식을 하나 이상 선택하세요')}"
         _ok, _msg = translate_one_chapter(_cf, _tr_eng3, progress_cb=progress_cb,
                                            want_plain=_want_plain3, want_bilingual=_want_bil3)
+        if translation_status(_cf).get("blocked"):
+            _job_state()["_job_halt"] = t("AI 모델 또는 로그인 문제로 멈췄습니다. 설정을 확인한 뒤 재시도하세요.")
         if _ok:
             queue_remove("tab3_ready", [rel])
             queue_add("tab4_ready", [rel])
@@ -3009,8 +3065,7 @@ if _active_view == "3_translate":
 
         # TXT 직접 업로드 — 즉시 번역하지 않고 번역 대기 큐에 등록 (2026-07-09)
         _up3 = st.file_uploader(t("TXT 직접 업로드"),
-                                  type=["txt"], accept_multiple_files=True, key="tr3_uploader")
-        st.caption(t(_DND_HINT))
+                                  type=["txt"], accept_multiple_files=True, key="tr3_uploader", help=t(_DND_HINT))
         st.caption(t("업로드한 TXT는 아래 '번역 대기'에 등록됩니다. [▶ 시작]을 눌러야 번역이 시작됩니다."))
         if not _up3:
             st.session_state.pop("_tr3_uploaded_tokens", None)
@@ -3044,8 +3099,8 @@ if _active_view == "3_translate":
             _cf3 = cfg.BASE_DIR / _rel3
             if not _cf3.exists():
                 continue
-            _ko3 = find_translation(_cf3) or _cf3.with_name(_cf3.stem + out_suffix() + ".txt")
-            if _ko3.exists():
+            _ko3 = find_translation(_cf3)
+            if _ko3 is not None:
                 _tr_done3 += 1
             else:
                 _meta3 = f"{_cf3.stat().st_size//1024}KB"
@@ -3055,7 +3110,10 @@ if _active_view == "3_translate":
                 _lang3, _ = source_language(_cf3)
                 if _lang3:
                     _meta3 += f" · {language_name(_lang3)}"
-                if _cf3.with_name(_cf3.stem + out_suffix() + ".progress.json").exists():
+                _status3 = translation_status(_cf3)
+                if _status3.get("state") in ("partial", "failed"):
+                    _meta3 += tf(" · 부분완료/실패 %d단락 — 재시도 가능", _status3.get("failed", 0))
+                elif _cf3.with_name(_cf3.stem + out_suffix() + ".progress.json").exists():
                     _meta3 += t(" · ♻️ 중단됨 — 이어하기 가능")
                 _tr_pend3.append({
                     "key": _rel3,
@@ -3069,12 +3127,17 @@ if _active_view == "3_translate":
         st.divider()
         st.markdown(tf("#### 번역 대기 (%d개) / 완료 %d개", len(_tr_pend3), _tr_done3))
         if _tr_pend3:
+            _retry3 = [it["obj"] for it in _tr_pend3 if translation_status(cfg.BASE_DIR / it["obj"]).get("state") in ("partial", "failed")]
+            if _retry3 and st.button(tf("부분완료·실패 항목 재시도 (%d개)", len(_retry3)), key="tr3_retry_failed"):
+                _run_start("tr3", _retry3)
+            if _retry3:
+                st.caption(t("성공한 문단은 재사용하고 실패한 문단부터 다시 번역합니다."))
             _sel3 = _checklist(_tr_pend3, "tr3", height=280, viewable=True)
             _b3c1, _b3c2 = st.columns(2)
             _rs3 = _b3c1.button(tf("시작 (%d개)", len(_sel3)), icon=":material/play_arrow:", key="tr3_start",
-                                  use_container_width=True, type="primary", disabled=len(_sel3)==0)
+                                  width="stretch", type="primary", disabled=len(_sel3)==0)
             _del3 = _b3c2.button(tf("삭제 (%d개)", len(_sel3)), icon=":material/delete:", key="tr3_del",
-                                 use_container_width=True, disabled=len(_sel3)==0)
+                                 width="stretch", disabled=len(_sel3)==0)
             if _del3 and _sel3:
                 queue_remove("tab3_ready", _sel3)
                 st.rerun()
@@ -3114,18 +3177,21 @@ def _render_wiki_length_slider(widget_key: str):
 
 
 if _active_view == "4_summary":
+    _task_model_caption("summary")
     def _proc_summary4(rel):
         _cf = cfg.BASE_DIR / rel
         if not _cf.exists():
             return False, f"{Path(rel).name}: 파일 없음"
+        if translation_status(_cf).get("state") in ("running", "partial", "failed"):
+            return False, f"{_cf.name}: 번역을 완료한 뒤 요약해 주세요"
         _book = _nfc(_cf.parent.name)
         _ok, _msg = summarize_one_chapter(_cf, _book)
         if _ok:
             queue_remove("tab4_ready", [rel])
             queue_remove("tab4_failed", [rel])
-            _touched = set(st.session_state.get("summ4_touched", []))
+            _touched = set(_job_state().get("summ4_touched", []))
             _touched.add(_book)
-            st.session_state["summ4_touched"] = sorted(_touched)
+            _job_state()["summ4_touched"] = sorted(_touched)
             queue_add("tab5_ready", [_book])
             _track_flow_book(_book)
         else:
@@ -3209,8 +3275,7 @@ if _active_view == "4_summary":
 
         # TXT 직접 업로드 — 즉시 요약하지 않고 요약 대기 큐에 등록 (2026-07-09)
         _up4 = st.file_uploader(t("TXT 직접 업로드"),
-                                  type=["txt"], accept_multiple_files=True, key="summ4_uploader")
-        st.caption(t(_DND_HINT))
+                                  type=["txt"], accept_multiple_files=True, key="summ4_uploader", help=t(_DND_HINT))
         st.caption(t("업로드한 TXT는 아래 '요약 대기'에 등록됩니다. [▶ 시작]을 눌러야 요약이 시작됩니다."))
         if not _up4:
             st.session_state.pop("_summ4_uploaded_tokens", None)
@@ -3300,9 +3365,9 @@ if _active_view == "4_summary":
             _sel4 = _checklist(_sum_pend4, "summ4", height=280, viewable=True, renamable=True)
             _b4c1, _b4c2 = st.columns(2)
             _rs4 = _b4c1.button(tf("시작 (%d개)", len(_sel4)), icon=":material/play_arrow:", key="summ4_start",
-                                  use_container_width=True, type="primary", disabled=len(_sel4)==0)
+                                  width="stretch", type="primary", disabled=len(_sel4)==0)
             _del4 = _b4c2.button(tf("삭제 (%d개)", len(_sel4)), icon=":material/delete:", key="summ4_del",
-                                 use_container_width=True, disabled=len(_sel4)==0)
+                                 width="stretch", disabled=len(_sel4)==0)
             _sel4_rels = [str(_cfx.relative_to(cfg.BASE_DIR)) for _cfx, _bx in _sel4]
             if _del4 and _sel4:
                 queue_remove("tab4_ready", _sel4_rels)
@@ -3318,11 +3383,11 @@ if _active_view == "4_summary":
             _fail_sel4 = _checklist(_sum_failed4, "summ4_failed", height=180)
             _f4c1, _f4c2 = st.columns([2, 1])
             if _f4c1.button(tf("선택 재시도 대기 (%d개)", len(_fail_sel4)), icon=":material/refresh:", key="summ4_retry_failed",
-                              use_container_width=True, disabled=len(_fail_sel4)==0):
+                              width="stretch", disabled=len(_fail_sel4)==0):
                 queue_remove("tab4_failed", _fail_sel4)
                 queue_add("tab4_ready", _fail_sel4)
                 st.rerun()
-            if _f4c2.button(t("실패 목록 비우기"), icon=":material/delete_sweep:", key="summ4_clear_failed", use_container_width=True):
+            if _f4c2.button(t("실패 목록 비우기"), icon=":material/delete_sweep:", key="summ4_clear_failed", width="stretch"):
                 queue_clear("tab4_failed")
                 st.rerun()
 
@@ -3334,7 +3399,7 @@ if _active_view == "5_wiki":
     _docx_dir5 = _current_docx_dir()
     _hwpx_dir5 = _current_hwpx_dir()
     _epub_dir5 = _current_epub_dir()
-    _epub_engine5 = _settings_engine_id()
+    _epub_engine5 = _settings_engine_id("cleanup")
 
     def _proc_wiki5(stem, progress_cb=None):
         # 옵시디언·DOCX·HWPX·EPUB 토글 조합대로 출력을 생성한다 (여러 개 켜면 전부).
@@ -3378,9 +3443,9 @@ if _active_view == "5_wiki":
         _allok = all(r[1] for r in _res)
         if _allok:
             queue_remove("tab5_ready", [stem])
-            _touched5 = dict(st.session_state.get("wiki5_touched", {}))
+            _touched5 = dict(_job_state().get("wiki5_touched", {}))
             _touched5[stem] = _produced
-            st.session_state["wiki5_touched"] = _touched5
+            _job_state()["wiki5_touched"] = _touched5
         return _allok, f"{stem}: " + " · ".join(f"{nm} {'✓' if ok else '✗ ' + m}" for nm, ok, m in _res)
 
     def _proc_clean5(stem, progress_cb=None):
@@ -3495,11 +3560,9 @@ if _active_view == "5_wiki":
     #    구분해서 보여준다. 옵시디언은 맨 아래에 두어 그 토글 바로 밑에 보관함
     #    설정이 이어지도록 한다 (2026-07-25, HWPX 2026-08-09, EPUB 2026-08-11,
     #    EPUB을 요약 그룹 위로·상시 자간정리 2026-08-11).
-    _ep_col5, _, _ = st.columns(3)
-    with _ep_col5:
-        _ep_t5, _ep_b5 = st.columns([3, 1], gap="small")
-        _ep_new5 = _ep_t5.toggle(
+    _ep_new5 = _output_format_toggle(
             t("EPUB 전자책 생성"), value=_use_ep, key="wiki5_use_epub",
+            folder=_epub_dir5, folder_key="epub5_open_dir",
             help=t(
                 "챕터 원문·번역본 전체를 전자책(.epub) 한 권으로 묶어 저장합니다(요약이 아닌 본문 그대로). "
                 "번역본이나 자간정리본이 있으면 그걸 쓰고, 없으면 원문 그대로 담습니다 — "
@@ -3508,9 +3571,6 @@ if _active_view == "5_wiki":
                 "⚠️ 저작권이 있는 책 전체가 그대로 담기므로 개인적인 사용 목적으로만 쓰세요 — 배포·공유는 저작권법 위반이 될 수 있습니다."
             ),
         )
-        if _ep_b5.button("", icon=":material/folder_open:", key="epub5_open_dir",
-                          help=tf("요약 문서 보관함 열기: `%s`", str(_epub_dir5))):
-            open_path(_epub_dir5)
     if _use_ep:
 
         # ── 자간정리(선택) — EPUB 생성에서 떼어낸 별도 단계 (2026-08-14) ──────
@@ -3553,8 +3613,7 @@ if _active_view == "5_wiki":
             # PDF처럼 텍스트 레이어가 없으면 별도 OCR이 필요해 안내만 하고 건너뛴다,
             # 2026-08-11).
             _epup5 = st.file_uploader(t("TXT 또는 PDF 직접 업로드"), type=["txt", "pdf"],
-                                       accept_multiple_files=True, key="epub5_uploader")
-            st.caption(t(_DND_HINT))
+                                       accept_multiple_files=True, key="epub5_uploader", help=t(_DND_HINT))
             st.caption(t("업로드한 파일은 챕터 분할 없이 단일장으로 등록되어 바로 EPUB 대상이 됩니다. "
                           "PDF는 텍스트를 자동 추출합니다(스캔 이미지 PDF는 1-업로드 탭에서 OCR을 먼저 거쳐야 합니다)."))
             if not _epup5:
@@ -3624,36 +3683,20 @@ if _active_view == "5_wiki":
             _epsel5 = _checklist(_epitems5, "epub5m", height=200)
             _epc5a, _epc5b = st.columns(2)
             if _epc5a.button(tf("선택 항목 큐에 추가 (%d권)", len(_epsel5)), icon=":material/add:", key="epub5m_add",
-                             use_container_width=True, disabled=len(_epsel5) == 0):
+                             width="stretch", disabled=len(_epsel5) == 0):
                 queue_add("tab5_ready", _epsel5); st.rerun()
             if _epc5b.button(tf("삭제 (%d권)", len(_epsel5)), icon=":material/delete:", key="epub5m_del",
-                             use_container_width=True, disabled=len(_epsel5) == 0):
+                             width="stretch", disabled=len(_epsel5) == 0):
                 queue_remove("tab5_ready", _epsel5); st.rerun()
     st.divider()
 
     st.caption(t("요약 문서 포맷"))
-    _fmt_dx, _fmt_hx, _fmt_ob = st.columns(3)
-    with _fmt_dx:
-        _dx_t5, _dx_b5 = st.columns([3, 1], gap="small")
-        _dx_new5 = _dx_t5.toggle(t("DOCX 문서 생성"), value=_use_dx, key="wiki5_use_docx",
-                          help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
-        if _dx_b5.button("", icon=":material/folder_open:", key="wiki5_docx_open",
-                          help=tf("요약 문서 보관함 열기: `%s`", str(_docx_dir5))):
-            open_path(_docx_dir5)
-    with _fmt_hx:
-        _hx_t5, _hx_b5 = st.columns([3, 1], gap="small")
-        _hx_new5 = _hx_t5.toggle(t("HWPX 문서 생성"), value=_use_hx, key="wiki5_use_hwpx",
-                          help=t("편집 가능한 한글(.hwpx) 문서로 저장합니다."))
-        if _hx_b5.button("", icon=":material/folder_open:", key="wiki5_hwpx_open",
-                          help=tf("요약 문서 보관함 열기: `%s`", str(_hwpx_dir5))):
-            open_path(_hwpx_dir5)
-    with _fmt_ob:
-        _ob_t5, _ob_b5 = st.columns([3, 1], gap="small")
-        _ob_new5 = _ob_t5.toggle(t("옵시디언 위키 사용"), value=_use_ob, key="wiki5_use_obsidian",
-                          help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
-        if _ob_b5.button("", icon=":material/folder_open:", key="wiki5_obsidian_open",
-                          help=tf("요약 문서 보관함 열기: `%s`", str(_current_wiki_dir()))):
-            open_path(_current_wiki_dir())
+    _dx_new5 = _output_format_toggle("DOCX", value=_use_dx, key="wiki5_use_docx",
+        folder=_docx_dir5, folder_key="wiki5_docx_open", help=t("편집 가능한 Word(.docx) 문서로 저장합니다."))
+    _hx_new5 = _output_format_toggle("HWPX", value=_use_hx, key="wiki5_use_hwpx",
+        folder=_hwpx_dir5, folder_key="wiki5_hwpx_open", help=t("편집 가능한 한글(.hwpx) 문서로 저장합니다."))
+    _ob_new5 = _output_format_toggle("Obsidian", value=_use_ob, key="wiki5_use_obsidian",
+        folder=_current_wiki_dir(), folder_key="wiki5_obsidian_open", help=t("Obsidian 보관함에 위키 노트로 저장합니다."))
     if (bool(_ob_new5) != _use_ob or bool(_dx_new5) != _use_dx
             or bool(_hx_new5) != _use_hx or bool(_ep_new5) != _use_ep):
         llm.set_pref("use_obsidian", bool(_ob_new5))
@@ -3743,12 +3786,12 @@ if _active_view == "5_wiki":
     if _wiki_pend5:
         # 전체 선택 / 해제 (분할 탭 체크리스트와 동일한 조작)
         _wk5_keys = [f"wiki5_{_it5['key']}" for _it5 in _wiki_pend5]
-        _wsel5c1, _wsel5c2, _wsel5c3 = st.columns([1.3, 1, 4])
-        if _wsel5c1.button(t("전체 선택"), icon=":material/select_all:", key="wiki5_select_all", use_container_width=True):
+        _wsel5c1, _wsel5c2, _wsel5c3 = _responsive_columns([1.3, 1, 4], "list_header_wiki5")
+        if _wsel5c1.button(t("전체 선택"), icon=":material/select_all:", key="wiki5_select_all", width="stretch"):
             for _wk in _wk5_keys:
                 st.session_state[_wk] = True
             st.rerun()
-        if _wsel5c2.button(t("해제"), icon=":material/deselect:", key="wiki5_deselect_all", use_container_width=True):
+        if _wsel5c2.button(t("해제"), icon=":material/deselect:", key="wiki5_deselect_all", width="stretch"):
             for _wk in _wk5_keys:
                 st.session_state[_wk] = False
             st.rerun()
@@ -3756,22 +3799,19 @@ if _active_view == "5_wiki":
         # 책 단위 체크리스트 + 챕터 이름 펼치기
         _sel5: list = []
         with st.container(height=320, border=True):
-            _w5h1, _w5h2, _w5h3, _w5h4 = st.columns([0.05, 0.5, 0.32, 0.13])
-            _w5h2.markdown(t("**책 제목**"), unsafe_allow_html=True)
-            _w5h3.markdown(f"<small style='color:#9ca3af'>{t('챕터')}</small>", unsafe_allow_html=True)
-            for _it5 in _wiki_pend5:
+            for _row5, _it5 in enumerate(_wiki_pend5):
                 _k5 = f"wiki5_{_it5['key']}"
-                _c5a, _c5b, _c5c, _c5d = st.columns([0.05, 0.5, 0.32, 0.13])
-                _chk5 = _c5a.checkbox(" ", key=_k5, label_visibility="collapsed")
+                _c5a, _c5b, _c5d = _responsive_columns([0.05, 0.82, 0.13], f"document_row_wiki5_{_row5}")
+                _chk5 = _c5a.checkbox(_it5['label'], key=_k5, label_visibility="collapsed")
                 if _chk5:
                     _sel5.append(_it5["obj"])
                 _c5b.markdown(f"**{_it5['label']}**", unsafe_allow_html=True)
                 _ch_preview5 = " · ".join(_it5["ch_names"][:4])
                 if len(_it5["ch_names"]) > 4:
                     _ch_preview5 += f" … +{len(_it5['ch_names'])-4}개"
-                _c5c.caption(_it5["meta"])
+                _c5b.caption(_it5["meta"])
                 _view_dir5 = chapters_dir(DEFAULT_WS, _it5["obj"]["stem"])
-                if _c5d.button(t("보기"), icon=":material/visibility:", key=f"wiki5_view_{_it5['key']}", use_container_width=True,
+                if _icon_button(t("보기"), container=_c5d, icon=":material/description:", key=f"wiki5_view_{_it5['key']}", width="stretch",
                                 disabled=not _view_dir5.exists()):
                     open_path(_view_dir5)
                 if _it5["ch_names"]:
@@ -3786,7 +3826,7 @@ if _active_view == "5_wiki":
                             if _has_json5:
                                 _cj1.markdown(f"✅ **{_cn5}**")
                                 _safe_key5 = _re.sub(r"[^a-zA-Z0-9가-힣]", "_", _cn5)[:30]
-                                if _cj2.button("Wiki", icon=":material/menu_book:", key=f"ch5w_{_it5['key'][:20]}_{_safe_key5}", use_container_width=True):
+                                if _cj2.button("Wiki", icon=":material/menu_book:", key=f"ch5w_{_it5['key'][:20]}_{_safe_key5}", width="stretch"):
                                     _bok5, _bmsg5 = build_single_chapter_wiki(DEFAULT_WS, _it5["obj"]["stem"], _cn5_json, wiki_dir=_cur_wiki5_path)
                                     (st.success if _bok5 else st.error)(
                                         f"{'✅ ' + Path(_bmsg5).name if _bok5 else '❌ ' + _bmsg5}")
@@ -3801,9 +3841,9 @@ if _active_view == "5_wiki":
                                 _cj1.caption(f"⏳ {_cn5}")
         _b5c1, _b5c2 = st.columns(2)
         _rs5 = _b5c1.button(tf("시작 (%d권)", len(_sel5)), icon=":material/play_arrow:", key="wiki5_run_sel",
-                              use_container_width=True, type="primary", disabled=len(_sel5)==0)
+                              width="stretch", type="primary", disabled=len(_sel5)==0)
         _del5 = _b5c2.button(tf("삭제 (%d권)", len(_sel5)), icon=":material/delete:", key="wiki5_del",
-                             use_container_width=True, disabled=len(_sel5)==0)
+                             width="stretch", disabled=len(_sel5)==0)
         if _del5 and _sel5:
             queue_remove("tab5_ready", [_o5["stem"] for _o5 in _sel5])
             st.rerun()
@@ -3825,12 +3865,12 @@ if _active_view == "5_wiki":
         _wr5c1, _wr5c2 = st.columns(2)
         _refresh_run5 = _wr5c1.button(
             tf("다시 반영 (%d권)", len(_refresh_stems5)),
-            icon=":material/refresh:", key="wiki5_refresh_run", use_container_width=True,
+            icon=":material/refresh:", key="wiki5_refresh_run", width="stretch",
             type="primary", disabled=len(_refresh_stems5) == 0,
         )
         _refresh_skip5 = _wr5c2.button(
             tf("이번 갱신 건너뛰기 (%d권)", len(_refresh_stems5)),
-            icon=":material/skip_next:", key="wiki5_refresh_skip", use_container_width=True,
+            icon=":material/skip_next:", key="wiki5_refresh_skip", width="stretch",
             disabled=len(_refresh_stems5) == 0,
         )
         if _refresh_skip5 and _refresh_stems5:
@@ -3857,10 +3897,10 @@ if _active_view == "5_wiki":
         _msel5 = _checklist(_mitems5, "wiki5m", height=200)
         _madd5c1, _madd5c2 = st.columns(2)
         if _madd5c1.button(tf("선택 항목 큐에 추가 (%d권)", len(_msel5)), icon=":material/add:", key="wiki5m_add",
-                           use_container_width=True, disabled=len(_msel5)==0):
+                           width="stretch", disabled=len(_msel5)==0):
             queue_add("tab5_ready", _msel5); st.rerun()
         if _madd5c2.button(tf("삭제 (%d권)", len(_msel5)), icon=":material/delete:", key="wiki5m_del",
-                           use_container_width=True, disabled=len(_msel5)==0):
+                           width="stretch", disabled=len(_msel5)==0):
             queue_remove("tab5_ready", _msel5); st.rerun()
 
     # 단일 TXT 기반 (챕터 분할 없는 책 — 큐 외 별도 경로)
@@ -3890,9 +3930,9 @@ if _active_view == "5_wiki":
         _sel5s = _checklist(_single_pend5, "wiki5s", height=200)
         _s5c1, _s5c2 = st.columns(2)
         _run5s = _s5c1.button(tf("Wiki 생성 (%d권)", len(_sel5s)), icon=":material/play_arrow:", key="wiki5s_run",
-                     use_container_width=True, type="primary", disabled=len(_sel5s)==0)
+                     width="stretch", type="primary", disabled=len(_sel5s)==0)
         _del5s = _s5c2.button(tf("삭제 (%d권)", len(_sel5s)), icon=":material/delete:", key="wiki5s_del",
-                     use_container_width=True, disabled=len(_sel5s)==0)
+                     width="stretch", disabled=len(_sel5s)==0)
         if _run5s and _sel5s:
             for _wo5s in _sel5s:
                 _ok5s = trigger_gemini_wiki(_wo5s["txt"])
@@ -3914,12 +3954,12 @@ if _active_view == "5_wiki":
     st.markdown(t("#### Wiki 완료"))
     if _wiki_files5:
         _wv_col1, _wv_col2 = st.columns(2)
-        if _wv_col1.button(t("Obsidian 보관함(Vault) 열기"), icon=":material/menu_book:", key="w5_vault", use_container_width=True):
+        if _wv_col1.button(t("Obsidian 보관함(Vault) 열기"), icon=":material/menu_book:", key="w5_vault", width="stretch"):
             open_wiki_vault()
-        if _wv_col2.button(t("폴더 열기"), icon=":material/folder_open:", key="w5_folder", use_container_width=True):
+        if _wv_col2.button(t("Wiki 저장 폴더 열기"), icon=":material/folder_open:", key="w5_folder", width="stretch"):
             open_path(_cur_wiki5_path)
     else:
-        st.caption("생성된 Wiki 없음")
+        st.caption(t("생성된 Wiki 없음"))
 
 
 # ── 설정 ─────────────────────────────────────────────
@@ -3932,12 +3972,12 @@ if _active_view == "settings":
     _lang_cur = get_lang()
     _lang_sel = st.radio(t("🌐 언어 / Language"), ["한국어", "English"],
                          index=0 if _lang_cur == "ko" else 1,
-                         horizontal=True, key="compact_ui_lang_radio")
+                         horizontal=True, key="compact_ui_lang_radio",
+                         help=t("화면에 쓰는 언어입니다 — 번역 결과물의 언어는 바로 아래에서 따로 고릅니다."))
     _lang_new = "ko" if _lang_sel == "한국어" else "en"
     if _lang_new != _lang_cur:
         set_lang(_lang_new)
         st.rerun()
-    st.caption(t("화면에 쓰는 언어입니다 — 번역 결과물의 언어는 바로 아래에서 따로 고릅니다."))
 
     # ── 도착언어 — 번역본·요약·위키가 모두 이 언어로 나온다 (2026-08-15) ──────
     # 화면 언어(위)와 별개다: 한국어 화면을 쓰면서 결과물만 영어로 뽑을 수 있다.
@@ -3965,22 +4005,18 @@ if _active_view == "settings":
 
     _settings_panel = st.session_state.get("settings_panel", "home")
     if _settings_panel == "home":
+        with st.expander(t("화면과 저장 위치")):
+            _font_scale_controls()
+            st.caption(t("창 크기는 앱을 정상 종료할 때 저장됩니다."))
+            _render_storage_locations()
         # ── AI 설정은 목록에 넣지 않고 여기서 바로 보여 준다 (연구자 요청) ──
         st.markdown("#### " + t("AI 설정"))
-        _wp, _wm = llm.wiki_provider_model()
-        _avail = [(p, m) for p, info in llm.PROVIDERS.items() if llm.has_key(p) for m in info["models"]]
-        if _avail:
-            _labels = [f"{llm.PROVIDERS[p]['label']} · {m}" for p, m in _avail]
-            _current_label = f"{llm.PROVIDERS.get(_wp, {}).get('label', _wp)} · {_wm}"
-            _idx = _labels.index(_current_label) if _current_label in _labels else 0
-            _sel = st.selectbox(t("위키 생성 모델"), _labels, index=_idx, key="compact_home_wiki_model")
-            _p, _m = _avail[_labels.index(_sel)]
-            if (_p, _m) != (_wp, _wm) and st.button(t("선택한 모델 적용"), icon=":material/check:",
-                                                       key="compact_home_wiki_model_save", use_container_width=True):
-                llm.set_wiki_model(_p, _m)
-                st.rerun()
-        else:
-            st.info(t("사용 가능한 API 키나 활성화된 CLI가 없습니다. 아래에서 API 키를 입력하거나 CLI 사용을 켜세요."))
+        _render_model_editor("ai_default")
+        with st.expander(t("작업별 AI 설정")):
+            for _task, _label in (("translate", "번역"), ("summary", "문서요약"),
+                                   ("ocr", "이미지 재판독"), ("toc", "목차 판독"), ("cleanup", "자간정리")):
+                st.markdown("**" + t(_label) + "**")
+                _render_model_editor(f"ai_task_{_task}", _task)
 
         # CLI 구독 도구 — 설치돼 있으면 실제로 쓸 모델명을, 아니면 설치 명령을 알려 준다.
         _cc1, _cc2 = st.columns(2)
@@ -4006,10 +4042,7 @@ if _active_view == "settings":
                                    help=(tf("설치됨: %s", llm.codex_cli_path()) if _codex_installed
                                          else t("미설치")))
             if _codex_installed:
-                st.caption(tf("모델: `%s`", _cli_model_label("codex_cli"))
-                           + ("  · " + t("Codex 설정(~/.codex/config.toml)을 따릅니다")
-                              if llm.codex_cli_model() else
-                              "  · " + t("ChatGPT 구독은 모델 지정이 안 됩니다")))
+                st.caption(t("CLI 설정값") + ": " + (llm.codex_cli_model() or t("실행 시 결정")))
                 if _new_codex != _codex_enabled:
                     llm.set_codex_cli_enabled(_new_codex)
                     st.rerun()
@@ -4032,27 +4065,27 @@ if _active_view == "settings":
              t("Obsidian 위키 노트가 저장될 Vault를 정합니다.")),
         ]
         for _key, _label, _icon, _desc in _setting_buttons:
-            _bcol, _dcol = st.columns([1.35, 3])
-            if _bcol.button(_label, icon=_icon, key=f"compact_settings_open_{_key}",
-                            use_container_width=True):
+            if st.button(_label, icon=_icon, key=f"compact_settings_open_{_key}",
+                         width="stretch", help=_desc):
                 st.session_state["settings_panel"] = _key
                 st.rerun()
-            _dcol.caption(_desc)
 
         st.divider()
         st.markdown("#### " + t("업데이트"))
         _upc1, _upc2 = st.columns([2, 1])
         _upc1.caption(tf("현재 버전: %s", APP_VERSION))
         if _upc2.button(t("업데이트 확인"), icon=":material/system_update:", key="compact_check_update",
-                        use_container_width=True):
+                        width="stretch"):
             _upd_info = updater.check_for_update()
-            if _upd_info:
+            if _upd_info and _upd_info.get("available"):
                 st.session_state["_update_info"] = _upd_info
                 st.session_state.pop("_update_dismissed", None)
                 # 수동으로 확인한 거라, 예전에 이 버전을 '나중에'로 미뤄뒀어도
                 # 항상 팝업을 보여준다 (2026-07-25).
                 llm.set_pref("update_dismissed_version", "")
                 st.rerun()
+            elif _upd_info and _upd_info.get("error"):
+                st.warning(_upd_info["error"])
             elif sys.platform not in ("win32", "darwin"):
                 st.info(t("앱 내 업데이트는 Windows·macOS에서만 지원됩니다."))
             else:
@@ -4095,8 +4128,8 @@ if _active_view == "settings":
                     _newk = st.text_input(f"{_info['label']} API 키", type="password",
                                           placeholder=_info["hint"])
                     _c1, _c2 = st.columns(2)
-                    _save = _c1.form_submit_button(t("저장"), icon=":material/save:", use_container_width=True)
-                    _delete = _c2.form_submit_button(t("삭제"), icon=":material/delete:", use_container_width=True)
+                    _save = _c1.form_submit_button(t("저장"), icon=":material/save:", width="stretch")
+                    _delete = _c2.form_submit_button(t("삭제"), icon=":material/delete:", width="stretch")
                     if _save:
                         if _newk.strip():
                             llm.save_key(_prov, _newk.strip())
@@ -4110,7 +4143,7 @@ if _active_view == "settings":
                         st.rerun()
                 st.caption(tf("모델: %s", ", ".join(_info["models"])))
         if st.button(t("설정 목록으로 돌아가기"), icon=":material/arrow_back:", key="compact_api_back",
-                     use_container_width=True):
+                     width="stretch"):
             st.session_state["settings_panel"] = "home"
             st.rerun()
         _finish_compact_settings()

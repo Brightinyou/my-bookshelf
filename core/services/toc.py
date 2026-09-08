@@ -343,9 +343,12 @@ def _visual_toc_codex_cli(model: str, pngs: list[Path], prompt: str) -> str:
     cli = llm.codex_cli_path()
     if not cli:
         raise RuntimeError("codex CLI 없음")
-    out_file = Path(tempfile.gettempdir()) / f"codex_toc_{Path(pngs[0]).parent.name}.txt"
+    work = tempfile.TemporaryDirectory(prefix="mb_toc_")
+    out_file = Path(work.name) / "out.txt"
     args = [cli, "exec", "--skip-git-repo-check",
-            "--dangerously-bypass-approvals-and-sandbox", "-o", str(out_file)]
+            "--sandbox", "read-only", "--ephemeral",
+            "--disable", "shell_tool", "--disable", "unified_exec",
+            "--disable", "view_image", "-o", str(out_file)]
     for f in pngs:
         args += ["-i", str(f)]
     if model not in ("default", ""):
@@ -354,7 +357,7 @@ def _visual_toc_codex_cli(model: str, pngs: list[Path], prompt: str) -> str:
     try:
         r = subprocess.run(
             args, capture_output=True, text=True, timeout=600,
-            cwd=tempfile.gettempdir(), encoding="utf-8", errors="replace",
+            cwd=work.name, encoding="utf-8", errors="replace",
             input=prompt + "\n\n분석 과정 설명 없이 반드시 유효한 JSON 객체 하나만 출력하라.",
             env=llm._cli_env(), **llm._no_window_kwargs(),
         )
@@ -364,7 +367,7 @@ def _visual_toc_codex_cli(model: str, pngs: list[Path], prompt: str) -> str:
             return out_file.read_text(encoding="utf-8").strip()
         return (r.stdout or "").strip()
     finally:
-        out_file.unlink(missing_ok=True)
+        work.cleanup()
 
 
 def _visual_toc_claude_cli(model: str, scan_pdf: Path, prompt: str) -> str:
@@ -375,8 +378,10 @@ def _visual_toc_claude_cli(model: str, scan_pdf: Path, prompt: str) -> str:
     prompt = (f'PDF 파일 "{scan_pdf}" 을 Read 도구로 읽어라 (필요하면 pages를 나눠 여러 번). '
               + prompt
               + "\n\n분석 과정 설명 없이 반드시 유효한 JSON 객체 하나만 출력하라.")
+    model_args = ["--model", model] if model not in ("", "default") else []
     r = subprocess.run(
-        [cli, "-p", prompt, "--model", model, "--output-format", "text",
+        [cli, "-p", prompt, *model_args, "--output-format", "text",
+         "--tools", "Read",
          "--allowedTools", "Read",
          "--system-prompt", "Output only one valid JSON object."],
         capture_output=True, text=True, timeout=600, cwd=str(scan_pdf.parent),
@@ -401,7 +406,7 @@ def pdf_visual_toc(pdf_path: Path, txt: str | None = None) -> list[tuple[str, in
     """연결된 공급자로 차례/장구분 페이지 시각 판독 → [(제목, 원본페이지 1-기반|None)].
     실패·미지원 공급자·후보 부족 시 None."""
     try:
-        prov, model = llm.wiki_provider_model()
+        prov, model = llm.task_provider_model("toc")
         if not llm.has_key(prov):
             _toc_skip(pdf_path, f"공급자 {prov} 사용 불가 — AI 설정 확인")
             return None
@@ -767,7 +772,7 @@ def read_toc_pages_ai(pdf_path: Path, indices: list[int]) -> tuple[list[str], st
     if not indices:
         return [], "페이지를 고르세요"
     try:
-        prov, model = llm.wiki_provider_model()
+        prov, model = llm.task_provider_model("toc")
         if not llm.has_key(prov):
             return [], f"AI 공급자({prov})를 쓸 수 없습니다 — 설정에서 확인하세요"
     except Exception as e:

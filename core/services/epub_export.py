@@ -15,6 +15,7 @@ from pathlib import Path
 
 import config as cfg
 
+from services.common import append_log
 from services.translate import DERIVED_SUFFIXES as _DERIVED, find_translation
 from services.chapters import _author_from_stem, chapters_dir
 
@@ -51,6 +52,79 @@ def _split_title_author(stem: str) -> tuple[str, str]:
 _HANGUL_RE = re.compile(r"[가-힣]")
 
 
+# ── 러닝헤더(쪽 머리글) 걷어내기 ──────────────────────────
+# 스캔본 본문에는 쪽마다 머리글이 한 문단으로 남는다 — 실측(군켈 *Person, Thing,
+# Robot*): `6 Both/And`, `134 Chapter 6`가 장마다 15~36개. 이것을 그대로 두면
+# footnotes.convert의 «끊긴 문장 잇기»가 짧은 머리글 줄을 문장 조각으로 보고
+# **다음 문단 앞에 붙여 버린다**(119문단 → 64문단). 그래서 책을 펴면 쪽마다
+# 첫 문단이 «134 Chapter 6 법적 추론뿐만…»으로 시작한다. 잇기 **전에** 없앤다.
+#
+# ★함부로 지우면 안 되는 것들이 같은 모양을 하고 있다 (2026-09-08 실측):
+#   · 차례 — `1 Introduction 1`, `2 Things 23` … (머리말에 229건)
+#   · 미주 구역의 장별 소제목 — `Chapter 1` … `Chapter 7`
+#   · 그림 설명 — `Figure 4`
+# 그래서 «반복 횟수»가 아니라 **모양**으로 가른다. 러닝헤더는 늘
+#   ① 쪽번호 + `Chapter` + 장번호   (둘 다 숫자여야 한다 → `Chapter 1`은 안 걸린다)
+#   ② 쪽번호와 **이 장 자신의 제목**  (차례는 다른 장 제목을 나열하므로 안 걸린다)
+#   ③ 쪽번호와 뒷부속 이름(Notes·References·Index) — 쪽번호가 반드시 있어야 한다
+# 셋 중 하나다.
+_HDR_SECTIONS = ("notes", "references", "index", "bibliography", "contents")
+
+
+def _hdr_key(s: str) -> str:
+    """제목 비교용 열쇠 — 파일명 `Both - And`와 본문 `Both/And`를 같게 본다."""
+    return re.sub(r"[^0-9a-z가-힣]+", "", s.lower())
+
+
+def _running_header_span(words: list, title_key: str) -> tuple:
+    """문단 첫머리가 러닝헤더면 (차지한 낱말 수, 뒤에 본문이 붙어 있어도 뗄까), 아니면 (0, False).
+
+    둘째 값이 True인 것은 ① 모양뿐이다 — `숫자 Chapter 숫자`는 차례에도 문장에도
+    나올 수 없어, 뒤에 본문이 붙어 있어도 안심하고 뗄 수 있다. ②③은 차례 줄
+    (`Notes 185 References 199 Index 225`)과 모양이 겹치므로 **문단 전체가
+    머리글일 때만** 지운다 (2026-09-08 실측으로 이 줄이 잘려 나가 좁혔다)."""
+    def isnum(w: str) -> bool:
+        return w.isdigit() and len(w) <= 4
+    n = len(words)
+    if n >= 3 and isnum(words[0]) and _hdr_key(words[1]) == "chapter" and isnum(words[2]):
+        return 3, True
+    if title_key:
+        for k in range(1, min(7, n)):          # 제목이 차지하는 낱말 수
+            if 1 + k <= n and isnum(words[0]) and _hdr_key(" ".join(words[1:1 + k])) == title_key:
+                return 1 + k, False
+            if k < n and isnum(words[k]) and _hdr_key(" ".join(words[:k])) == title_key:
+                return k + 1, False
+    if n >= 2:
+        if isnum(words[0]) and _hdr_key(words[1]) in _HDR_SECTIONS:
+            return 2, False
+        if isnum(words[1]) and _hdr_key(words[0]) in _HDR_SECTIONS:
+            return 2, False
+    return 0, False
+
+
+def strip_running_headers(text: str, chapter_title: str) -> tuple[str, int]:
+    """본문에서 쪽 머리글을 걷어낸다. (걷어낸 본문, 없앤 개수)
+
+    머리글만으로 된 문단은 통째로 빼고, 뒤에 본문이 붙어 있으면 앞머리만 뗀다."""
+    title_key = _hdr_key(re.sub(r"^\d+[_.\s-]*", "", chapter_title or ""))
+    kept, removed = [], 0
+    for para in re.split(r"\n\s*\n", text):
+        body = para.strip()
+        if not body:
+            continue
+        words = body.split()
+        span, strip_when_glued = _running_header_span(words, title_key)
+        if span == len(words) > 0:             # 머리글뿐인 문단 — 통째로 뺀다
+            removed += 1
+            continue
+        if span and strip_when_glued:          # 뒤에 본문이 붙은 ① 모양만 앞머리를 뗀다
+            removed += 1
+            kept.append(" ".join(words[span:]).strip())
+        else:
+            kept.append(para.strip("\n"))
+    return "\n\n".join(kept), removed
+
+
 def _chapter_source_text(ch_path: Path, engine: str = "", clean: bool = False,
                           progress_cb=None, prefix: str = "") -> str:
     """번역본(_ko.txt) > 자간정리본(_clean.txt) > 원문 순으로 고른다.
@@ -63,9 +137,15 @@ def _chapter_source_text(ch_path: Path, engine: str = "", clean: bool = False,
     prefix는 진행 표시 앞에 붙일 문구('챕터 3/15 · ') — 진행 표시가 placeholder
     하나를 덮어쓰는 구조라, 매 메시지가 챕터 맥락을 같이 들고 있어야 어느 챕터를
     처리 중인지 보인다(2026-08-14)."""
+    def _done(raw: str) -> str:
+        # 러닝헤더는 «끊긴 문장 잇기»보다 먼저 없앤다 — 안 그러면 다음 문단에 붙는다.
+        out, n = strip_running_headers(raw, ch_path.stem)
+        if n:
+            append_log(f"EPUB: 쪽 머리글 {n}개 제외 — {ch_path.name}")
+        return out
     ko = find_translation(ch_path)            # 도착언어 무관(예전 _ko.txt 포함)
     if ko:
-        return ko.read_text(encoding="utf-8", errors="ignore")
+        return _done(ko.read_text(encoding="utf-8", errors="ignore"))
     clean_path = ch_path.with_name(ch_path.stem + "_clean.txt")
     if clean and engine and not clean_path.exists():
         from services.translate import clean_chapter_ko
@@ -76,8 +156,8 @@ def _chapter_source_text(ch_path: Path, engine: str = "", clean: bool = False,
                             f"(붙임 {joined_n}·공백 {spaced_n}·미판정 {unknown_n})")
         clean_chapter_ko(ch_path, engine, progress_cb=_inner_cb)
     if clean_path.exists():
-        return clean_path.read_text(encoding="utf-8", errors="ignore")
-    return ch_path.read_text(encoding="utf-8", errors="ignore")
+        return _done(clean_path.read_text(encoding="utf-8", errors="ignore"))
+    return _done(ch_path.read_text(encoding="utf-8", errors="ignore"))
 
 
 def chapter_files(ws_name: str, stem: str) -> list[Path]:

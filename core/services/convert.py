@@ -1,5 +1,5 @@
 """PDF/DOCX/HWP/HWPX → TXT 변환 (pypdfium2 좌표 추출 + pdftotext 폴백,
-office 문서는 python-docx·rhwp) + TXT 단독 처리."""
+Office 문서는 XML·HWP5 레코드 직접 추출) + TXT 단독 처리."""
 
 import os
 import re
@@ -16,6 +16,7 @@ from services.common import PDF_SUB, _nfc, append_log
 from services.files import md_dir, txt_dir
 from services.pipeline_queue import queue_add
 from services import pdfcols, reflowlib
+from services.office_extract import extract_docx, extract_hwpx, extract_hwp
 
 UPLOAD_TMP = cfg.UPLOAD_TMP
 DONE_DIR   = cfg.DONE_DIR
@@ -26,8 +27,8 @@ FAILED_DIR = cfg.FAILED_DIR
 OCR_REQUIRED_MSG = "이미지 전용 문서입니다 — TXT 분리를 위해서는 OCR 사전 처리 작업이 필요합니다."
 
 # PDF 외에 텍스트 추출을 지원하는 오피스 문서 형식 (2026-07-25).
-#   .docx        python-docx (이미 DOCX 내보내기용으로 씀)
-#   .hwp/.hwpx   rhwp (Rust 기반 한글 문서 파서의 파이썬 바인딩)
+#   .docx/.hwpx  본문·표·글상자 XML 순회
+#   .hwp         OLE 본문 스트림의 중첩 문단까지 직접 추출
 OFFICE_EXTS = {".docx", ".hwp", ".hwpx"}
 NO_TEXT_MSG = "문서에서 텍스트를 추출하지 못했습니다 (빈 문서이거나 내용이 이미지로만 되어 있을 수 있습니다)."
 # 옛 OLE2 복합문서(.doc, HWP 5.0 등)를 확장자만 .docx로 잘못 저장한 경우 감지용
@@ -41,29 +42,15 @@ def _docx_to_text(path: Path) -> str:
         head = f.read(4)
     if head == _OLE2_SIG:
         raise ValueError(MISLABELED_MSG)
-    from docx import Document
-    doc = Document(str(path))
-    return "\n".join(p.text for p in doc.paragraphs)
+    return extract_docx(path).text
 
 
 _IMAGE_PLACEHOLDER_RE = re.compile(r"^!\[[^\]]*\]\([^)]*\)$", re.MULTILINE)
 
 
 def _hwp_to_text(path: Path) -> str:
-    """HWP/HWPX → 텍스트. IR(to_ir) 기반 마크다운으로 표·목록·각주/미주를
-    구조 보존해 뽑는다 — 평문 extract_text()는 표를 뭉갠다. IR 실패/빈 결과
-    시에만 extract_text()로 안전망 폴백."""
-    import rhwp
-    doc = rhwp.parse(str(path))
-    try:
-        md = doc.to_ir().to_markdown()
-    except Exception as e:
-        append_log(f"WARN: {path.suffix} IR 변환 실패({type(e).__name__}), 평문 폴백")
-        return doc.extract_text()
-    # 이미지 자체는 텍스트 파이프라인에서 다루지 않음 — bin:// placeholder만 제거
-    md = _IMAGE_PLACEHOLDER_RE.sub("", md)
-    md = re.sub(r"\n{3,}", "\n\n", md).strip()
-    return md if md else doc.extract_text()
+    """Extract nested source text instead of flattening it through a lossy IR."""
+    return (extract_hwpx(path) if path.suffix.lower() == ".hwpx" else extract_hwp(path)).text
 
 
 def office_to_txt(path: Path) -> tuple[Path | None, str, str]:
@@ -71,19 +58,26 @@ def office_to_txt(path: Path) -> tuple[Path | None, str, str]:
     suf = path.suffix.lower()
     try:
         if suf == ".docx":
-            text = _docx_to_text(path)
-        elif suf in (".hwp", ".hwpx"):
-            text = _hwp_to_text(path)
+            with path.open("rb") as f:
+                if f.read(4) == _OLE2_SIG:
+                    raise ValueError(MISLABELED_MSG)
+            result = extract_docx(path)
+        elif suf == ".hwpx":
+            result = extract_hwpx(path)
+        elif suf == ".hwp":
+            result = extract_hwp(path)
         else:
             return None, f"지원하지 않는 형식입니다: {suf}", ""
     except Exception as e:
         append_log(f"WARN: {suf} 추출 실패 ({type(e).__name__}) {str(e)[:160]}")
         return None, f"{suf} 파일을 읽지 못했습니다 ({type(e).__name__}: {str(e)[:160]})", ""
+    text = result.text
     if not text.strip():
         return None, NO_TEXT_MSG, ""
-    txt_path = Path(tempfile.gettempdir()) / (path.stem + ".txt")
+    txt_path = Path(tempfile.mkdtemp(prefix="mb_office_")) / (path.stem + ".txt")
     txt_path.write_text(text, encoding="utf-8")
-    return txt_path, "", ""
+    append_log(f"문서 추출 [{result.method}]: {path.name} · {result.note}")
+    return txt_path, "", result.note
 
 
 def _no_window_kwargs() -> dict:
@@ -243,6 +237,8 @@ def _do_ocr_only(uf, ws_name: str, fast: bool = False) -> dict:
     txt_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)
     final_txt = txt_dir(DONE_DIR, ws_name) / txt_path.name   # 항상 1_txt/에 저장
     _move_over(txt_path, final_txt)
+    if _suf in OFFICE_EXTS and txt_path.parent.name.startswith("mb_office_"):
+        txt_path.parent.rmdir()
     if md_src and md_src.exists():
         md_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)
         final_md = md_dir(DONE_DIR, ws_name) / md_src.name

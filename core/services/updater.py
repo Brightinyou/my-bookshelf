@@ -92,12 +92,12 @@ def _pick_asset_url(assets: list) -> str:
 
 
 def check_for_update(timeout: int = 4) -> dict | None:
-    """새 버전이 있으면 정보 dict, 없거나(=최신) 오류면 None. 네트워크 실패는 조용히 무시."""
+    """None means current; failures return an unavailable result with an error."""
     if sys.platform not in ("win32", "darwin"):
         return None
     # macOS는 설치된 .app 번들에서 실행 중일 때만 자동 교체가 가능하다(개발 실행 제외).
     if sys.platform == "darwin" and _mac_app_bundle() is None:
-        return None
+        return {"available": False, "error": "개발 실행에서는 자동 업데이트를 확인하지 않습니다."}
     try:
         req = urllib.request.Request(
             _api_latest(),
@@ -108,7 +108,7 @@ def check_for_update(timeout: int = 4) -> dict | None:
             data = json.load(r)
     except Exception as e:
         append_log(f"업데이트 확인 실패(무시): {type(e).__name__} {str(e)[:80]}")
-        return None
+        return {"available": False, "error": f"업데이트 정보를 확인하지 못했습니다: {str(e)[:160]}"}
     tag = data.get("tag_name", "")
     if _parse_ver(tag) <= _parse_ver(APP_VERSION):
         return None
@@ -336,7 +336,28 @@ def take_last_update_result() -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def install_preflight() -> str:
+    """Conservative permissions check before downloading or terminating the app."""
+    if sys.platform != "darwin":
+        return ""
+    bundle = _mac_app_bundle()
+    if bundle is None:
+        return "설치된 .app에서 업데이트를 실행하세요."
+    if not os.access(bundle.parent, os.W_OK | os.X_OK):
+        return "응용 프로그램 폴더의 교체 권한이 없습니다. Finder에서 직접 설치해 주세요. 앱은 종료하지 않았습니다."
+    try:
+        with tempfile.TemporaryDirectory(prefix=".mybookshelf-check-", dir=bundle.parent):
+            pass
+    except OSError as exc:
+        return f"설치 폴더에 쓸 수 없습니다. 앱은 종료하지 않았습니다: {exc}"
+    return ""
+
+
 def _mac_launch_helper_and_exit(zip_path: Path) -> bool:
+    error = install_preflight()
+    if error:
+        append_log(error)
+        return False
     bundle = _mac_app_bundle()
     if not bundle:
         append_log("업데이트 헬퍼 실행 실패(mac): .app 번들을 찾지 못함")

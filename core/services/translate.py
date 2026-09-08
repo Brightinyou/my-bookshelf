@@ -81,6 +81,8 @@ def find_translation(ch_path: Path) -> Path | None:
 
     도착언어를 바꿔도 예전에 만들어 둔 번역본이 사라지지 않게 하는 자리다."""
     cur = translated_path(ch_path)
+    if translation_status(ch_path).get("state") in ("running", "partial", "failed"):
+        return None
     if cur.exists():
         return cur
     for suf in ("_ko",) + LANG_SUFFIXES:
@@ -92,6 +94,14 @@ def find_translation(ch_path: Path) -> Path | None:
 
 def has_translation(ch_path: Path) -> bool:
     return find_translation(ch_path) is not None
+
+
+def translation_status(ch_path: Path) -> dict:
+    path = ch_path.with_name(ch_path.stem + out_suffix() + ".status.json")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
 def is_derived(stem: str) -> bool:
@@ -293,12 +303,12 @@ def translate_engine_options() -> list[tuple[str, str, bool, str]]:
     for prov in llm.API_PROVIDERS:
         info = llm.PROVIDERS[prov]
         avail = llm.has_key(prov)
-        for m in info["models"]:
+        for m in llm.model_choices(prov):
             opts.append((f"{prov}:{m}", f"{m} · {info['label']}", avail, info["hint"]))
     for prov in llm.CLI_PROVIDERS:
         info = llm.PROVIDERS[prov]
         avail = llm.has_key(prov)
-        for m in info["models"]:
+        for m in llm.model_choices(prov):
             opts.append((f"{prov}:{m}", f"{m} · {info['label']}", avail, info["hint"]))
     return opts
 
@@ -486,6 +496,9 @@ def translate(text: str, engine: str, glossary: dict | None = None,
     except Exception as e:
         _log_once(f"{engine}|{type(e).__name__}|{str(e)[:120]}",
                   f"ERROR: 번역 실패 [{engine}] ({type(e).__name__}): {str(e)[:300]}")
+        if llm.configuration_error(e):
+            raise llm.ModelConfigurationError(
+                f"AI 모델 또는 인증 설정을 확인하세요 [{engine}]: {str(e)[-350:]}") from e
         return None
 
 
@@ -941,11 +954,15 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         bilingual_path = ch_path.with_name(ch_path.stem + "_bilingual.txt")
         partial_path = ch_path.with_name(ch_path.stem + _suf + ".partial.md")
         progress_path = ch_path.with_name(ch_path.stem + _suf + ".progress.json")
+        status_path = ch_path.with_name(ch_path.stem + _suf + ".status.json")
+        _save_json_atomic(status_path, {"state": "running", "engine": engine,
+                                      "target": target_language()})
         if not needs_translation(ch_path):
             if want_plain:
                 ko_path.write_text(text.replace(_PAGE_TOKEN, "\f"), encoding="utf-8")
             partial_path.unlink(missing_ok=True)
             progress_path.unlink(missing_ok=True)
+            _save_json_atomic(status_path, {"state": "complete", "engine": engine, "failed": 0})
             return True, f"이미 {target_language_name()} — 그대로 복사"
         # 원문 언어를 한 번만 감지해 모든 단락 호출에 함께 넘긴다 — 프롬프트에 언어를
         # 못박아 두면 닮은 언어(독일어/네덜란드어)에서 모델이 덜 헷갈린다(2026-08-15).
@@ -956,6 +973,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         bilingual_pairs: list[tuple[str, str]] = []  # (원문, 번역) — dropped 단락은 제외(out과 동일 기준)
         translated_n = preserved_n = dropped_n = failed_n = resumed_n = api_calls = 0
         total = len(paras) or 1
+        fatal_error = ""
 
         def _save_partial():
             tmp = partial_path.with_name(partial_path.name + ".tmp")
@@ -981,7 +999,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             # (translated_n==0 → 실패 반환) 넘어가 버린다. 실패 단락은 아래로 흘려보내
             # 다시 번역을 시도한다 (2026-07-25).
             if (cached and cached.get("src") == p and isinstance(cached.get("tgt"), str)
-                    and cached.get("status") != "failed"):
+                    and cached.get("status") in {"translated", "preserved", "dropped"}):
                 status = cached.get("status")
                 tgt = cached.get("tgt", "")
                 if status == "dropped":
@@ -1011,7 +1029,10 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                 preserved_n += 1
                 cached_rows[idx] = {"idx": idx, "src": p, "tgt": p, "status": "preserved"}
             else:
-                ko = _translate_paragraph(p, engine, src_lang=src_lang, target=_target)
+                try:
+                    ko = _translate_paragraph(p, engine, src_lang=src_lang, target=_target)
+                except llm.ModelConfigurationError as exc:
+                    ko, fatal_error = None, str(exc)
                 api_calls += 1
                 if _translation_is_valid(p, ko, _target):
                     out.append(ko)
@@ -1027,6 +1048,8 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             _save_partial()
             if progress_cb:
                 progress_cb(idx, total, translated_n, preserved_n, dropped_n, failed_n, resumed_n, api_calls)
+            if fatal_error:
+                break
         _src_label = language_name(src_lang) if src_lang else ""
         detail = ((f"{_src_label}→{target_language_name()} · " if _src_label else "")
                   + f"{len(out)}단락 처리 완료 · 재사용 {resumed_n} · 신규번역 {translated_n} · 원문보존 {preserved_n}")
@@ -1042,11 +1065,14 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                        f"해당 단락은 원문 그대로 남았다: {ch_path.name}")
             if _ratio >= 0.20:
                 detail = f"⚠️ 실패 {failed_n}단락이 원문 그대로 남음 · " + detail
-        if translated_n == 0:
-            ko_path.unlink(missing_ok=True)
-            bilingual_path.unlink(missing_ok=True)
-            partial_path.unlink(missing_ok=True)
-            return False, detail + f" — 유효한 {target_language_name()} 번역 결과가 없습니다"
+            _save_json_atomic(status_path, {
+                "state": "partial" if translated_n else "failed", "engine": engine,
+                "target": _target, "total": total, "translated": translated_n,
+                "failed": failed_n, "pending": max(0, total - idx), "error": fatal_error,
+                "blocked": bool(fatal_error),
+            })
+            return False, (f"부분완료: 번역 {translated_n}/{total} · 실패 {failed_n} — "
+                           + (fatal_error or "다시 시작하면 성공한 문단은 재사용합니다"))
         if want_plain:
             ko_path.write_text("\n\n".join(out).replace(_PAGE_TOKEN, "\f"),
                                encoding="utf-8")
@@ -1066,6 +1092,10 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         # 완주 — 중간 산출물 정리 (partial은 _ko.txt로 확정됨, progress 캐시 소진)
         partial_path.unlink(missing_ok=True)
         progress_path.unlink(missing_ok=True)
+        _save_json_atomic(status_path, {"state": "complete", "engine": engine,
+                                      "target": _target, "total": total, "failed": 0})
         return True, detail
     except Exception as e:
+        if "status_path" in locals():
+            _save_json_atomic(status_path, {"state": "failed", "engine": engine, "error": str(e)[:350]})
         return False, str(e)[:200]

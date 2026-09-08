@@ -12,6 +12,16 @@ import time
 import traceback
 import urllib.request
 from pathlib import Path
+from services.ui_layout import window_geometry
+
+
+def _remember_window_size(width, height):
+    if width >= 320 and height >= 240:
+        try:
+            from llm_providers import set_pref
+            set_pref("window_size", {"width": int(width), "height": int(height)})
+        except (OSError, ValueError):
+            pass  # A settings error must not prevent closing the app.
 
 APP_TITLE = "My Bookshelf"
 DEFAULT_PORT = 8501
@@ -374,9 +384,13 @@ def _start_streamlit(port: int) -> subprocess.Popen | None:
         "--theme.primaryColor",
         "#111827",
     ]
+    support = (Path.home() / "Library" / "Application Support" if sys.platform == "darwin"
+               else Path(os.environ.get("LOCALAPPDATA") or Path.home()))
+    runtime_dir = support / "MyBookshelf" / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
     return subprocess.Popen(
         cmd,
-        cwd=str(HERE.parent),
+        cwd=str(runtime_dir),
         creationflags=0x08000000 if sys.platform == "win32" else 0,
     )
 
@@ -425,17 +439,15 @@ def main() -> int:
             "Run setup.bat again or check whether security software blocked Python.",
         )
 
-    # 창 크기를 화면 해상도에 맞춘다 — HD(1366×768)에서 세로 넘침 방지 (2026-07-09).
-    # 화면의 ~92%를 넘지 않게, 기본 최대치(1280×1040)로 상한. 실패 시 HD 기준.
+    # Compact UI: 380×600 minimum, 1100px initial width. Restore the last size,
+    # clamped to the current display so unplugging a monitor cannot hide the window.
     try:
         _scr = webview.screens[0]
         _sw, _sh = int(_scr.width), int(_scr.height)
     except Exception:
         _sw, _sh = 1366, 768
-    _win_w = max(900, min(1280, int(_sw * 0.92)))
-    _win_h = max(640, min(1040, int(_sh * 0.92)))
-    _min_w = min(900, _win_w)
-    _min_h = min(720, _win_h)
+    from llm_providers import get_pref
+    _win_w, _win_h, _min_w, _min_h = window_geometry(_sw, _sh, get_pref("window_size", {}))
     # 작업표시줄 신원(AppUserModelID) — **MyBookshelf.exe 로 돌 때는 손대지 않는다.**
     #
     # 2026-08-26에는 이 값을 밝히는 것이 옳았다. 그때는 프로세스가 pythonw.exe 라
@@ -460,7 +472,7 @@ def main() -> int:
         except Exception:
             pass                      # 못 해도 앱은 그대로 뜬다 — 아이콘만 아쉬울 뿐
 
-    webview.create_window(
+    window = webview.create_window(
         APP_TITLE,
         url,
         width=_win_w,
@@ -468,6 +480,16 @@ def main() -> int:
         min_size=(_min_w, _min_h),
         text_select=True,
     )
+    # The GUI owns resize ordering; keep the latest size in memory and persist it
+    # synchronously when closing, instead of writing the key store on every pixel.
+    _last_size = [_win_w, _win_h]
+    def on_resize(width, height):
+        if width >= 320 and height >= 240:
+            _last_size[:] = [int(width), int(height)]
+    def on_closing():
+        _remember_window_size(*_last_size)
+    window.events.resized += on_resize
+    window.events.closing += on_closing
     icon = APP_ICON if os.path.exists(APP_ICON) else None
 
     def _apply_win32_icon() -> None:

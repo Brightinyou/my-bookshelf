@@ -1,6 +1,7 @@
 """공용 유틸 — 로그, 알림, 원자적 저장, 일시정지 플래그, 공통 상수."""
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 import config as cfg
+from services.storage import write_json_atomic
 
 # done/<ws>/ 하위 산출물 폴더명 — 텍스트 처리 순서대로 번호 접두 (2026-06-09).
 #   1_txt(②변환 TXT, Gemini 입력) → 2_md(③MD, 장 구조) → 3_translated(④번역)
@@ -30,8 +32,13 @@ def _nfc(s: str) -> str:
 
 def append_log(msg: str):   # encoding 미지정이면 윈도우 cp949 → 이모지에서 크래시 (2026-06-11)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, "a", encoding="utf-8", errors="replace") as f:
-        f.write(f"[{ts}] {msg}\n")
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8", errors="replace") as f:
+            f.write(f"[{ts}] {msg}\n")
+    except OSError as exc:
+        # A disconnected drive must not replace the original error with a log error.
+        logging.getLogger(__name__).warning("로그 저장 실패(%s): %s", exc, msg)
 
 
 def read_log(n: int = 20) -> list:
@@ -61,9 +68,7 @@ def save_pipeline_results(results: list):
 
 
 def _save_json_atomic(path: Path, data) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    write_json_atomic(path, data)
 
 
 def open_path(p: Path, reveal: bool = False):

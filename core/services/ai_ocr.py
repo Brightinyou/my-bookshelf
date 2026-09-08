@@ -529,8 +529,10 @@ def _read_claude_cli(model: str, imgs: list[Path], timeout: int, hint: str = "")
     # 같은 이유로 Read만 허용하고, 이미지는 이미 격리 폴더에 있다(_render_isolated)
     listed = "\n".join(f'{i}. "{f}"' for i, f in enumerate(imgs, 1))
     prompt = f'다음 이미지 파일들을 순서대로 Read 도구로 읽어라.\n{listed}\n\n{PROMPT}{hint}'
+    model_args = ["--model", model] if model not in ("", "default") else []
     r = subprocess.run(
-        [cli, "-p", prompt, "--model", model or "default", "--output-format", "text",
+        [cli, "-p", prompt, *model_args, "--output-format", "text",
+         "--tools", "Read",
          "--allowedTools", "Read",
          "--system-prompt", "You transcribe scanned pages verbatim. Never guess."],
         capture_output=True, text=True, timeout=timeout, cwd=str(imgs[0].parent),

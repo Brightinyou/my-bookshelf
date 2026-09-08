@@ -29,7 +29,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-CONFIG_DIR  = Path.home() / ".config" / "mybookshelf"
+CONFIG_DIR  = Path(os.environ.get("MYBOOKSHELF_CONFIG_DIR") or (Path.home() / ".config" / "mybookshelf"))
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
