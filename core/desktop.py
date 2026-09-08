@@ -439,7 +439,7 @@ def main() -> int:
             "Run setup.bat again or check whether security software blocked Python.",
         )
 
-    # Compact UI: 380×600 minimum, 1100px initial width. Restore the last size,
+    # Compact UI: 380×600 minimum, 480×760 initial size. Restore the last size,
     # clamped to the current display so unplugging a monitor cannot hide the window.
     try:
         _scr = webview.screens[0]

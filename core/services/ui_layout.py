@@ -139,7 +139,7 @@ def window_geometry(screen_width, screen_height, saved=None):
     min_w, min_h = min(380, max_w), min(600, max_h)
     saved = saved if isinstance(saved, dict) else {}
     try:
-        width, height = int(saved.get("width", 1100)), int(saved.get("height", 820))
+        width, height = int(saved.get("width", 480)), int(saved.get("height", 760))
     except (TypeError, ValueError, OverflowError):
-        width, height = 1100, 820
+        width, height = 480, 760
     return max(min_w, min(width, max_w)), max(min_h, min(height, max_h)), min_w, min_h

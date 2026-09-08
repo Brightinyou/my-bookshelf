@@ -36,13 +36,13 @@ class CompactLayoutTest(unittest.TestCase):
         self.assertEqual(Tags(html).tags[0][1]["aria-label"], 'details "quoted"')
 
     def test_geometry_defaults_restores_and_clamps(self):
-        self.assertEqual(window_geometry(1920, 1080), (1100, 820, 380, 600))
+        self.assertEqual(window_geometry(1920, 1080), (480, 760, 380, 600))
         self.assertEqual(window_geometry(1920, 1080, {"width": 810, "height": 640})[:2], (810, 640))
         self.assertEqual(window_geometry(1366, 768, {"width": 4000, "height": 3000}), (1297, 691, 380, 600))
         self.assertEqual(window_geometry(1920, 1080, {"width": 10, "height": 20})[:2], (380, 600))
         self.assertEqual(window_geometry(1920, 1080, {"width": 380, "height": 640})[:2], (380, 640))
         self.assertLess(window_geometry(640, 480)[0], 640)
-        self.assertEqual(window_geometry(1920, 1080, {"width": "broken"})[:2], (1100, 820))
+        self.assertEqual(window_geometry(1920, 1080, {"width": "broken"})[:2], (480, 760))
 
     def test_window_size_saved_and_bad_resize_ignored(self):
         with patch("llm_providers.set_pref") as save:
