@@ -163,54 +163,54 @@ class CacheTest(unittest.TestCase):
         self.assertTrue(self.sidecar("_ko.cache.json").exists())
         self.assertFalse(self.sidecar("_ko.progress.json").exists())
         self.assertEqual(self.run_translation().call_count, 0)
-        self.assertEqual(self.path.read_text(), self.source)
-        audit = json.loads(self.sidecar("_ko.audit.json").read_text())
+        self.assertEqual(self.path.read_text(encoding="utf-8"), self.source)
+        audit = json.loads(self.sidecar("_ko.audit.json").read_text(encoding="utf-8"))
         self.assertEqual(len(audit["results"]), 2)
 
     def test_old_preserved_and_dropped_are_reconsidered(self):
         self.sidecar("_ko.progress.json").write_text(json.dumps([
             {"idx": i, "src": text, "tgt": text, "status": status}
             for i, (text, status) in enumerate(zip(self.source.split("\n\n"), ("preserved", "dropped")), 1)
-        ]))
+        ]), encoding="utf-8")
         self.assertEqual(self.run_translation().call_count, 2)
 
     def test_successful_cache_is_reused_after_index_shift(self):
         self.run_translation()
-        self.path.write_text("New introductory sentence.\n\n" + self.source)
+        self.path.write_text("New introductory sentence.\n\n" + self.source, encoding="utf-8")
         self.assertEqual(self.run_translation().call_count, 1)
 
     def test_context_change_is_not_reused(self):
-        self.path.write_text("An unfinished thought\n\n1 An explanation without a final stop\n\nA final sentence.")
+        self.path.write_text("An unfinished thought\n\n1 An explanation without a final stop\n\nA final sentence.", encoding="utf-8")
         self.assertEqual(self.run_translation().call_count, 3)
-        self.path.write_text(self.path.read_text().replace("final sentence", "different conclusion"))
+        self.path.write_text(self.path.read_text(encoding="utf-8").replace("final sentence", "different conclusion"), encoding="utf-8")
         self.assertEqual(self.run_translation().call_count, 3)
 
     def test_completed_bilingual_can_supply_known_target_cache(self):
         self.run_translation()
         self.sidecar("_ko.cache.json").unlink()
-        self.sidecar("_ko.status.json").write_text('{"target": "ko", "state": "complete"}')
+        self.sidecar("_ko.status.json").write_text('{"target": "ko", "state": "complete"}', encoding="utf-8")
         self.assertEqual(self.run_translation().call_count, 0)
 
     def test_removing_context_cannot_import_contextful_bilingual_output(self):
-        self.path.write_text("An unfinished thought\n\n1 An explanation without a final stop\n\nA final sentence.")
+        self.path.write_text("An unfinished thought\n\n1 An explanation without a final stop\n\nA final sentence.", encoding="utf-8")
         self.run_translation()
-        self.path.write_text("An unfinished thought")
+        self.path.write_text("An unfinished thought", encoding="utf-8")
         self.assertEqual(self.run_translation().call_count, 1)
 
     def test_old_bilingual_unknown_target_is_not_reused(self):
         self.run_translation()
         self.sidecar("_ko.cache.json").unlink()
-        self.sidecar("_ko.status.json").write_text('{}')
+        self.sidecar("_ko.status.json").write_text('{}', encoding="utf-8")
         self.assertEqual(self.run_translation().call_count, 2)
 
     def test_translated_note_can_still_be_linked_for_epub(self):
         source = "The point is explained.39 Further body.\n\n39 This is an explanatory footnote, not just a citation.\fThe next page."
-        self.path.write_text(source)
+        self.path.write_text(source, encoding="utf-8")
         translations = ["설명한다.39 뒤의 본문이다.", "39 이것은 서지정보만이 아니라 설명을 담은 각주이다.", "다음 쪽이다."]
         with patch.object(tr, "_translate_paragraph", side_effect=translations):
             ok, msg = tr.translate_one_chapter(self.path, "test")
         self.assertTrue(ok, msg)
-        output = self.sidecar("_ko.txt").read_text()
+        output = self.sidecar("_ko.txt").read_text(encoding="utf-8")
         self.assertEqual(output.count("\f"), 1)
         self.assertLess(output.index("39 이것은"), output.index("\f"))
         notes = footnotes.convert(output)
@@ -246,22 +246,22 @@ class LayoutTest(unittest.TestCase):
                         patch.object(convert, "_pdftotext_fallback", return_value=text):
                     path, _, error, _ = convert.pdf_to_txt(Path("Book.pdf"))
                 self.assertFalse(error)
-                data = json.loads(path.with_suffix(".layout.json").read_text())
-                self.assertEqual(data["text_sha256"], plan.digest(path.read_text()))
+                data = json.loads(path.with_suffix(".layout.json").read_text(encoding="utf-8"))
+                self.assertEqual(data["text_sha256"], plan.digest(path.read_text(encoding="utf-8")))
                 self.assertEqual(bool(data["regions"]), not fallback)
 
     def test_stale_layout_is_ignored(self):
         import config
         with tempfile.TemporaryDirectory() as folder, patch.object(config, "TXT_DIR", Path(folder)):
             source = Path(folder) / "Book.txt"
-            source.write_text("Original source")
+            source.write_text("Original source", encoding="utf-8")
             source.with_suffix(".layout.json").write_text(json.dumps({
                 "text_sha256": plan.digest("Original source"),
                 "regions": [{"kind": "footnote", "text": "A note"}],
-            }))
+            }), encoding="utf-8")
             chapter = Path(folder) / "Book" / "01_Chapter.txt"
             self.assertEqual(len(plan.load_layout(chapter)), 1)
-            source.write_text("Changed source")
+            source.write_text("Changed source", encoding="utf-8")
             self.assertEqual(plan.load_layout(chapter), [])
 
 
