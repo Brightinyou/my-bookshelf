@@ -48,26 +48,41 @@ jobs:
       - name: Run tests
         env:
           PYTHONPATH: ${{ github.workspace }}\core
+          # 리다이렉트된 stdout 을 UTF-8 로 고정한다. 두지 않으면 파이썬이 러너
+          # 로케일(cp1252)로 쓰려다 한글 테스트 이름에서 UnicodeEncodeError 로 죽는다.
+          PYTHONIOENCODING: utf-8
+        # cmd 로 돌린다. pwsh 에서 `네이티브 명령 2>&1` 을 쓰면 stderr 한 줄마다
+        # ErrorRecord 로 감싸고, 액션 러너는 $ErrorActionPreference=Stop 이라
+        # 테스트가 다 통과해도 종료 코드 1 이 된다(실측: run 34303900886).
+        # unittest 는 결과를 stderr 로 쓰므로 이 함정에 정확히 걸린다.
+        #
+        # -X warn_default_encoding: 인코딩을 안 밝힌 텍스트 입출력마다 경고를 낸다.
+        # 오류로 승격(-W error)하지는 않는다 — 서드파티가 내는 경고까지 잡혀
+        # 우리와 무관한 이유로 빌드가 멈추기 때문이다(실측: pypdfium2_raw).
+        # 대신 다음 단계에서 core\ 를 가리키는 것만 골라 실패시킨다.
         run: |
-          # -X warn_default_encoding: 인코딩을 안 밝힌 텍스트 입출력마다 경고를 낸다.
-          # 오류로 승격(-W error)하지는 않는다 — 서드파티가 내는 경고까지 잡혀
-          # 우리와 무관한 이유로 빌드가 멈추기 때문이다(실측: pypdfium2_raw).
-          # 대신 다음 단계에서 core\ 를 가리키는 것만 골라 실패시킨다.
-          python -X warn_default_encoding -m unittest discover -s core\tests -v 2>&1 |
-            Tee-Object -FilePath test-output.txt
-          if ($LASTEXITCODE -ne 0) { throw "테스트 실패" }
-        shell: pwsh
+          python -X warn_default_encoding -m unittest discover -s core\tests -v > test-output.txt 2>&1
+          set RC=%ERRORLEVEL%
+          type test-output.txt
+          exit /b %RC%
+        shell: cmd
 
       - name: Fail on locale-default text I/O in core/
+        # 테스트가 깨졌더라도 인코딩 문제는 함께 보고한다.
+        if: always()
         run: |
-          $hits = Select-String -Path test-output.txt -Pattern 'EncodingWarning' |
+          if (-not (Test-Path test-output.txt)) {
+            Write-Host "test-output.txt 가 없다 - 테스트 단계가 시작되기 전에 멈춘 것."
+            exit 0
+          }
+          $hits = Select-String -Path test-output.txt -Encoding utf8 -Pattern 'EncodingWarning' |
             Where-Object { $_.Line -match [regex]::Escape('\core\') }
           if ($hits) {
             Write-Host "인코딩을 밝히지 않은 텍스트 입출력이 core\ 안에 있다:"
             $hits | ForEach-Object { Write-Host ("  " + $_.Line.Trim()) }
             Write-Host ""
-            Write-Host "read_text()/write_text()/open()에는 encoding=`"utf-8`" 을,"
-            Write-Host "subprocess 의 text=True 에는 encoding=`"utf-8`" 을 붙일 것."
+            Write-Host 'read_text()/write_text()/open() 에는 encoding="utf-8" 을,'
+            Write-Host 'subprocess 의 text=True 에는 encoding="utf-8" 을 붙일 것.'
             Write-Host "지정하지 않으면 한국어 윈도우(cp949)에서 UnicodeDecodeError 로 죽는다."
             exit 1
           }
