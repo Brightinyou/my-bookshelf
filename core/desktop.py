@@ -302,7 +302,8 @@ def _kill_stale_windows() -> None:
             )
         else:
             _out = subprocess.run(["ps", "-eo", "pid=,command="],
-                                  capture_output=True, text=True).stdout
+                                  capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace").stdout
             for _line in _out.splitlines():
                 _line = _line.strip()
                 if not _line:

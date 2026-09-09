@@ -100,7 +100,8 @@ def _pdftotext_fallback(pdf_path: Path) -> str:
     tmp = Path(tempfile.gettempdir()) / (pdf_path.stem + ".fallback.txt")
     try:
         r = subprocess.run([pdftotext, str(pdf_path), str(tmp)],
-                           capture_output=True, text=True, **_no_window_kwargs())
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", **_no_window_kwargs())
         if r.returncode != 0 or not tmp.exists():
             return ""
         raw = tmp.read_text(encoding="utf-8", errors="ignore")

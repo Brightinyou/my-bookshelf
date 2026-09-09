@@ -109,7 +109,8 @@ def open_pdf_view(p: Path) -> str:
     if sys.platform == "darwin":
         try:
             r = subprocess.run(["open", "-b", _MAC_PDF_VIEWER, str(p)],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
             if r.returncode == 0:
                 return "미리보기"
             append_log(f"WARN: 미리보기로 열지 못해 기본 앱으로 엽니다 ({(r.stderr or '').strip()[:80]})")

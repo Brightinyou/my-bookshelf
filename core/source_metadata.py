@@ -73,7 +73,8 @@ def pdf_dates_for_pdf(pdf: Path) -> dict[str, str]:
     if not (pdf and exe):
         return {}
     try:
-        r = subprocess.run([exe, str(pdf)], capture_output=True, text=True, timeout=8)
+        r = subprocess.run([exe, str(pdf)], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=8)
     except Exception:
         return {}
     if r.returncode != 0:
