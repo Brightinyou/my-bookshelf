@@ -2,6 +2,7 @@
 Office 문서는 XML·HWP5 레코드 직접 추출) + TXT 단독 처리."""
 
 import os
+import json
 import re
 import shutil
 import subprocess
@@ -131,11 +132,12 @@ def pdf_to_txt(pdf_path: Path, fast: bool = True) -> tuple[Path | None, Path | N
     1차: pypdfium2 좌표 기반 다단 추출(논문·뉴스레터·한글+영어·N단 처리).
     2차(안전망②): 결과가 비정상이거나 비면 pdftotext 폴백과 비교해 나은 쪽 채택.
     반환: (txt_path, md_path, err, note) — note는 사용자에게 알릴 상황 설명(있을 때)."""
-    txt_path = Path(tempfile.gettempdir()) / (pdf_path.stem + ".txt")
+    txt_path = Path(tempfile.mkdtemp(prefix="mb_pdf_")) / (pdf_path.stem + ".txt")
 
     text, skipped = "", 0
+    regions = []
     try:
-        text, skipped = pdfcols.pdf_to_text(pdf_path)
+        text, skipped = pdfcols.pdf_to_text(pdf_path, regions=regions)
     except Exception as e:
         append_log(f"WARN: 좌표 추출 실패 → pdftotext 폴백 ({type(e).__name__}) {str(e)[:120]}")
 
@@ -154,6 +156,7 @@ def pdf_to_txt(pdf_path: Path, fast: bool = True) -> tuple[Path | None, Path | N
 
     # 실질 내용이 없으면 텍스트 레이어가 없는 이미지 전용(스캔) 문서 → OCR 선행 필요
     if not text.strip():
+        txt_path.parent.rmdir()
         return None, None, OCR_REQUIRED_MSG, ""
 
     notes = []
@@ -163,6 +166,12 @@ def pdf_to_txt(pdf_path: Path, fast: bool = True) -> tuple[Path | None, Path | N
         notes.append("레이아웃이 복잡해 대체 추출 방식을 사용했습니다(다단 정렬이 다를 수 있음)")
 
     txt_path.write_text(text, encoding="utf-8")
+    from services.translation_plan import digest
+    txt_path.with_suffix(".layout.json").write_text(json.dumps({
+        "version": 1, "text_sha256": digest(text),
+        "method": "pdftotext" if used_fallback else "pdfium",
+        "regions": [] if used_fallback else regions,
+    }, ensure_ascii=False), encoding="utf-8")
     return txt_path, None, "", " · ".join(notes)
 
 
@@ -237,7 +246,10 @@ def _do_ocr_only(uf, ws_name: str, fast: bool = False) -> dict:
     txt_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)
     final_txt = txt_dir(DONE_DIR, ws_name) / txt_path.name   # 항상 1_txt/에 저장
     _move_over(txt_path, final_txt)
-    if _suf in OFFICE_EXTS and txt_path.parent.name.startswith("mb_office_"):
+    layout_path = txt_path.with_suffix(".layout.json")
+    if _suf == ".pdf" and layout_path.exists():
+        _move_over(layout_path, final_txt.with_suffix(".layout.json"))
+    if txt_path.parent.name.startswith(("mb_office_", "mb_pdf_")):
         txt_path.parent.rmdir()
     if md_src and md_src.exists():
         md_dir(DONE_DIR, ws_name).mkdir(parents=True, exist_ok=True)

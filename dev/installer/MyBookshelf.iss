@@ -1,5 +1,5 @@
 ﻿#define MyAppName           "My Bookshelf"
-#define MyAppVersion        "1.3.0"
+#define MyAppVersion        "1.3.1"
 #define PythonVersion       "3.14.6"
 #define PythonInstallerName "python-3.14.6-amd64.exe"
 #define PythonInstallerUrl  "https://www.python.org/ftp/python/3.14.6/python-3.14.6-amd64.exe"

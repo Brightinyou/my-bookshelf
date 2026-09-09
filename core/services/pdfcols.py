@@ -483,19 +483,22 @@ def _reading_order(page, ymin=None, ymax=None):
     return "\n".join(out)
 
 
-def pdf_to_pages(path):
+def pdf_to_pages(path, regions=None):
     """PDF → 페이지별 읽기순서 텍스트 리스트. 반환: (pages, skipped)
     안전망①: 특정 페이지에서 예외가 나도 그 페이지만 건너뛰고 나머지는 살린다."""
     pdf = pdfium.PdfDocument(str(path))
     pages, skipped = [], 0
     try:
-        for page in pdf:
+        for page_number, page in enumerate(pdf, 1):
             try:
                 # 각주 구분선이 있으면 위(본문)·아래(각주)를 따로 읽고 빈 줄로 나눈다.
                 # 그래야 reflow 가 각주를 본문 문단에 이어 붙이지 않는다 (2026-08-27).
                 _ry = _footnote_rule_y(page)
                 if _ry is None:
-                    pages.append(_reading_order(page))
+                    extracted = _reading_order(page)
+                    pages.append(extracted)
+                    if regions is not None:
+                        regions.append({"page": page_number, "kind": "unknown", "text": extracted})
                 else:
                     # 위에서 아래로 재므로 본문이 선 '위'(작은 값), 각주가 '아래'다
                     _body = _reading_order(page, ymax=_ry)
@@ -503,6 +506,10 @@ def pdf_to_pages(path):
                     _sep = "\n\n"
                     pages.append(_body + _sep + _notes if (_body and _notes)
                                  else (_body or _notes))
+                    if regions is not None:
+                        for kind, value in (("body", _body), ("footnote", _notes)):
+                            regions.append({"page": page_number, "kind": kind, "text": value,
+                                            "boundary_y": _ry, "evidence": "footnote_rule"})
             except Exception:
                 pages.append("")
                 skipped += 1
@@ -511,8 +518,8 @@ def pdf_to_pages(path):
     return pages, skipped
 
 
-def pdf_to_text(path):
+def pdf_to_text(path, regions=None):
     """PDF → 다단 정렬 + 머리말 제거 + 문장 reflow 된 본문. 반환: (text, skipped_pages)"""
-    pages, skipped = pdf_to_pages(path)
+    pages, skipped = pdf_to_pages(path, regions=regions)
     lines = reflowlib.separate_footnotes(reflowlib.strip_page_furniture(pages))
     return reflowlib.reflow("\n".join(lines)), skipped
