@@ -16,25 +16,42 @@ fallback). The macOS build does **not** redistribute Poppler: it calls a
 `pdftotext` that the user installs themselves (e.g. `brew install poppler`),
 so the obligations below apply to the Windows release.
 
-- Version bundled: Poppler 26.02.0
+- Version bundled: Poppler 25.07.0, as built and packaged by
+  poppler-windows release `v25.07.0-0`
 - Upstream project: https://poppler.freedesktop.org/
 - **Corresponding source (direct download):**
-  https://poppler.freedesktop.org/poppler-26.02.0.tar.xz
+  https://poppler.freedesktop.org/poppler-25.07.0.tar.xz
+- **Corresponding source for the Windows build we actually ship** (this build
+  is configured and compiled differently from the upstream archive, and carries
+  its own dependency set): https://github.com/oschwartz10612/poppler-windows
+  at tag `v25.07.0-0`
 
 **No effect on the rest of the project.** My Bookshelf invokes `pdftotext` as a
 separate subprocess and does not link against Poppler, so the two are merely
 aggregated on the same medium. This does not place My Bookshelf's own code
-under the GPL. The GPL license text ships alongside the binary at
-`vendor/poppler/share/poppler/COPYING` and `COPYING.gpl2`.
+under the GPL. The full text of the GPL version 2 ships alongside the binary,
+installed as `poppler/share/poppler/COPYING.gpl2` in the application folder
+(`COPYING` and `COPYING.adobe` next to it are poppler-data's own notices, not
+the GPL text). The Windows build fails if that text is missing or truncated, so
+a package cannot go out without it.
 
 **How we satisfy the source-code requirement.** Poppler is offered under "GPL
-v2 or later", and for this redistribution we elect **GPL v3**. Under GPL v3
-section 6(d), we offer access to the Corresponding Source from the third-party
-server named above, and these directions sit next to the object code we
-distribute. A link to a project homepage would not be enough on its own, so we
-link the exact source archive for the exact version we ship.
+v2 or later", and for this redistribution we elect **GPL v2**. We elect v2
+because v2 is the license whose full text we actually convey with the binary,
+as GPL v2 section 1 requires.
 
-**Written offer (also valid under GPL v2 section 3(b)).** In addition, for at
+Under GPL v2, a distributor of object code must pick one of the three options in
+section 3. Version 2 has no equivalent of the GPL v3 section 6(d) "offer access
+from a network server" option, so a download link cannot by itself discharge the
+obligation. **We rely on section 3(b): the written offer below.** That offer is
+what satisfies the requirement, and it is conveyed with the object code —
+`THIRD-PARTY-LICENSES.md` is installed into the application folder by the
+Windows installer.
+
+The source links above are provided as a convenience so that most people never
+need to invoke the offer. They do not replace it.
+
+**Written offer (GPL v2 section 3(b)).** For at
 least three years from the date you received this distribution, we will give
 any third party a complete machine-readable copy of the Corresponding Source
 for the Poppler binary we shipped — including the source of the specific build,

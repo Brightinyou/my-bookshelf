@@ -56,6 +56,11 @@ Source: "..\..\setup.bat";               DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\install-obsidian.bat";    DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\glossary.bat";            DestDir: "{app}"; Flags: ignoreversion
 Source: "windows_setup_extras.ps1";       DestDir: "{app}"; Flags: ignoreversion
+; GPL 준수: 번들한 poppler 바이너리 «옆에» 3년 서면 제안이 있어야 한다(GPLv2 3(b)).
+; 저장소에만 두면 설치본을 받은 사람에게 닿지 않으므로 패키지에 함께 넣는다.
+; v2에는 v3 6(d) 같은 «네트워크 서버 제공» 선택지가 없어 링크만으로는 요건이 안 찬다.
+Source: "..\..\THIRD-PARTY-LICENSES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\LICENSE";                 DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\vendor\poppler\*";        DestDir: "{app}\poppler"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
