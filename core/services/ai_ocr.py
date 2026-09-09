@@ -34,6 +34,7 @@ import json
 import re
 import shutil
 import os
+import sys
 import subprocess
 import tempfile
 import threading
@@ -1004,6 +1005,18 @@ def is_running(out_txt) -> bool:
 
 
 def _pid_alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        # 윈도우에서 os.kill(pid, 0)은 «살아 있나» 물음이 아니다. signal.CTRL_C_EVENT가
+        # 0이라 GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)로 나가고, 콘솔을 함께 쓰는
+        # 프로세스에 Ctrl+C가 실제로 전달된다 — 즉 자기 자신을 죽일 수 있다.
+        # 실측: CI 러너에서 이 검사 한 줄 때문에 테스트 실행 전체가
+        # STATUS_CONTROL_C_EXIT(0xC000013A)로 끝났다 (2026-09-09).
+        # psutil은 이미 의존성이라 새로 받을 것이 없다.
+        try:
+            import psutil
+            return psutil.pid_exists(pid)
+        except Exception:
+            return False                              # 판단이 안 서면 «죽었다» — 예전과 같다
     try:
         os.kill(pid, 0)
         return True
@@ -1012,9 +1025,6 @@ def _pid_alive(pid: int) -> bool:
     except PermissionError:
         return True                                   # 남의 프로세스지만 살아 있다
     except OSError:
-        # 윈도우는 없는 PID에 ProcessLookupError가 아니라 OSError(WinError 87,
-        # '매개 변수가 틀립니다')를 낸다. 이걸 안 받으면 is_running()이 예외를 올려
-        # '이어하기' 확인이 통째로 터진다 (2026-08-26 PC 테스트에서 드러남).
         return False
 
 
