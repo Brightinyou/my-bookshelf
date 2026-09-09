@@ -1,0 +1,75 @@
+# 윈도우에서 테스트를 돌린다. 이걸 두는 까닭은 «윈도우에서만 깨지는 것»이
+# 세 번 연달아 릴리스까지 흘러갔기 때문이다(e7f0fab 6건, a0bbfd4 2건).
+# 셋 다 read_text()·write_text()를 인코딩 없이 불러 로케일 기본을 쓴 탓인데,
+# macOS는 기본이 UTF-8이라 조용히 통과한다.
+#
+# ★러너 로케일로는 재현되지 않는다. windows-latest는 영어(cp1252)라 한글
+# 윈도우(cp949)가 죽는 바이트도 그냥 읽어 넘긴다. 그래서 로케일을 흉내내는
+# 대신 파이썬의 EncodingWarning(PEP 597)으로 «인코딩을 안 밝힌 호출» 자체를
+# 잡는다. 어느 로케일에서 돌든 결정적으로 걸린다.
+name: Tests (Windows)
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+    paths:
+      - 'core/**'
+      - '.github/workflows/test-windows.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - '.github/workflows/test-windows.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r core/requirements.txt
+
+      - name: Run tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}\core
+        run: |
+          # -X warn_default_encoding: 인코딩을 안 밝힌 텍스트 입출력마다 경고를 낸다.
+          # 오류로 승격(-W error)하지는 않는다 — 서드파티가 내는 경고까지 잡혀
+          # 우리와 무관한 이유로 빌드가 멈추기 때문이다(실측: pypdfium2_raw).
+          # 대신 다음 단계에서 core\ 를 가리키는 것만 골라 실패시킨다.
+          python -X warn_default_encoding -m unittest discover -s core\tests -v 2>&1 |
+            Tee-Object -FilePath test-output.txt
+          if ($LASTEXITCODE -ne 0) { throw "테스트 실패" }
+        shell: pwsh
+
+      - name: Fail on locale-default text I/O in core/
+        run: |
+          $hits = Select-String -Path test-output.txt -Pattern 'EncodingWarning' |
+            Where-Object { $_.Line -match [regex]::Escape('\core\') }
+          if ($hits) {
+            Write-Host "인코딩을 밝히지 않은 텍스트 입출력이 core\ 안에 있다:"
+            $hits | ForEach-Object { Write-Host ("  " + $_.Line.Trim()) }
+            Write-Host ""
+            Write-Host "read_text()/write_text()/open()에는 encoding=`"utf-8`" 을,"
+            Write-Host "subprocess 의 text=True 에는 encoding=`"utf-8`" 을 붙일 것."
+            Write-Host "지정하지 않으면 한국어 윈도우(cp949)에서 UnicodeDecodeError 로 죽는다."
+            exit 1
+          }
+          Write-Host "core\ 안에는 인코딩 미지정 입출력이 없다."
+        shell: pwsh

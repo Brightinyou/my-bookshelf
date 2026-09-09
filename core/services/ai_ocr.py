@@ -1049,10 +1049,11 @@ def kill_orphans(out_txt) -> int:
     marker = str(work_dir(Path(out_txt)).name)[:40]
     killed = 0
     try:
-        out = sp.run(["pgrep", "-f", "codex exec"], capture_output=True, text=True).stdout
+        out = sp.run(["pgrep", "-f", "codex exec"],
+                     capture_output=True, text=True, encoding="utf-8").stdout
         for pid in [int(x) for x in out.split() if x.isdigit()]:
             cmd = sp.run(["ps", "-o", "command=", "-p", str(pid)],
-                         capture_output=True, text=True).stdout
+                         capture_output=True, text=True, encoding="utf-8").stdout
             if marker in cmd or "ocr_p" in cmd:
                 os.kill(pid, 9)
                 killed += 1
