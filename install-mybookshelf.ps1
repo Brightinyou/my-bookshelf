@@ -16,7 +16,8 @@
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1
-  powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Obsidian -Launch
+  powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Obsidian
+  powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -NoLaunch   # 설치 뒤 앱을 열지 않는다
 #>
 [CmdletBinding()]
 param(
@@ -27,7 +28,8 @@ param(
     [int]    $WikiLengthPct = 30,
     [switch] $NoPrefs,
     [switch] $NoLogin,
-    [switch] $Launch
+    [switch] $Launch,
+    [switch] $NoLaunch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -272,6 +274,7 @@ if ($script:Manual.Count) {
     foreach ($m in $script:Manual) { Write-Host "  $i) $m"; $i++ }
     Write-Host '  → 로그인 뒤 앱을 껐다 켜면 설정 탭 토글이 이미 켜져 있습니다.'
 }
-if ($Launch) {
+# 설치가 끝나면 앱을 바로 연다(기본). -NoLaunch 로 끌 수 있고, -Launch 는 호환용으로 남긴다 (2026-09-18).
+if (-not $NoLaunch) {
     Start-Process -FilePath $launcher -ArgumentList "`"$AppDir\core\desktop.py`"" -WorkingDirectory $AppDir
 }

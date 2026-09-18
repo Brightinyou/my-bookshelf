@@ -19,6 +19,7 @@
 #   bash install-mybookshelf.sh --ai both --obsidian --launch
 #   bash install-mybookshelf.sh --ai claude --ai codex --obsidian --launch
 #   bash install-mybookshelf.sh --no-login          # 로그인 창을 열지 않는다
+#   bash install-mybookshelf.sh --no-launch         # 설치 뒤 앱을 열지 않는다 (기본은 연다)
 #
 #   이미 로그인된 CLI 는 창을 열지 않고 건너뛴다. 로그인이 필요하면 물어보고,
 #   원치 않으면 «손으로 하실 일» 목록에 넣고 다음 단계로 넘어간다.
@@ -36,7 +37,7 @@ PY_SHA="d3c9fff52214847e4fab03e9eaf53dd2a8e51e3534aa0b61f201b749f86bef28"
 
 AI="codex"; AI_SPECIFIED=0; WANT_CLAUDE=0; WANT_CODEX=1
 OBSIDIAN=0; LANG_UI="ko"; TARGET_LANG="ko"
-WIKI_PCT=30; NO_PREFS=0; LAUNCH=0
+WIKI_PCT=30; NO_PREFS=0; LAUNCH=1
 MANUAL=()
 
 add_ai() {
@@ -63,6 +64,7 @@ while [ $# -gt 0 ]; do
         --no-prefs)    NO_PREFS=1; shift ;;
         --no-login)    NO_LOGIN=1; shift ;;
         --launch)      LAUNCH=1; shift ;;
+        --no-launch)   LAUNCH=0; shift ;;
         -h|--help)     sed -n '2,22p' "$0"; exit 0 ;;
         *) echo "모르는 옵션: $1"; exit 2 ;;
     esac
@@ -423,7 +425,7 @@ fi
 
 # ── 7. 마무리 ────────────────────────────────────────────────
 step 7 "끝"
-say "실행: Launchpad 의 «My Bookshelf» (또는 open -a MyBookshelf)"
+if [ "$LAUNCH" = "1" ]; then say "My Bookshelf 를 바로 엽니다."; else say "실행: Launchpad 의 «My Bookshelf» (또는 open -a MyBookshelf)"; fi
 say "기록: $LOG · $SUPPORT/install.log"
 if [ "${#MANUAL[@]}" -gt 0 ]; then
     echo

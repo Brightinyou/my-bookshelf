@@ -375,7 +375,16 @@ elif [ "$AI" = "codex" ] && [ "$CODEX_OK" = "1" ]; then
 fi
 
 head_ "끝났습니다"
-say "실행: Launchpad 의 «My Bookshelf»"
+# 설치가 끝나면 앱을 바로 연다 — 예전엔 «Launchpad 에서 실행하세요» 만 적고
+# 끝나서, 설치 뒤에 아무것도 뜨지 않는 것이 불편했다 (2026-09-18).
+# Enter 를 기다리기 전에 연다: 이 창을 그냥 닫아도 앱은 뜬다.
+if /usr/bin/open -a "MyBookshelf" >/dev/null 2>&1 || /usr/bin/open "/Applications/MyBookshelf.app" >/dev/null 2>&1; then
+    say "My Bookshelf 를 열었습니다."
+    log "앱 실행"
+else
+    say "실행: Launchpad 의 «My Bookshelf»"
+    log "앱 자동 실행 실패 — Launchpad 안내"
+fi
 if [ "$AI" = "both" ]; then
     echo
     echo "${C_Y}  Claude와 Codex 로그인 창을 순서대로 열었습니다.${C_0}"

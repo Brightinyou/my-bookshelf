@@ -70,11 +70,17 @@ launch_extras() {
     if [ -f "$UNATTENDED_MARK" ]; then
         log "무인 설치 — 추가 설정 창을 띄우지 않는다"
     elif [ -x "$RESOURCES/setup-extras.command" ]; then
-        asuser /usr/bin/open -a Terminal "$RESOURCES/setup-extras.command" >/dev/null 2>&1 \
-            && log "추가 설정 창을 띄웠다" \
-            || log "추가 설정 창을 띄우지 못했다 (앱 설정 탭에서 직접 고르면 된다)"
+        # 추가 설정 창(setup-extras.command)이 끝나면 그 창이 앱을 연다.
+        if asuser /usr/bin/open -a Terminal "$RESOURCES/setup-extras.command" >/dev/null 2>&1; then
+            log "추가 설정 창을 띄웠다"
+        else
+            log "추가 설정 창을 띄우지 못했다 (앱 설정 탭에서 직접 고르면 된다) — 앱을 바로 연다"
+            asuser /usr/bin/open "$APP" >/dev/null 2>&1 && log "앱 실행"
+        fi
     else
-        log "setup-extras.command 없음 — 건너뛴다"
+        # 설치가 끝났는데 아무것도 안 뜨면 불편하다 — 앱이라도 연다 (2026-09-18).
+        log "setup-extras.command 없음 — 앱을 바로 연다"
+        asuser /usr/bin/open "$APP" >/dev/null 2>&1 && log "앱 실행"
     fi
 }
 
