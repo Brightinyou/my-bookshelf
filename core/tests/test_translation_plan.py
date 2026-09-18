@@ -121,6 +121,20 @@ class PlanTest(unittest.TestCase):
         for text in ("123", "https://example.org", "doi:10.1234/abc", "3 Psalm 8:4."):
             self.assertIsNotNone(tr.skip_reason(text), text)
 
+    def test_standalone_journal_locator_is_preserved_but_explanation_is_translated(self):
+        locator = ("Ohio State Law Journal, no. 50, 511–540. "
+                   "https://heinonline.org/HOL/LandingPage ?handle=hein.journals/ohslj50&div=28&id=&page=.")
+        self.assertEqual(tr.skip_reason(locator), "서지정보 보존")
+        self.assertIsNone(tr.skip_reason("This explains the argument in " + locator))
+
+    def test_preserved_long_url_does_not_reject_translated_citation(self):
+        link = " https://law.lis.virginia.gov/vacode/title46.2/chapter8/section46.2-908 .1:1/."
+        source = 'Commonwealth of Virginia. 2021. “Personal Delivery Vehicles.” Virginia Code § 46.2-908.1:1.' + link
+        translated = 'Commonwealth of Virginia. 2021. “개인 배송 차량.” Virginia Code § 46.2-908.1:1.' + link
+        self.assertTrue(tr._translation_is_valid(source, translated, "ko"))
+        self.assertFalse(tr._translation_is_valid(source, source, "ko"))
+        self.assertFalse(tr._translation_is_valid(source, link, "ko"))
+
     def test_context_and_retry_instructions_never_become_target_text(self):
         source = "A meaningful fragment"
         with patch.object(tr.llm, "complete", side_effect=[source, "의미가 있는 문장의 일부입니다."]) as complete:

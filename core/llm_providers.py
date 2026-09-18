@@ -527,6 +527,22 @@ class ModelConfigurationError(RuntimeError):
     """A non-retryable provider/model/authentication problem."""
 
 
+def usage_limit_error(error: Exception) -> bool:
+    """사용량·크레딧이 바닥난 오류인가 — 기다려도 다음 호출이 같이 실패한다.
+
+    설정 오류와 사유는 다르지만 처지는 같다 — 그 자리에서 멈춰 사람에게 알려야 한다.
+    (2026-09-09: Codex CLI가 "You've hit your usage limit"을 돌려주는데 아무도 이걸
+    치명적으로 보지 않아, 단락 245개를 연속 실패하며 3시간을 써버렸다.)
+    """
+    status = getattr(error, "status_code", None)
+    text = str(error).lower()
+    return status in (402, 429) or any(token in text for token in (
+        "usage limit", "rate limit", "quota", "insufficient_quota", "insufficient credit",
+        "credit balance", "out of credits", "billing", "payment required",
+        "402 payment", "429 too many requests", "resource_exhausted",
+        "크레딧", "사용량 한도"))
+
+
 def configuration_error(error: Exception) -> bool:
     status = getattr(error, "status_code", None)
     text = str(error).lower()

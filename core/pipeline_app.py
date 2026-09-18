@@ -2989,8 +2989,12 @@ if _active_view == "3_translate":
             return False, f"{Path(rel).name}: {t('출력 방식을 하나 이상 선택하세요')}"
         _ok, _msg = translate_one_chapter(_cf, _tr_eng3, progress_cb=progress_cb,
                                            want_plain=_want_plain3, want_bilingual=_want_bil3)
-        if translation_status(_cf).get("blocked"):
-            _job_state()["_job_halt"] = t("AI 모델 또는 로그인 문제로 멈췄습니다. 설정을 확인한 뒤 재시도하세요.")
+        _st3 = translation_status(_cf)
+        if _st3.get("blocked"):
+            # 멈춘 진짜 사유를 그대로 보여준다 — «설정을 확인하세요»만 띄우면 사용량
+            # 한도로 멈춘 사람이 설정만 뒤지게 된다 (2026-09-09).
+            _job_state()["_job_halt"] = (str(_st3.get("error") or "").strip()
+                                         or t("AI 모델 또는 로그인 문제로 멈췄습니다. 설정을 확인한 뒤 재시도하세요."))
         if _ok:
             queue_remove("tab3_ready", [rel])
             queue_add("tab4_ready", [rel])

@@ -26,7 +26,7 @@ from pathlib import Path
 
 import llm_providers as llm
 
-from services import kospace, langdetect
+from services import jobs, kospace, langdetect
 from services.common import _save_json_atomic, append_log
 from services.files import _save_bilingual_atomic
 
@@ -34,6 +34,10 @@ _KO_SCRIPT = _re.compile(r"[가-힣]")
 
 
 DEFAULT_TARGET = "ko"
+
+# 연속 실패를 이만큼 보면 문서 하나를 포기하고 사람을 부른다 — 사용량 한도나
+# 공급자 장애처럼 다음 단락이라고 나아질 이유가 없는 고장을 가리는 자리다 (2026-09-09).
+FAIL_STREAK_LIMIT = 5
 
 # 도착언어 후보 — 감지 가능한 언어를 그대로 도착언어로도 고를 수 있게 한다.
 TARGET_CHOICES = ("ko", "en", "ja", "zh", "de", "fr", "es", "it", "pt", "nl", "ru")
@@ -185,12 +189,19 @@ def _translation_is_valid(src: str, out: str | None, target: str = "") -> bool:
         return False
     if _looks_like_translation_refusal(cleaned_out):
         return False
+    # URLs are deliberately preserved; compare the language-bearing text so a
+    # long unchanged link cannot make a translated citation look untranslated.
+    url_pattern = r"https?://\S+(?:\s+(?=[?.=&/#])\S+)*"
+    comparison_src = _re.sub(url_pattern, "", cleaned_src).strip()
+    comparison_out = _re.sub(url_pattern, "", cleaned_out).strip()
+    if not comparison_out:
+        return False
     # 도착언어가 고유 문자를 쓰면(한글·가나·키릴 …) 결과에 그 문자가 거의 없다는 건
     # 번역이 안 됐다는 뜻이다. 라틴 문자권이 도착언어면 원문과 문자가 같아 이 검사가
     # 무의미하므로 건너뛰고, 아래 '원문과 거의 같은가' 검사에 맡긴다(2026-08-15).
-    if langdetect.has_own_script(target) and langdetect.script_ratio(cleaned_out, target) < 0.08:
+    if langdetect.has_own_script(target) and langdetect.script_ratio(comparison_out, target) < 0.08:
         return False
-    if cleaned_src and SequenceMatcher(None, cleaned_src[:2000], cleaned_out[:2000]).ratio() > 0.82:
+    if comparison_src and SequenceMatcher(None, comparison_src[:2000], comparison_out[:2000]).ratio() > 0.82:
         return False
     return True
 
@@ -515,7 +526,11 @@ def translate(text: str, engine: str, glossary: dict | None = None,
         return out.strip()
     except Exception as e:
         _log_once(f"{engine}|{type(e).__name__}|{str(e)[:120]}",
-                  f"ERROR: 번역 실패 [{engine}] ({type(e).__name__}): {str(e)[:300]}")
+                  f"ERROR: 번역 실패 [{engine}] ({type(e).__name__}): {str(e)[-600:]}")
+        if llm.usage_limit_error(e):
+            # 한도가 차면 다음 단락도 똑같이 실패한다 — 계속 물어보면 몇 시간을 버린다 (2026-09-09).
+            raise llm.ModelConfigurationError(
+                f"AI 사용량·크레딧 한도에 걸렸습니다 [{engine}]: {str(e)[-350:]}") from e
         if llm.configuration_error(e):
             raise llm.ModelConfigurationError(
                 f"AI 모델 또는 인증 설정을 확인하세요 [{engine}]: {str(e)[-350:]}") from e
@@ -778,6 +793,11 @@ def skip_reason(paragraph: str) -> str | None:
             or _re.search(r"\b(?:argues?|suggests?|explains?|means?|claims?|discusses?|shows?|see also|see above|see below)\b", p, _re.I)
             or _re.search(r"(?:한다|이다|있다|없다|된다|했다|입니다|합니다|때문|그러나|따라서)", p)):
         return None
+    # A standalone journal locator has no explanatory prose to translate.
+    if (_re.search(r"\bjournal\b", p, _re.I)
+            and _re.search(r",\s*no\.\s*\d+,\s*\d+\s*[–—-]\s*\d+\.", p, _re.I)
+            and _re.search(r"https?://", p, _re.I)):
+        return "서지정보 보존"
     # These require a bibliographic signal, not merely a leading note number.
     citation = (_CITATION_NUMBERED.match(p) or _CITATION_BULLET.match(p)
                 or _RE_EXPLICIT_CITE.search(p)
@@ -1045,6 +1065,9 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         translated_n = preserved_n = dropped_n = failed_n = resumed_n = api_calls = 0
         total = len(paras) or 1
         fatal_error = ""
+        idx = 0
+        stopped = False
+        fail_streak = 0
 
         def _save_partial():
             tmp = partial_path.with_name(partial_path.name + ".tmp")
@@ -1092,6 +1115,10 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                                           "entries": successful})
 
         for idx, p in enumerate(paras, 1):
+            if jobs.stop_requested():
+                # «현재 항목 후 중단»을 단락 경계에서도 듣는다 (2026-09-09).
+                stopped = True
+                break
             unit = plan["units"][idx - 1]
             key = planner.cache_key(unit, _target)
             cached = successful.get(key) or (legacy.get(p) if not unit["context"] else None)
@@ -1136,11 +1163,13 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                     out.append(ko)
                     bilingual_pairs.append((p, ko))
                     translated_n += 1
+                    fail_streak = 0
                     cached_rows[idx] = {"idx": idx, "src": p, "tgt": ko, "status": "translated"}
                 else:
                     out.append(p)
                     bilingual_pairs.append((p, p))
                     failed_n += 1
+                    fail_streak += 1
                     cached_rows[idx] = {"idx": idx, "src": p, "tgt": p, "status": "failed"}
             cached_rows[idx].update(id=unit["id"], target=_target, key=key, kind=unit["kind"])
             if cached_rows[idx]["status"] == "translated":
@@ -1149,6 +1178,13 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             _save_partial()
             if progress_cb:
                 progress_cb(idx, total, translated_n, preserved_n, dropped_n, failed_n, resumed_n, api_calls)
+            if not fatal_error and fail_streak >= FAIL_STREAK_LIMIT:
+                # 연속으로 하나도 안 되면 이유를 몰라도 그만한다 — 사용량 한도처럼
+                # 예외로 드러나지 않는 고장도 있다. 예전엔 245단락을 연달아 실패하고도
+                # 끝까지 물어보며 3시간을 썼다 (2026-09-09).
+                fatal_error = (f"연속 {fail_streak}단락 번역 실패 — AI 응답을 받지 못해 멈췄습니다. "
+                               "사용량·크레딧과 모델 설정을 확인한 뒤 다시 시작하세요.")
+                append_log(f"ERROR: {fatal_error} ({ch_path.name})")
             if fatal_error:
                 break
         _src_label = language_name(src_lang) if src_lang else ""
@@ -1161,6 +1197,20 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         plan["results"] = [cached_rows[i] for i in sorted(cached_rows)]
         _save_json_atomic(audit_path, plan)
         _save_progress()
+        if stopped:
+            # 멈췄을 뿐 마친 게 아니다 — 번역본을 확정하면 안 된다. 진행분은
+            # progress·cache에 그대로 남아 다시 시작하면 이어한다 (2026-09-09).
+            done_n = max(0, idx - 1)
+            _save_json_atomic(status_path, {
+                "state": "partial" if translated_n else "failed", "engine": engine,
+                "target": _target, "total": total, "translated": translated_n,
+                "failed": failed_n, "pending": max(0, total - done_n), "stopped": True,
+                "cache_version": planner.VERSION,
+            })
+            append_log(f"번역 중단 요청 — {ch_path.name} ({done_n}/{total}단락까지 하고 멈춤)")
+            return False, (f"중단됨: 번역 {translated_n}/{total}"
+                           + (f" · 실패 {failed_n}" if failed_n else "")
+                           + " — 다시 시작하면 성공한 문단은 재사용합니다")
         if failed_n:
             # 실패는 «원문 그대로»로 저장돼 파일이 완성된 것처럼 보인다. 한 건이라도
             # 있으면 로그에 남기고, 비중이 크면 결과 문구 앞에 경고를 세운다 — 예전에는
@@ -1205,6 +1255,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         return True, detail
     except Exception as e:
         if "status_path" in locals():
-            _save_json_atomic(status_path, {"state": "failed", "engine": engine, "error": str(e)[:350],
+            _save_json_atomic(status_path, {"state": "failed", "engine": engine, "error": str(e)[-600:],
+                                           "blocked": isinstance(e, llm.ModelConfigurationError),
                                            "cache_version": planner.VERSION})
         return False, str(e)[:200]
