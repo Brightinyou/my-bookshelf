@@ -407,11 +407,59 @@ def _start_streamlit(port: int) -> subprocess.Popen | None:
     )
 
 
+def _popup_args(argv: list[str]) -> tuple[str, str] | None:
+    """`--popup <url> [--title <제목>]` 이면 (url, 제목), 아니면 None."""
+    if "--popup" not in argv:
+        return None
+    i = argv.index("--popup")
+    if i + 1 >= len(argv):
+        return None
+    title = APP_TITLE
+    if "--title" in argv and argv.index("--title") + 1 < len(argv):
+        title = argv[argv.index("--title") + 1]
+    return argv[i + 1], title
+
+
+def run_popup(url: str, title: str) -> int:
+    """앱의 한 화면을 **별도의 넓은 창**으로 띄운다 (2026-09-21 연구자 요청).
+
+    앱 본창은 480×760 남짓한 좁은 창이라 장 목록 같은 표 편집이 어렵다. 그래서
+    Streamlit 서버는 그대로 두고, 같은 서버의 다른 화면(?view=…)을 가리키는 창을
+    **새 프로세스**로 하나 더 연다. pywebview는 GUI 루프가 프로세스마다 하나라
+    본창 프로세스에 창을 더 붙일 수 없고, 서버 쪽(스트림릿)에서는 창을 만들 수 없다.
+
+    본창을 만드는 main()과 달리 옛 서버를 죽이지도, 새 서버를 띄우지도 않는다 —
+    그랬다가는 본창이 붙어 있는 서버가 끊긴다."""
+    try:
+        import webview
+    except ImportError as exc:
+        return _fail("The desktop window runtime is incomplete.", f"{type(exc).__name__}: {exc}")
+    try:
+        # ★가장 넓은 화면 기준 (screens[0]이 세로 보조 모니터인 기기에서 972px짜리
+        #   창이 떴다 — 2026-09-21 실측). 창은 어차피 주 모니터에 뜬다.
+        _scr = max(webview.screens, key=lambda s: int(s.width))
+        _sw, _sh = int(_scr.width), int(_scr.height)
+    except Exception:
+        _sw, _sh = 1366, 768
+    w, h = min(1400, int(_sw * 0.9)), min(960, int(_sh * 0.9))
+    webview.create_window(title, url, width=w, height=h, min_size=(720, 480), text_select=True)
+    icon = APP_ICON if os.path.exists(APP_ICON) else None
+    try:
+        webview.start(icon=icon)
+        return 0
+    except Exception:
+        return _fail("The popup window could not be created.", traceback.format_exc())
+
+
 def main() -> int:
     # ★맨 처음에 한다 — 창을 만든 뒤에 이름을 바꿔 봐야 작업표시줄은 이미
     #   pythonw.exe로 묶은 뒤다. 성공하면 이 프로세스는 여기서 끝난다.
     if _relaunch_under_own_name():
         return 0
+
+    _popup = _popup_args(sys.argv[1:])
+    if _popup:
+        return run_popup(*_popup)
 
     try:
         if LAUNCH_LOG.exists():

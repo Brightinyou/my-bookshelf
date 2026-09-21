@@ -78,8 +78,15 @@ _VISUAL_TOC_PROMPT = """이 PDF는 한 권의 책에서 추려낸 페이지들�
 - page에는 **그 장의 본문이 시작되는 원본 페이지 번호**(위 매핑 기준 1-기반)를,
   이 PDF에서 확인 불가하면 null
 - 머리말/판권/부록/참고문헌은 장이 아니면 제외
+- **글마다 저자가 다른 논문집·학술지·공저**면 각 항목에 그 글의 저자를 author로 적으세요.
+  한 사람이 쓴 책이면 author는 생략
 
-출력은 JSON 하나만: {{"chapters": [{{"title": "...", "page": 12}}]}}"""
+출력은 JSON 하나만: {{"chapters": [{{"title": "...", "page": 12, "author": "홍길동"}}]}}"""
+
+# 시각 판독이 읽어 낸 글별 저자 — {책 stem: {제목: 저자}}. 논문집인지 알아보는 데 쓴다
+# (2026-09-21 연구자: "논문집 형태인 것은 글마다 저자가 다른 것으로 알 수 있어").
+# pdf_visual_toc 의 반환형(제목·쪽)은 그대로 두고 옆길로 남긴다.
+LAST_TOC_AUTHORS: dict[str, dict[str, str]] = {}
 
 
 def _page_char_counts(txt: str) -> list[int]:
@@ -481,12 +488,17 @@ def pdf_visual_toc(pdf_path: Path, txt: str | None = None) -> list[tuple[str, in
         _toc_skip(pdf_path, f"[{prov}] 응답에 chapters 목록이 없음")
         return None
     out: list[tuple[str, int | None]] = []
+    authors: dict[str, str] = {}
     for r in rows:
         title = str((r or {}).get("title") or "").strip()
         if not title or len(title) > 90:
             continue
         page = r.get("page")
         out.append((title, int(page) if isinstance(page, (int, float)) else None))
+        author = str(r.get("author") or "").strip()
+        if author and len(author) <= 60:
+            authors[title] = author
+    LAST_TOC_AUTHORS[pdf_path.stem] = authors
     if not (3 <= len(out) <= MAX_CHAPTERS):
         _toc_skip(pdf_path, f"[{prov}] 읽어낸 장 수 {len(out)}개 — 3~{MAX_CHAPTERS} 범위 밖")
         return None

@@ -250,6 +250,9 @@ def save_map(ws_name: str, stem: str, mode: str = "", confirmed: bool | None = N
     }
     if prev.get("parts"):
         data["parts"] = prev["parts"]        # 부 구분은 파일 상태와 무관하게 보존
+    for k in ("anthology", "authors"):       # 논문집 표시·글별 저자도 (2026-09-21)
+        if k in prev:
+            data[k] = prev[k]
     p = map_path(ws_name, stem)
     if files:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -293,8 +296,15 @@ _BOUNDARY_WORDS = (
     "introduction", "conclusion", "conclusions", "concludingremarks",
     "prologue", "epilogue", "preface", "foreword", "afterword",
     "서론", "결론", "서언", "결어", "머리말", "맺음말", "맺는말",
-    "들어가는말", "나가는말", "들어가며", "나가며", "프롤로그", "에필로그", "후기",
+    "들어가는말", "나가는말", "들어가며", "나가며", "맺으며", "나오는말", "나오며",
+    "프롤로그", "에필로그", "후기",
 )
+# 같은 구실을 하는 낱말끼리 묶는다 — 소논문 모음을 알아보는 데 쓴다 (2026-09-21).
+_OPENING_WORDS = frozenset((
+    "introduction", "prologue", "preface", "foreword",
+    "서론", "서언", "머리말", "들어가는말", "들어가며", "프롤로그",
+))
+_CLOSING_WORDS = frozenset(w for w in _BOUNDARY_WORDS if w not in _OPENING_WORDS)
 # 앞에 붙는 번호(“IV. 결론”, “5. Conclusion”, “제5장 결론”)와 뒤 문장부호는 흘린다.
 _BOUNDARY_RE = re.compile(
     r"^(?:제?\d{1,2}[.)장]?|[ivxl]{1,5}[.)])?"
@@ -321,6 +331,95 @@ def is_boundary_heading(line: str) -> bool:
     return bool(boundary_word(line))
 
 
+def section_heading_hits(ws_name: str, stem: str) -> list[tuple[int, int, str, str]]:
+    """장 안에 홀로 선 경계 제목 전부 — [(장 순번, 문자위치, 줄, 핵심 낱말)].
+
+    장의 맨 앞(pos 0)도 센다. 이미 그 제목으로 갈라진 장이 있으면 그것도 이 책이
+    어떤 모양인지를 말해 주는 증거이기 때문이다."""
+    hits: list[tuple[int, int, str, str]] = []
+    for i, f in enumerate(chapter_files(ws_name, stem)):
+        try:
+            body = f.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        lines = body.splitlines(keepends=True)
+        pos = 0
+        for k, raw in enumerate(lines):
+            s = raw.strip()
+            prev_blank = (k == 0) or not lines[k - 1].strip()
+            next_blank = (k + 1 >= len(lines)) or not lines[k + 1].strip()
+            w = boundary_word(s) if (s and prev_blank and next_blank) else ""
+            if w:
+                hits.append((i, pos, s, w))
+            pos += len(raw)
+    return hits
+
+
+def anthology_evidence(hits: list[tuple[int, int, str, str]]) -> str:
+    """이 책이 **소논문 모음**(논문집·학술지)이라는 증거. 없으면 빈 문자열.
+
+    ★2026-09-21 『기술윤리』(HTSN 논문집) 실측. 논문마다 「I. 들어가는 말」·「V. 나가는
+    말」이 있는데 auto_split_known_headings 가 낱말마다 한 번씩 갈라서 「들어가는 말」·
+    「나가는 말」·「들어가며」·「맺는말」·「나가며」가 제각기 장이 됐고, 그 앞의 논문
+    제목 장은 본문 97자짜리 빈 껍데기가 됐다. 한 권에 서론이 하나라야 서론이 장이다.
+
+    판정: 같은 구실(여는 말/맺는 말)의 낱말이 **둘 이상 다른 꼴**로 나오거나, 같은
+    낱말이 **세 번 이상** 서 있으면 모음집이다. 두 번은 장 안에 남은 목차나 러닝헤더일
+    수 있어(『서양철학사』「머 리 말」×2) 그대로 둔다 — 그 경우는 한 번만 가르는
+    기존 규칙이 맞다."""
+    for family, label in ((_OPENING_WORDS, "여는 말"), (_CLOSING_WORDS, "맺는 말")):
+        words = [h[3] for h in hits if h[3] in family]
+        if not words:
+            continue
+        distinct = sorted(set(words), key=words.index)
+        if len(distinct) >= 2 or len(words) >= 3:
+            shown = "·".join(f"「{h[2]}」" for h in hits if h[3] in family)[:120]
+            return f"{label} 제목이 {len(words)}번 나옵니다 ({shown})"
+    return ""
+
+
+def note_authors(ws_name: str, stem: str, authors: dict[str, str]) -> bool:
+    """시각 판독이 읽은 글별 저자를 장 지도에 남기고, 저자가 둘 이상 다르면 논문집으로
+    표시한다 (2026-09-21). 제목만으로는 못 알아보는 모음집(절 제목이 「서론」 하나뿐인
+    학술지 등)도 이 표시로 잡힌다. 논문집이면 True."""
+    m = load_map(ws_name, stem) or {}
+    distinct = {a.strip() for a in authors.values() if a and a.strip()}
+    if not distinct:
+        return bool(m.get("anthology"))
+    m["authors"] = dict(authors)
+    m["anthology"] = len(distinct) >= 2
+    p = map_path(ws_name, stem)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
+    if m["anthology"]:
+        append_log(f"장분할: 글마다 저자가 달라 논문집으로 봄 — {stem} (저자 {len(distinct)}명)")
+    return m["anthology"]
+
+
+def is_anthology(ws_name: str, stem: str) -> str:
+    """이 책이 소논문 모음이라는 근거 — 장 지도의 저자 표시 또는 절 제목 반복. 없으면 ''."""
+    m = load_map(ws_name, stem) or {}
+    if m.get("anthology"):
+        n = len({a for a in (m.get("authors") or {}).values() if a})
+        return f"글마다 저자가 다릅니다 ({n}명)"
+    return anthology_evidence(section_heading_hits(ws_name, stem))
+
+
+def section_title_chapters(ws_name: str, stem: str) -> list[int]:
+    """제목이 「들어가는 말」·「나가며」 같은 **절 제목뿐인 장**의 순번(0-기반).
+
+    모음집이 이미 잘못 갈라진 뒤에 부르는 용도다 — 편집 창에서 한 번에 앞 장에
+    합치거나, 확인 화면에서 경고한다. 첫 장(0)은 뺀다: 합칠 앞 장이 없고, 책 전체의
+    머리말이면 장으로 두는 것이 맞다."""
+    files = chapter_files(ws_name, stem)
+    words = [boundary_word(chapter_title(f)) for f in files]
+    m = load_map(ws_name, stem) or {}
+    if not m.get("anthology") and not anthology_evidence(
+            [(i, 0, chapter_title(f), w) for i, (f, w) in enumerate(zip(files, words)) if w]):
+        return []
+    return [i for i, w in enumerate(words) if i > 0 and w]
+
+
 def auto_split_known_headings(ws_name: str, stem: str, max_splits: int = 8) -> list[str]:
     """장 **안에** '결론'·'서론' 같은 제목이 홀로 서 있으면 거기서 나눈다.
 
@@ -332,6 +431,12 @@ def auto_split_known_headings(ws_name: str, stem: str, max_splits: int = 8) -> l
 
     나눈 제목들을 돌려준다. 무한히 도는 것을 막으려고 횟수를 제한한다."""
     made: list[str] = []
+    # ★소논문 모음이면 아예 손대지 않는다 (2026-09-21) — anthology_evidence 주석 참고.
+    #   논문마다 있는 「들어가는 말」은 절 제목이지 장이 아니다.
+    _why = is_anthology(ws_name, stem)
+    if _why:
+        append_log(f"장분할: 소논문 모음으로 보여 경계 제목 자동 분할을 건너뜀 — {stem}: {_why}")
+        return []
     # ★같은 낱말로는 한 번만 나눈다 (2026-08-26 실측). 안 막았더니 『서양철학사』가
     # 「머 리 말」에서 두 번, 『영국감리교』가 「1. Introduction」과 「Introduction」
     # 에서 두 번 갈렸다 — 장 안에 남은 목차나 러닝헤더가 다시 걸린 것이다.
@@ -443,6 +548,17 @@ def review_findings(ws_name: str, stem: str) -> list[str]:
     numeric = [f for f in files if re.fullmatch(r"제?\s*\d+\s*장|Chapter\s*\d+|\d+", chapter_title(f).strip(), re.I)]
     if numeric:
         out.append(f"제목이 번호뿐인 장이 {len(numeric)}개 있습니다")
+    # 소논문 모음이 절 제목에서 갈라진 흔적 (2026-09-21 『기술윤리』)
+    sect = section_title_chapters(ws_name, stem)
+    if sect:
+        names = "·".join(f"「{chapter_title(files[i])}」" for i in sect[:4])
+        out.append(f"「들어가는 말」·「나가는 말」 같은 절 제목이 장으로 잡혀 있습니다 "
+                   f"({len(sect)}개: {names}{' …' if len(sect) > 4 else ''}) — "
+                   f"넓은 편집 창에서 앞 장에 합치세요")
+    shells = [f for f in files
+              if f.stem[:2] != "00" and len(f.read_text(encoding="utf-8", errors="ignore")) < 300]
+    if shells:
+        out.append(f"본문이 거의 없는 장이 {len(shells)}개 있습니다 (300자 미만) — 제목만 남은 껍데기일 수 있습니다")
     # ★«01장 안에 제목처럼 보이는 줄이 있습니다 — 장 나누기에서 …» 경고는 뺐다
     #   (2026-08-27). 그 «✂️ 장 나누기»를 같은 날 화면에서 걷어냈으므로, 남겨 두면
     #   있지도 않은 단추를 찾으라고 시키는 꼴이 된다. 논문 한 편에 다섯 줄씩 붙어
@@ -626,6 +742,61 @@ def _page_of(page_offsets: list[int], pos: int) -> int:
     """문자 위치가 몇 번째 쪽(0-기반)인지."""
     import bisect
     return max(0, bisect.bisect_right(page_offsets, pos) - 1)
+
+
+class PageMap:
+    """챕터 파일의 자리를 **원본 쪽 번호**로 옮겨 준다 (2026-09-21).
+
+    챕터 파일에는 쪽 구분자(\f)가 없다 — 그것은 보관된 원본 TXT에만 남아 있다.
+    그런데 챕터를 죄다 이으면 공백만 빼고 원본과 글자가 같다(『기술윤리』 실측
+    232,450자 일치). 그래서 **공백 아닌 글자를 세어** 자리를 맞춘다: 챕터 i의 pos는
+    "앞 챕터들의 글자 수 + 이 챕터에서 pos까지의 글자 수"번째 글자이고, 원본에서
+    그 글자가 몇 쪽에 있는지는 \f 위치로 안다.
+
+    글자 수가 안 맞으면(재판독·손편집으로 원본과 어긋난 책) `ok`가 False이고 쪽은
+    모른다고 한다 — 틀린 쪽 번호는 안 보여 주는 것보다 나쁘다."""
+
+    def __init__(self, ws_name: str, stem: str):
+        text, offsets = _source_text(ws_name, stem)
+        self.ok = False
+        self._page_offsets = offsets
+        self._src_idx: list[int] = []
+        self._starts: list[int] = []          # 챕터별 첫 글자의 전체 순번
+        self._lens: list[int] = []
+        if not offsets or len(offsets) < 2:
+            return
+        self._src_idx = [i for i, c in enumerate(text) if not c.isspace()]
+        total = 0
+        for f in chapter_files(ws_name, stem):
+            body = f.read_text(encoding="utf-8", errors="ignore")
+            n = sum(1 for c in body if not c.isspace())
+            self._starts.append(total)
+            self._lens.append(n)
+            total += n
+        self.ok = bool(self._src_idx) and total == len(self._src_idx)
+
+    @property
+    def page_count(self) -> int:
+        return len(self._page_offsets)
+
+    def _page_of_nth(self, nth: int) -> int:
+        nth = max(0, min(nth, len(self._src_idx) - 1))
+        return _page_of(self._page_offsets, self._src_idx[nth]) + 1     # 1-기반
+
+    def page_at(self, idx: int, text_before: str) -> int | None:
+        """챕터 idx 안에서, text_before(그 자리까지의 본문) 다음 글자가 있는 쪽."""
+        if not self.ok or not (0 <= idx < len(self._starts)):
+            return None
+        k = sum(1 for c in text_before if not c.isspace())
+        return self._page_of_nth(self._starts[idx] + k)
+
+    def chapter_range(self, idx: int) -> tuple[int, int] | None:
+        """(첫 쪽, 끝 쪽). 본문이 없는 장은 첫 쪽만 같은 값으로."""
+        if not self.ok or not (0 <= idx < len(self._starts)):
+            return None
+        start = self._page_of_nth(self._starts[idx])
+        end = self._page_of_nth(self._starts[idx] + max(self._lens[idx] - 1, 0))
+        return start, max(start, end)
 
 
 def apply_toc(ws_name: str, stem: str, entries: list[tuple[str, int | None]],

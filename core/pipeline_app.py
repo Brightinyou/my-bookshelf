@@ -510,6 +510,20 @@ with st.container(key="app_brand"):
         f"font-weight:400;vertical-align:middle'>{APP_VERSION}</span>",
         unsafe_allow_html=True,
     )
+# ── 별창: 장 구분 편집 작업창 (2026-09-21) ──────────────────────────
+# desktop.py --popup 이 «?view=chapter_editor&book=…» 으로 연다. 내비게이션·메뉴 없이
+# 이 화면만 그리고 멈춘다 — 본창과 같은 서버라 파일 상태는 늘 같다.
+if st.query_params.get("view") == "chapter_editor":
+    from services.ui_chapter_wide import chapter_workbench
+    _wb_book = st.query_params.get("book", "")
+    _loading_ph.empty()
+    st.session_state["_app_loaded"] = True
+    if _wb_book and (cfg.CHAPTERS_DIR / _wb_book).is_dir():
+        chapter_workbench(DEFAULT_WS, _wb_book)
+    else:
+        st.error(t("편집할 책을 찾지 못했습니다. 본창에서 «넓은 창에서 편집»을 다시 누르세요."))
+    st.stop()
+
 # ★번역 단계는 화면 언어와 상관없이 늘 켜 둔다 (2026-08-26).
 # 2026-07-10에는 "영어 UI면 영→한 번역이 무의미하다"며 숨겼는데, 그때는 도착언어가
 # 한국어 하나뿐이었다. 지금은 설정에서 11개 언어 중 고르므로 — 영어 화면으로 쓰면서
@@ -1182,6 +1196,71 @@ def _render_toc_side_by_side(key: str, book: str) -> None:
                        toc_svc.printed_label(_pdf, _pages)))
 
 
+def _open_wide_editor(book: str) -> str:
+    """장 구분 편집 작업창을 **별도의 넓은 창**으로 띄운다 (2026-09-21 연구자 요청).
+
+    본창은 좁아서(480×760) 장 목록을 펴 놓고 고칠 수 없다. desktop.py 의 --popup 으로
+    같은 서버의 «?view=chapter_editor» 화면을 새 창에 연다. 창을 못 띄우면 기본
+    브라우저로 연다 — 어느 쪽이든 같은 화면이다. 무엇으로 열었는지 돌려준다."""
+    import urllib.parse
+    from streamlit import config as _stcfg
+    port = _stcfg.get_option("server.port") or 8501
+    url = f"http://127.0.0.1:{port}/?view=chapter_editor&book={urllib.parse.quote(book)}"
+    launcher = Path(__file__).resolve().parent / "desktop.py"
+    try:
+        subprocess.Popen(
+            [sys.executable, str(launcher), "--popup", url, "--title", f"{t('장 구분 편집')} — {book}"],
+            cwd=str(launcher.parent.parent),
+            creationflags=0x08000000 if sys.platform == "win32" else 0,
+        )
+        return "창"
+    except Exception as e:
+        append_log(f"WARN: 편집 창을 못 띄워 브라우저로 엽니다 ({type(e).__name__}: {str(e)[:80]})")
+    import webbrowser
+    webbrowser.open(url)
+    return "브라우저"
+
+
+def _chapter_review_wide(key: str, book: str) -> None:
+    """분할 확인 화면의 본체 (2026-09-21). 본창에는 **읽기 전용 목록**과 «넓은 창에서
+    편집» 단추만 둔다 — 고치는 일은 전부 별창(services/ui_chapter_wide)에서 한다.
+    예전 표 편집기는 접혀서 장 하나만 보였고 제목밖에 못 고쳤다(연구자 지적)."""
+    from services.ui_chapter_wide import chapter_rows
+    rows = chapter_rows(DEFAULT_WS, book)
+    b1, b2 = st.columns([2, 1])
+    if b1.button(t("넓은 창에서 편집"), icon=":material/open_in_new:", type="primary",
+                 key=f"{key}_wide_{book}", width="stretch",
+                 help=t("장 목록 전체를 펴 놓고 제목 고치기 · 장 끼워 넣기(＋) · 앞 장에 합치기(−)를 하는 창을 엽니다.")):
+        _how = _open_wide_editor(book)
+        st.session_state[f"{key}_wide_opened_{book}"] = True
+        st.toast(t("편집 창을 열었습니다.") if _how == "창" else t("편집 화면을 브라우저로 열었습니다."))
+    if b2.button(t("새로 고침"), icon=":material/refresh:", key=f"{key}_wide_refresh_{book}",
+                 width="stretch", help=t("편집 창에서 고친 것을 이 목록에 다시 읽어 옵니다.")):
+        st.rerun()
+    if st.session_state.get(f"{key}_wide_opened_{book}"):
+        st.caption(t("편집 창에서 고친 것은 바로 파일에 반영됩니다 — 다 고쳤으면 «새로 고침»으로 목록을 확인하고 확정하세요."))
+    _table = [{t("순번"): r["순번"], t("쪽"): r["쪽"],
+               t("제목"): ("🔸 " if r["절제목"] else "") + r["제목"],
+               t("분량"): tf("%s자", f"{r['글자']:,}")} for r in rows]
+    st.dataframe(_table, hide_index=True, width="stretch",
+                 column_config={t("제목"): st.column_config.TextColumn(width="large"),
+                                t("순번"): st.column_config.TextColumn(width="small"),
+                                t("분량"): st.column_config.TextColumn(width="small")})
+    if any(r["절제목"] for r in rows):
+        st.caption("🔸 " + t("논문 안의 절 제목(들어가는 말·나가는 말 등)이 장으로 잡힌 것 — 편집 창에서 한 번에 앞 장에 합칠 수 있습니다."))
+
+    _next_view = "3_translate" if _route_translate(book) else "4_summary"
+    _next_name = t("번역") if _next_view == "3_translate" else t("문서요약")
+    c1, c2 = st.columns([2, 1])
+    if c1.button(tf("확정하고 %s(으)로", _next_name), icon=":material/check_circle:",
+                 key=f"{key}_confirm", width="stretch",
+                 help=t("장 구분을 확정한 뒤 다음 단계로 넘어갑니다.")):
+        cmap.confirm(DEFAULT_WS, book)
+        _goto_view(_next_view)
+    if _icon_button(t("폴더 열기"), container=c2, icon=":material/folder_open:", key=f"{key}_open", width="stretch"):
+        open_path(chapters_dir(DEFAULT_WS, book))
+
+
 def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = None) -> None:
     """장 목록을 보여주고 고치는 화면 (2026-08-17).
 
@@ -1224,6 +1303,9 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
         for finding in cmap.review_findings(DEFAULT_WS, book):
             st.warning("⚠️ " + finding)
         _render_toc_side_by_side(key, book)
+    if full:
+        _chapter_review_wide(key, book)
+        return
     ranges = cmap.part_ranges(DEFAULT_WS, book)
     rows, prev_part = [], ""
     for cf in files:

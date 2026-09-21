@@ -513,7 +513,12 @@ def split_book_to_chapters(ws_name: str, stem: str, allow_short: bool = False) -
     # (2026-08-26). 알려만 주고 사람이 누르게 했더니 번거롭다는 지적을 받았다.
     # 자동으로 나누는 낱말은 chapter_map._BOUNDARY_WORDS 로 못 박아 두었다.
     try:
-        from services.chapter_map import auto_split_known_headings
+        from services.chapter_map import auto_split_known_headings, note_authors
+        from services.toc import LAST_TOC_AUTHORS
+        # 시각 판독이 글별 저자를 읽었으면 먼저 남긴다 — 논문집이면 아래 자동 분할이 쉰다
+        _authors = LAST_TOC_AUTHORS.pop(stem, None)
+        if _authors:
+            note_authors(ws_name, stem, _authors)
         _auto = auto_split_known_headings(ws_name, stem)
         if _auto:
             append_log(f"장분할: 경계 제목에서 자동으로 나눔 — {stem}: {', '.join(_auto)}")

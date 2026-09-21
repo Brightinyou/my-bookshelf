@@ -1095,3 +1095,79 @@ _EN.update({
     "앱 파일을 바꾸지 못했습니다(권한 문제일 수 있습니다)":
         "The app files could not be replaced (possibly a permissions problem)",
 })
+
+# ── 장 구분 편집 작업창 (2026-09-21) ──
+_EN.update({
+    "장 구분 편집": "Edit chapters",
+    "넓은 창에서 편집": "Edit in a wide window",
+    "장 목록 전체를 펴 놓고 제목 고치기 · 장 끼워 넣기(＋) · 앞 장에 합치기(−)를 하는 창을 엽니다.":
+        "Opens a window listing every chapter, where you can rename, insert a chapter (+) or merge one into the previous (−).",
+    "새로 고침": "Refresh",
+    "편집 창에서 고친 것을 이 목록에 다시 읽어 옵니다.": "Reload this list with the changes made in the editor window.",
+    "편집 창을 열었습니다.": "Editor window opened.",
+    "편집 화면을 브라우저로 열었습니다.": "Editor opened in your browser.",
+    "편집 창에서 고친 것은 바로 파일에 반영됩니다 — 다 고쳤으면 «새로 고침»으로 목록을 확인하고 확정하세요.":
+        "Changes in the editor window are written to the files immediately — when done, press Refresh, check the list and confirm.",
+    "쪽": "Pages",
+    "%s쪽": "pp. %s",
+    "인쇄": "printed",
+    "자": " chars",
+    "논문 안의 절 제목(들어가는 말·나가는 말 등)이 장으로 잡힌 것 — 편집 창에서 한 번에 앞 장에 합칠 수 있습니다.":
+        "Section headings inside a paper (Introduction, Conclusion…) captured as chapters — the editor window can merge them all at once.",
+    "장 구분을 확정한 뒤 다음 단계로 넘어갑니다.": "Confirms the chapter split and moves on to the next step.",
+    "편집할 책을 찾지 못했습니다. 본창에서 «넓은 창에서 편집»을 다시 누르세요.":
+        "Book not found. Press “Edit in a wide window” again in the main window.",
+    "이 책에는 챕터가 없습니다.": "This book has no chapters.",
+    "고친 것은 바로 파일에 반영됩니다. 다 고쳤으면 이 창을 닫고 본창에서 «확정»을 누르세요. "
+    "제목은 칸에서 고치고 Enter · ＋ 는 그 장 안에 새 장 끼워 넣기 · − 는 그 장을 앞 장에 합치기":
+        "Changes are written to the files immediately. When done, close this window and press Confirm in the main window. "
+        "Edit a title and press Enter · + inserts a new chapter inside that one · − merges it into the previous chapter",
+    "쪽 번호를 셀 수 없는 책입니다 (보관된 원본 TXT가 없거나 챕터와 글자 수가 어긋남).":
+        "Page numbers unavailable for this book (no archived source TXT, or its text no longer matches the chapters).",
+    "절 제목 장 %d개를 모두 앞 장에 합치기": "Merge all %d section-heading chapters into the previous ones",
+    "「들어가는 말」·「나가는 말」처럼 논문 안의 절 제목이 장으로 잡힌 것을 한 번에 정리합니다.":
+        "Cleans up chapters that are really section headings inside a paper (Introduction, Conclusion…) in one go.",
+    "%d개 장을 앞 장에 합쳤습니다.": "Merged %d chapters into the previous ones.",
+    "원본 PDF 열기": "Open source PDF",
+    "챕터 폴더 열기": "Open chapters folder",
+    "시작 부분": "Opening text",
+    "장 제목": "Chapter title",
+    "절 제목 — 앞 장에 합치는 것이 맞을 수 있습니다": "Section heading — probably belongs to the previous chapter",
+    "본문이 거의 없음": "almost no text",
+    "이 장 안에서 새 장이 시작하는 자리를 골라 끼워 넣습니다": "Pick where a new chapter starts inside this one and insert it",
+    "이 장을 없애고 본문을 앞 장 뒤에 붙입니다": "Remove this chapter and append its text to the previous one",
+    "첫 장은 합칠 앞 장이 없습니다": "The first chapter has no previous chapter to merge into",
+    "「%s」을(를) 앞 장에 합쳤습니다.": "Merged \"%s\" into the previous chapter.",
+    "제목을 「%s」로 바꿨습니다.": "Renamed to \"%s\".",
+    "파일 이름에 쓸 수 없는 글자를 «-»로 바꿔 「%s」로 저장했습니다.":
+        "Characters not allowed in file names were replaced with “-”; saved as \"%s\".",
+    "「%s」 안에서 새 장이 시작하는 줄을 고르세요": "Pick the line where a new chapter starts inside \"%s\"",
+    "제목처럼 생긴 줄만 후보로 보입니다. 원하는 줄이 안 보이면 그 제목의 낱말로 찾으세요. "
+    "고른 줄부터 끝까지가 새 장이 되고, 그 앞은 이 장에 남습니다.":
+        "Only heading-like lines are listed. If the one you want is missing, search for a word from it. "
+        "The new chapter runs from the chosen line to the end; everything before it stays here.",
+    "찾기 — 새 장 제목에 든 낱말": "Search — a word from the new chapter's title",
+    "예: 서론, Introduction, 3장": "e.g. Introduction, Chapter 3",
+    "후보가 없습니다. 다른 낱말로 찾아보세요.": "No candidates. Try another word.",
+    "후보 %d개 중 %d개만 고르게 보입니다 — 찾기로 좁히면 다 보입니다.":
+        "Showing %d evenly sampled of %d candidates — narrow with search to see them all.",
+    "후보 %d개 중 제목답게 생긴 %d개만 보입니다 — 다른 줄은 찾기로 찾으세요.":
+        "Showing the %d heading-like lines of %d candidates — use search for any other line.",
+    "새 장이 시작하는 줄": "Line where the new chapter starts",
+    "새 장 제목": "New chapter title",
+    "여기서 나누기": "Split here",
+    "닫기": "Close",
+    "그 자리에서는 나눌 수 없습니다 — 앞뒤 본문이 모두 있어야 합니다.": "Cannot split there — both parts need some text.",
+    "「%s」 장을 끼워 넣었습니다.": "Inserted chapter \"%s\".",
+    "부(部) 나누기 — 책이 여러 부로 묶여 있을 때만": "Parts — only when the book is grouped into parts",
+    "«제1부 원리론»처럼 여러 장을 한 덩어리로 묶는 이름입니다. 여기 적으면 EPUB·위키에서 "
+    "장 제목 앞에 붙습니다(예: «제1부 원리론 · 3. 자유»). 부가 없는 책은 비워 두세요. "
+    "부가 시작하는 장의 순번과 이름을 적고, 부 바깥의 장(부록·후기)은 이름을 «-»로 끊습니다.":
+        "A part is a name grouping several chapters, like “Part I: Principles”. It is prefixed to chapter titles in "
+        "EPUB and wiki output (e.g. “Part I: Principles · 3. Freedom”). Leave empty if the book has no parts. "
+        "Enter the number of the chapter each part starts at and its name; use “-” to end a part before appendices.",
+    "시작 장(순번)": "Starts at chapter",
+    "부 이름 («-»는 끊기)": "Part name (“-” ends the part)",
+    "부 저장": "Save parts",
+    "부를 저장했습니다.": "Parts saved.",
+})
