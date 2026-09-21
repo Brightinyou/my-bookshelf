@@ -212,13 +212,19 @@ if ($cameUp) {
 } else {
   Log "app did not come up on its own within 20s - launching it as a fallback"
   if (Test-Path $Relaunch) {
-    # MyBookshelf.exe는 인터프리터 복사본이라 스크립트를 함께 줘야 한다
+    # MyBookshelf.exe는 인터프리터 복사본이라 스크립트를 함께 줘야 한다.
+    # ★따옴표로 감싼다 (2026-09-21 실측). -ArgumentList 에 문자열을 그대로 주면
+    #   «…\Local\My Bookshelf\core\desktop.py» 가 공백에서 갈라져
+    #   "can't open file '…\Local\My'" 로 곧장 죽었고, 그래서 v1.3.4 업데이트 뒤
+    #   앱이 다시 뜨지 않았다. os.execv 때(2026-08-27)와 같은 자리다.
     if ($RelaunchArgs) {
-      Start-Process -FilePath $Relaunch -ArgumentList $RelaunchArgs -WorkingDirectory $Root
+      Start-Process -FilePath $Relaunch -ArgumentList ('"' + $RelaunchArgs + '"') -WorkingDirectory $Root
     } else {
       Start-Process -FilePath $Relaunch -WorkingDirectory $Root
     }
-    Log "fallback relaunch: $Relaunch $RelaunchArgs"
+    Log "fallback relaunch: $Relaunch [$RelaunchArgs]"
+    Start-Sleep -Seconds 6
+    if (AppProcs) { Log "fallback relaunch: app is up" } else { Log "fallback relaunch: app still not running" }
   } else {
     Log "fallback relaunch target missing: $Relaunch"
   }
