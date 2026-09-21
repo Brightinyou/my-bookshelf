@@ -1133,6 +1133,7 @@ _EN.update({
     "장 제목": "Chapter title",
     "절 제목 — 앞 장에 합치는 것이 맞을 수 있습니다": "Section heading — probably belongs to the previous chapter",
     "본문이 거의 없음": "almost no text",
+    "참고문헌·찾아보기 — 번역·요약에서 뺍니다": "references/index — excluded from translation and summaries",
     "이 장 안에서 새 장이 시작하는 자리를 골라 끼워 넣습니다": "Pick where a new chapter starts inside this one and insert it",
     "이 장을 없애고 본문을 앞 장 뒤에 붙입니다": "Remove this chapter and append its text to the previous one",
     "첫 장은 합칠 앞 장이 없습니다": "The first chapter has no previous chapter to merge into",

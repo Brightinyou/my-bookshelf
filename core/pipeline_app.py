@@ -1093,10 +1093,12 @@ def _chapter_rel_paths(ws_name: str, stem: str) -> list[str]:
     ch_dir = chapters_dir(ws_name, stem)
     if not ch_dir.exists():
         return []
+    # 참고문헌·찾아보기 장은 번역·요약 대기열에 넣지 않는다 (2026-09-21). EPUB은
+    # 챕터 파일을 직접 읽으므로 거기엔 그대로 들어간다.
     return [
         str(f.relative_to(cfg.BASE_DIR))
         for f in sorted(ch_dir.glob("??_*.txt"))
-        if not f.stem.endswith(_DERIVED)
+        if not f.stem.endswith(_DERIVED) and not cmap.is_backmatter_title(cmap.chapter_title(f))
     ]
 
 
@@ -1240,7 +1242,7 @@ def _chapter_review_wide(key: str, book: str) -> None:
     if st.session_state.get(f"{key}_wide_opened_{book}"):
         st.caption(t("편집 창에서 고친 것은 바로 파일에 반영됩니다 — 다 고쳤으면 «새로 고침»으로 목록을 확인하고 확정하세요."))
     _table = [{t("순번"): r["순번"], t("쪽"): r["쪽"],
-               t("제목"): ("🔸 " if r["절제목"] else "") + r["제목"],
+               t("제목"): ("🔸 " if r["절제목"] else "📎 " if r["뒷부속"] else "") + r["제목"],
                t("분량"): tf("%s자", f"{r['글자']:,}")} for r in rows]
     st.dataframe(_table, hide_index=True, width="stretch",
                  column_config={t("제목"): st.column_config.TextColumn(width="large"),

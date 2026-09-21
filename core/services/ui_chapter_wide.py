@@ -29,8 +29,10 @@ _PREVIEW_CHARS = 60
 # 이런 줄을 앞에 세운다. 실측: 기본 후보가 «래를 예상하였고, 90% 이상의 …» 같은
 # 문장 조각이었다 (2026-09-21).
 _HEADING_LIKE = re.compile(
-    r"^(?:제\s?\d{1,2}\s?[장절부편]|\d{1,2}\s?[.장절)]|[IVXivx]{1,5}\s?[.)]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s?[.)]?|"
+    r"^(?:제\s?\d{1,2}\s?[장절부편강과화]|\d{1,2}\s?[.장절)]|[IVXivx]{1,5}\s?[.)]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s?[.)]?|"
     r"chapter\s?\d+|part\s?\d+)\s*\S", re.I)
+# 번호 없는 짧은 표제 — 「해설」·「관계문헌」·「옮긴이의 말」. 숫자·문장부호 없이 8자 이하.
+_BARE_HEAD = re.compile(r"[가-힣A-Za-z][가-힣A-Za-z ]{1,7}")
 _MAX_CANDS = 60
 
 
@@ -39,7 +41,9 @@ def _candidates(ws: str, book: str, idx: int, query: str) -> tuple[list[tuple[in
     cands, total = cmap.split_candidates(ws, book, idx, limit=10 ** 6, query=query)
     if query or len(cands) <= _MAX_CANDS:
         return cands[:_MAX_CANDS], total, False
-    heads = [(p, s) for p, s in cands if _HEADING_LIKE.match(s) and len(s) <= 40]
+    heads = [(p, s) for p, s in cands
+             if len(s) <= 40 and (_HEADING_LIKE.match(s) or cmap.boundary_word(s)
+                                  or cmap.is_backmatter_title(s) or _BARE_HEAD.fullmatch(s))]
     if heads:
         return heads[:_MAX_CANDS], total, True
     step = len(cands) / _MAX_CANDS
@@ -78,6 +82,7 @@ def chapter_rows(ws: str, book: str, pm: cmap.PageMap | None = None,
             "글자": len(body),
             "시작 부분": _WS.sub(" ", body[:_PREVIEW_CHARS * 2]).strip()[:_PREVIEW_CHARS],
             "절제목": i in sect,
+            "뒷부속": cmap.is_backmatter_title(cmap.chapter_title(f)),
             "껍데기": i > 0 and len(body) < 300,
         })
     return rows
@@ -231,6 +236,8 @@ def chapter_workbench(ws: str, book: str, key: str = "wb") -> None:
             flags.append("🔸 " + t("절 제목 — 앞 장에 합치는 것이 맞을 수 있습니다"))
         if r["껍데기"]:
             flags.append("⚠️ " + t("본문이 거의 없음"))
+        if r["뒷부속"]:
+            flags.append("📎 " + t("참고문헌·찾아보기 — 번역·요약에서 뺍니다"))
         c[3].caption(f"{r['글자']:,}{t('자')} · {r['시작 부분']} …" + ("  \n" + " · ".join(flags) if flags else ""))
         if c[4].button("＋", key=f"{key}_plus_{r['stem']}", help=t("이 장 안에서 새 장이 시작하는 자리를 골라 끼워 넣습니다")):
             st.session_state[f"{key}_split_open"] = None if open_idx == i else i

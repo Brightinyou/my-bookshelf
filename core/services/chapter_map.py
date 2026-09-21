@@ -172,8 +172,9 @@ def sync_queue(ws_name: str, stem: str) -> None:
         queue_remove(stage, mine)
         queue_add(stage, [
             str(f.relative_to(cfg.BASE_DIR)) for f in files
-            if not (find_translation(f) if not done_suffix
-                    else f.with_name(f.stem + done_suffix).exists())
+            if not is_backmatter_title(chapter_title(f))          # 참고문헌은 번역·요약 안 함
+            and not (find_translation(f) if not done_suffix
+                     else f.with_name(f.stem + done_suffix).exists())
         ])
 
 
@@ -259,6 +260,31 @@ _BOUNDARY_RE = re.compile(
 
 def _norm_head(s: str) -> str:
     return re.sub(r"\s+", "", s).lower()
+
+
+# 뒷부속(참고문헌·찾아보기) 제목 — 번역·요약 대기열에서 뺀다. EPUB에는 본문 전체가
+# 들어가므로 챕터 파일 자체는 남긴다 (2026-09-21 『시간과 타자』: 30쪽짜리 「관계문헌」이
+# 마지막 장에 붙어 있었다). 「부록」·「해설」은 읽을 글이라 여기 넣지 않는다.
+_BACKMATTER_TITLE_RE = re.compile(
+    r"^(?:부록\s*[:：]?\s*)?(?:참고\s*문헌|관계\s*문헌|인용\s*문헌|문헌\s*목록|참고\s*자료|찾아보기|색인|"
+    r"references?|bibliography|works\s+cited|further\s+reading|index)\b", re.I)
+
+# 절 번호 꼴 — 「6. 맺음말」·「V. 나가는 말」·「제3장 …」·「Ⅳ. 결론」의 앞머리
+_NUM_STYLE_RE = re.compile(
+    r"^(?:(?P<arabic>\d{1,2})\s*[.)]|(?P<roman>[IVXLivxl]{1,5})\s*[.)]|(?P<fw>[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+)\s*[.)]?|"
+    r"제\s*(?P<jang>\d{1,2})\s*[장절편부강과화])\s*\S")
+
+
+def is_backmatter_title(title: str) -> bool:
+    return bool(_BACKMATTER_TITLE_RE.match(title.strip()))
+
+
+def numbering_style(line: str) -> str:
+    """이 줄이 번호 붙은 제목이면 그 번호 꼴('arabic'·'roman'·'fw'·'jang'), 아니면 ''."""
+    m = _NUM_STYLE_RE.match(line.strip())
+    if not m:
+        return ""
+    return next(k for k, v in m.groupdict().items() if v)
 
 
 def boundary_word(line: str) -> str:
@@ -395,12 +421,26 @@ def auto_split_known_headings(ws_name: str, stem: str, max_splits: int = 8) -> l
             except Exception:
                 continue
             lines = body.splitlines(keepends=True)
+            # ★번호 붙은 절이 줄지어 있는 장에서는 그 꼴의 「6. 맺음말」을 가르지 않는다
+            #   (2026-09-21 『시간과 타자』). 해설(강영안)이 「1. …」~「5. …」 뒤에
+            #   「6. 맺음말」로 끝나는데, 그 맺음말만 장이 됐다 — 절 번호가 이어지면
+            #   그것은 그 글의 마지막 절이지 책의 장이 아니다.
+            _styles: dict[str, int] = {}
+            for k, raw in enumerate(lines):
+                _s = raw.strip()
+                if (2 <= len(_s) <= 40 and ((k == 0) or not lines[k - 1].strip())
+                        and ((k + 1 >= len(lines)) or not lines[k + 1].strip())):
+                    _st = numbering_style(_s)
+                    if _st:
+                        _styles[_st] = _styles.get(_st, 0) + 1
             pos = 0
             for k, raw in enumerate(lines):
                 s = raw.strip()
                 prev_blank = (k == 0) or not lines[k - 1].strip()
                 next_blank = (k + 1 >= len(lines)) or not lines[k + 1].strip()
                 _w = boundary_word(s) if (pos > 0 and s and prev_blank and next_blank) else ""
+                if _w and _w not in used and _styles.get(numbering_style(s), 0) >= 3:
+                    _w = ""                                   # 번호 절 행렬의 하나
                 if _w and _w not in used:
                     hit = (i, pos, s.strip(), _w)
                     break

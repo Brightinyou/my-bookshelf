@@ -77,7 +77,11 @@ _VISUAL_TOC_PROMPT = """이 PDF는 한 권의 책에서 추려낸 페이지들�
 - 제목은 인쇄된 그대로
 - page에는 **그 장의 본문이 시작되는 원본 페이지 번호**(위 매핑 기준 1-기반)를,
   이 PDF에서 확인 불가하면 null
-- 머리말/판권/부록/참고문헌은 장이 아니면 제외
+- 판권·헌사·차례 자체는 제외. 그러나 본문 뒤에 붙은 **해설·해제·역자 해설·후기·부록**처럼
+  한 편의 글로 읽히는 것은 장으로 넣는다 (예: "해설: 레비나스의 철학 (강영안)"). 그 안의
+  절(1., 2., …)은 넣지 않는다
+- **참고문헌·관계문헌·찾아보기·색인**이 차례에 있으면 마지막 항목으로 넣는다 — 앞 장에
+  붙지 않게 하기 위해서다
 - **글마다 저자가 다른 논문집·학술지·공저**면 각 항목에 그 글의 저자를 author로 적으세요.
   한 사람이 쓴 책이면 author는 생략
 
@@ -579,8 +583,8 @@ def _page_offsets(txt: str) -> list[int]:
 
 
 _BACKMATTER_RE = re.compile(
-    r"(?m)^\s*(ACKNOWLEDGMENTS?|REFERENCES|BIBLIOGRAPHY|APPENDI(?:X|CES)|GLOSSARY|"
-    r"FURTHER READING|INDEX|참고문헌|찾아보기)\s*$",
+    r"(?m)(?:^|\f)\s*(ACKNOWLEDGMENTS?|REFERENCES|BIBLIOGRAPHY|APPENDI(?:X|CES)|GLOSSARY|"
+    r"FURTHER READING|INDEX|참고\s?문헌|관계\s?문헌|인용\s?문헌|문헌\s?목록|찾아보기|색인)\s*$",
     re.IGNORECASE,
 )
 
@@ -604,7 +608,9 @@ def _split_at(txt: str, marks: list[tuple[int, str]]) -> list[tuple[str, str]] |
         if _m_back:
             back_body = txt[_m_back.start():bounds[-1]].strip()
             if len(back_body) >= 300:
-                backmatter = ("부록", back_body)
+                # 제목은 실제 표제로 — «부록»이라고만 하면 참고문헌인지 색인인지 모르고,
+                # 번역·요약 대기열의 참고문헌 제외(chapter_map.is_backmatter_title)도 못 잡는다
+                backmatter = (_m_back.group(1).strip(), back_body)
             bounds[-1] = _m_back.start()
     chapters: list[tuple[str, str]] = []
     # 첫 장 표시 이전(표지·서문·머리말 등)은 그냥 버려지면 안 된다 — 실측: 영문서
