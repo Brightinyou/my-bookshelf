@@ -103,6 +103,43 @@ class 쪽부속물(unittest.TestCase):
         self.assertIn("둘째 쪽.", r.markdown)
 
 
+class 흔한말을_머리글로_보지_않는다(unittest.TestCase):
+    """★2026-09-21 되돌린 실패를 못박는다.
+
+    처음에는 `_running_heads`(쪽 앞머리 12낱말에서 **낱말 묶음**을 긁는다)를 그대로
+    받아 본문을 지웠다. 한국어 책에서는 흔한 말이 쪽머리에 우연히 자주 와서
+    실측 『기술신학』에서 `것이다.`·`그렇다면`·`관점에서`가 «머리글»로 나왔고,
+    그 책 EPUB의 각주가 628→451개로 줄었다. 그 함수는 **각주 후보를 물리는**
+    보수적인 자리에 쓰일 때만 안전하다. 지우는 근거로는 쓰면 안 된다.
+    """
+
+    def test_흔한_낱말은_머리글이_아니다(self):
+        # 쪽마다 같은 말로 문단이 시작하지만, 줄 전체는 서로 다르다
+        pages = ["그렇다면 기술은 무엇인가 하는 물음이 남는다.",
+                 "그렇다면 우리는 어떻게 응답해야 하는가.",
+                 "그렇다면 신학은 여기서 무엇을 말하는가.",
+                 "그렇다면 공동체는 어떤 자리에 서는가."]
+        furn, _ = footnotes.book_furniture(["\f".join(pages)])
+        self.assertEqual(furn, set(), f"흔한 말이 머리글로 잡혔다: {furn}")
+
+    def test_줄_전체가_되풀이되어야_머리글이다(self):
+        pages = ["머리글 줄\n첫 쪽 본문이 여기 온다.",
+                 "머리글 줄\n둘째 쪽 본문이 여기 온다.",
+                 "머리글 줄\n셋째 쪽 본문이 여기 온다.",
+                 "머리글 줄\n넷째 쪽 본문이 여기 온다."]
+        furn, _ = footnotes.book_furniture(["\f".join(pages)])
+        self.assertIn("머리글 줄", furn)
+
+    def test_붙어_있는_숫자는_쪽번호로_보지_않는다(self):
+        """`…Genesis 4:17-24`의 끝 `24`를 떼면 제목이 잘린다. 쪽번호는 떨어져 있다."""
+        self.assertEqual(footnotes._bare_header("PAUL: Genesis 4:17-24"),
+                         "PAUL: Genesis 4:17-24")
+        self.assertEqual(footnotes._bare_header("PAUL: Genesis 4:17-24 145"),
+                         "PAUL: Genesis 4:17-24")
+        self.assertEqual(footnotes._bare_header("https://doi.org/10.53751/001c.30385"),
+                         "https://doi.org/10.53751/001c.30385")
+
+
 class 쪽구분보존(unittest.TestCase):
     """★`strip_running_headers`가 쪽 구분(`\\f`)을 먹던 버그 — 모든 책에 듣던 것."""
 

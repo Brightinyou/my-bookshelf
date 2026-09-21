@@ -484,6 +484,30 @@ def _url_stamps(texts: list[str], min_hits: int = 3) -> set[str]:
     return {u for u, n in c.items() if n >= min_hits}
 
 
+# 머리글로 인정할 줄의 최대 길이 — 머리글은 짧다. 본문 문단은 길다.
+MAX_HEADER_LEN = 80
+# 쪽 가장자리에 몇 몫의 쪽에서 되풀이돼야 머리글로 볼까
+HEADER_PAGE_RATIO = 0.2
+
+
+def _bare_header(ln: str) -> str:
+    """머리글 비교용 — 앞뒤에 **공백으로 떨어져** 붙은 쪽번호만 뗀다.
+
+    ★붙어 있는 숫자를 떼면 제목이 잘린다 (2026-09-21 실측): 쪽머리
+    `폴(PAUL): Genesis 4:17-24`의 끝 `24`를 쪽번호로 보고 떼어 `…4:17-`이 됐고,
+    DOI `…/001c.30385`도 `30385`를 잃었다. 쪽번호는 제목과 **떨어져** 찍힌다."""
+    t = ln.strip()
+    if _URL_ONLY.match(t):
+        return t                       # 주소는 통째로 견준다
+    return re.sub(r"^\d{1,4}\s+|\s+\d{1,4}$", "", t).strip()
+
+
+def _edge_lines(page: str) -> list[str]:
+    """쪽 앞뒤 끝자락 줄 — 머리글·쪽번호가 사는 자리."""
+    ls = [ln.strip() for ln in page.split("\n") if ln.strip()]
+    return ls[:FURNITURE_EDGE] + ls[-FURNITURE_EDGE:]
+
+
 def book_furniture(texts: list[str]) -> tuple[set[str], set[str]]:
     """책 **전체**를 놓고 머리글·발행처 도장을 센다. (머리글, 도장)
 
@@ -491,11 +515,30 @@ def book_furniture(texts: list[str]) -> tuple[set[str], set[str]]:
     번갈아 나오고(왼쪽=학술지 이름, 오른쪽=저자와 논문 제목), 장이 짧으면 각각이
     되풀이 문턱에 영영 못 미친다 — Paul 논문 4장은 3쪽뿐이라 두 머리글이 2회·1회로
     갈려 **하나도 검출되지 않았다.** 1쪽짜리 서론은 아예 셀 수가 없다.
-    책 20쪽을 한꺼번에 세면 둘 다 뚜렷하게 드러난다."""
+
+    ★★**`_running_heads`를 쓰지 않는다** (2026-09-21, 되돌린 실패에서 배운 것).
+    그 함수는 쪽 앞머리 12낱말 안에서 **낱말 묶음**을 긁어모은다. 한국어 책에서는
+    흔한 말이 쪽머리에 우연히 자주 온다 — 실측 『기술신학』에서 `것이다.`·`그렇다면`·
+    `관점에서`가 «머리글»로 나왔다. 그 함수는 **각주 후보를 물리는** 보수적인 자리에
+    쓰이므로 그래도 괜찮았지만, **글자를 지우는 근거로 쓰면 본문을 먹는다.**
+    그래서 여기서는 **쪽 가장자리에 통째로 되풀이되는 «줄»**만 센다 — 낱말 조각이
+    아니라 줄 전체라, 흔한 말이 걸릴 길이 없다."""
     pages: list[str] = []
     for t in texts:
         pages += normalize_superscripts(t).split(PAGE_SEP)
-    return _running_heads(pages), _url_stamps(pages)
+    if not pages:
+        return set(), set()
+    from collections import Counter
+    c: Counter = Counter()
+    for pg in pages:
+        seen = set()
+        for ln in _edge_lines(pg):
+            bare = _bare_header(ln)
+            if 4 <= len(bare) <= MAX_HEADER_LEN:
+                seen.add(bare)
+        c.update(seen)
+    need = max(3, int(len(pages) * HEADER_PAGE_RATIO))
+    return {k for k, n in c.items() if n >= need}, _url_stamps(pages)
 
 
 def _strip_furniture(bodies: list[str], furniture: set[str],
@@ -535,9 +578,7 @@ def _strip_furniture(bodies: list[str], furniture: set[str],
             return True
         if _PAGENO_ONLY.match(t):
             return True
-        # 머리글은 쪽번호가 앞뒤에 붙어 나오기도 한다 — 숫자를 떼고 견준다
-        bare = re.sub(r"^\d{1,4}\s*|\s*\d{1,4}$", "", t).strip()
-        if any(f == bare or f == t for f in furniture):
+        if any(f == _bare_header(t) or f == t for f in furniture):
             return True
         # ★번역기가 같은 머리글을 **판마다 다르게** 옮겨 놓는다 (2026-09-21 실측) —
         #   「폴(PAUL): Genesis 4:17-24」와 「파울(PAUL): …」로 갈려 각각은 되풀이
