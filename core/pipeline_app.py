@@ -1242,7 +1242,7 @@ def _chapter_review_wide(key: str, book: str) -> None:
     if st.session_state.get(f"{key}_wide_opened_{book}"):
         st.caption(t("편집 창에서 고친 것은 바로 파일에 반영됩니다 — 다 고쳤으면 «새로 고침»으로 목록을 확인하고 확정하세요."))
     _table = [{t("순번"): r["순번"], t("쪽"): r["쪽"],
-               t("제목"): ("🔸 " if r["절제목"] else "📎 " if r["뒷부속"] else "") + r["제목"],
+               t("제목"): ("🔸 " if r["절제목"] else "") + r["제목"],
                t("분량"): tf("%s자", f"{r['글자']:,}")} for r in rows]
     st.dataframe(_table, hide_index=True, width="stretch",
                  column_config={t("제목"): st.column_config.TextColumn(width="large"),

@@ -237,7 +237,7 @@ def chapter_workbench(ws: str, book: str, key: str = "wb") -> None:
         if r["껍데기"]:
             flags.append("⚠️ " + t("본문이 거의 없음"))
         if r["뒷부속"]:
-            flags.append("📎 " + t("참고문헌·찾아보기 — 번역·요약에서 뺍니다"))
+            flags.append(t("참고문헌·찾아보기 — 번역·요약에서 뺍니다"))
         c[3].caption(f"{r['글자']:,}{t('자')} · {r['시작 부분']} …" + ("  \n" + " · ".join(flags) if flags else ""))
         if c[4].button("＋", key=f"{key}_plus_{r['stem']}", help=t("이 장 안에서 새 장이 시작하는 자리를 골라 끼워 넣습니다")):
             st.session_state[f"{key}_split_open"] = None if open_idx == i else i
