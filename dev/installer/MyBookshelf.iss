@@ -45,6 +45,8 @@ Source: "..\..\core\requirements.txt";   DestDir: "{app}\core"; Flags: ignorever
 ; 띄울 때 cwd를 core/의 부모(앱 루트)로 잡아서, Streamlit이 설정을 앱 루트의
 ; .streamlit/에서 찾는다(core/.streamlit/에 두면 무시되고 기본 200MB로 조용히 되돌아감,
 ; 직접 재현·확인함).
+; 2026-09-21 세 번째: v1.3.0부터 cwd가 %LOCALAPPDATA%\MyBookshelf\runtime이라 여기 둔 파일도
+; 안 읽힌다. 상한·파일감시는 desktop.py가 플래그로 넘긴다(정본). 이 파일은 참고용으로 둔다.
 Source: "..\..\core\.streamlit\config.toml"; DestDir: "{app}\.streamlit"; Flags: ignoreversion
 Source: "..\..\MyBookshelf.exe";         DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\MyBookshelf.ico";         DestDir: "{app}"; Flags: ignoreversion

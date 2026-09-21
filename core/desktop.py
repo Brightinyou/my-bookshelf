@@ -28,6 +28,9 @@ DEFAULT_PORT = 8501
 HERE = Path(__file__).resolve().parent
 APP_SCRIPT = HERE / "pipeline_app.py"
 APP_ROOT = HERE.parent
+# 업로드 상한(MB). core/.streamlit/config.toml 의 maxUploadSize 와 같은 값 — 스캔 PDF 등
+# 큰 원본을 바로 넣을 수 있게 Streamlit 기본 200MB에서 올린 것 (2026-07-25).
+MAX_UPLOAD_MB = 1024
 LAUNCH_LOG = APP_ROOT / "launch-error.log"
 
 
@@ -376,6 +379,14 @@ def _start_streamlit(port: int) -> subprocess.Popen | None:
         "false",
         "--global.developmentMode",
         "false",
+        # ★설정 파일에 기대지 않고 플래그로 못박는다 (2026-09-21). v1.3.0에서 cwd를
+        #   앱 루트 → runtime 폴더로 옮기자 Streamlit이 {app}\.streamlit\config.toml을
+        #   더는 찾지 못했고, 업로드 상한이 기본 200MB로 조용히 되돌아갔다
+        #   (2026-08-11 에 이어 두 번째 재발). 파일 감시 끄기도 같은 파일에 있었다.
+        "--server.maxUploadSize",
+        str(MAX_UPLOAD_MB),
+        "--server.fileWatcherType",
+        "none",
         # 개발자 툴바 숨김 → 'Clear caches' 등 개발 단축키·메뉴 제거 (2026-07-10)
         "--client.toolbarMode",
         "minimal",
