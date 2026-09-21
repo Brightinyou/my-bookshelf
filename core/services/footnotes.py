@@ -33,8 +33,15 @@ from dataclasses import dataclass, field
 
 PAGE_SEP = "\f"
 
-# 각주 본문 줄: 줄 첫머리 숫자 + 공백 + 내용. 번호는 1~3자리.
-_NOTE_LINE = re.compile(r"^(\d{1,3})\s+(\S.*)$")
+# 각주 본문 줄: 줄 첫머리 숫자 + 내용. 번호는 1~3자리.
+# ★번호와 본문 사이에 **공백이 없는 판**도 받는다 (2026-09-21).
+#   학술지 PDF는 위첨자 각주 번호가 본문 글자에 그대로 붙어 추출된다 — 실측
+#   『Tyndale Bulletin』 47:1 Paul 논문에서 각주 23개 가운데 14개가
+#   `1Jub. 4:9-32`·`5Philo, De Posteritate` 꼴이라 이 잣대에 걸리지 않았고,
+#   그래서 잡힌 각주가 5개뿐이었다. 나머지는 본문 문단에 그대로 섞여 나갔다.
+#   붙은 판은 **뒤에 글자가 와야** 한다 — 숫자가 이어지면(`1996`) 연도이지
+#   각주가 아니고, 뒤가 비면(`146`) 쪽번호다. 소문자도 뺀다(`1st century`).
+_NOTE_LINE = re.compile(r"^(\d{1,3})(?:\s+|(?=[A-Z가-힣(\[“‘『「]))(\S.*)$")
 # 본문 속 각주 번호: 문장부호나 한글/닫는따옴표 **바로 뒤**에 공백 없이 붙은 숫자.
 # 공백 뒤 숫자(`제 3 장`, `1 부`)는 각주가 아니므로 일부러 뺀다.
 _REF_IN_TEXT = re.compile(r"(?<=[.,!?)\]”’\"'가-힣])(\d{1,3})(?=[\s.,)\]”’]|$)")
@@ -62,6 +69,7 @@ class Result:
     notes: list[Note] = field(default_factory=list)
     linked: int = 0                 # 본문에서 참조를 찾아 이어붙인 각주 수
     orphan: list[int] = field(default_factory=list)   # 본문 참조를 못 찾은 각주
+    furniture: int = 0              # 본문에서 걷어낸 머리글·쪽번호·발행처 도장 줄 수
 
 
 # 줄 한복판에 '번호 + 서지사항'이 이어지는 자리 — 각주가 본문에 녹아든 모양.
@@ -437,13 +445,168 @@ def _running_heads(pages: list[str], min_hits: int = 3) -> set[str]:
     return {k for k in hits if not any(o != k and k in o for o in hits)}
 
 
-def convert(text: str, has_notes: list[bool] | None = None) -> Result:
+# 위첨자 숫자 → 보통 숫자.
+# ★번역기는 각주 번호를 **위첨자 글자**로 옮겨 놓는다 (2026-09-21 실측) —
+#   본문 참조는 「…기록하였다.¹」, 각주 항목은 「¹ Jub. 4:9-32, 특히 v. 17.」.
+#   이 글자들은 `\d`가 아니라서 각주 잣대에 하나도 안 걸렸다. 실측 Paul 논문
+#   번역본에서 11줄이 이렇게 통째로 안 보였고, 그대로 본문 문단에 섞여 나갔다.
+#   ★앞에 숫자가 붙은 것은 건드리지 않는다 — `10²`는 거듭제곱이지 각주가 아니다.
+_SUP_MAP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
+_SUP_RUN = re.compile(r"(?<![0-9])([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
+
+
+def normalize_superscripts(text: str) -> str:
+    """각주 자리의 위첨자 숫자를 보통 숫자로 되돌린다."""
+    return _SUP_RUN.sub(lambda m: m.group(1).translate(_SUP_MAP), text)
+
+
+# 쪽마다 찍히는 발행처 도장 — 줄 전체가 인터넷 주소인 것.
+_URL_ONLY = re.compile(r"^(?:https?://|doi\.org/|www\.)\S*$", re.I)
+# 쪽번호만으로 된 줄 (로마숫자 앞부속 포함)
+_PAGENO_ONLY = re.compile(r"^\d{1,4}$|^[ivxlcdm]{1,7}$", re.I)
+# 쪽 앞뒤 몇 줄까지를 «부속물 자리»로 볼까 — 가운데는 건드리지 않는다
+FURNITURE_EDGE = 3
+
+
+def _longest_common(a: str, b: str) -> str:
+    """두 글월이 공유하는 가장 긴 이어진 토막 — 머리글의 다른 판을 알아보는 데 쓴다."""
+    from difflib import SequenceMatcher
+    m = SequenceMatcher(None, a, b, autojunk=False).find_longest_match(0, len(a), 0, len(b))
+    return a[m.a:m.a + m.size]
+
+
+def _url_stamps(texts: list[str], min_hits: int = 3) -> set[str]:
+    """쪽마다 되풀이 찍히는 발행처 주소."""
+    from collections import Counter
+    c: Counter = Counter()
+    for t in texts:
+        c.update({ln.strip() for ln in t.split("\n") if _URL_ONLY.match(ln.strip())})
+    return {u for u, n in c.items() if n >= min_hits}
+
+
+def book_furniture(texts: list[str]) -> tuple[set[str], set[str]]:
+    """책 **전체**를 놓고 머리글·발행처 도장을 센다. (머리글, 도장)
+
+    ★장 하나만 보면 못 센다 (2026-09-21 실측). 학술지는 머리글이 짝·홀 쪽에서
+    번갈아 나오고(왼쪽=학술지 이름, 오른쪽=저자와 논문 제목), 장이 짧으면 각각이
+    되풀이 문턱에 영영 못 미친다 — Paul 논문 4장은 3쪽뿐이라 두 머리글이 2회·1회로
+    갈려 **하나도 검출되지 않았다.** 1쪽짜리 서론은 아예 셀 수가 없다.
+    책 20쪽을 한꺼번에 세면 둘 다 뚜렷하게 드러난다."""
+    pages: list[str] = []
+    for t in texts:
+        pages += normalize_superscripts(t).split(PAGE_SEP)
+    return _running_heads(pages), _url_stamps(pages)
+
+
+def _strip_furniture(bodies: list[str], furniture: set[str],
+                      stamps: set[str] | None = None) -> tuple[list[str], int]:
+    """쪽마다 되풀이되는 머리글·쪽번호·발행처 도장을 본문에서 걷어낸다.
+    (걷어낸 본문, 없앤 줄 수)
+
+    ★지금까지 `_running_heads`는 **각주 후보를 물리는 데만** 쓰였다. 찾아 놓고도
+    본문에는 그대로 두어서, 전자책을 펴면 쪽마다 머리글이 문단으로 끼어들었다 —
+    실측 『Tyndale Bulletin』 Paul 논문 EPUB에서 문단 58개 중 10개가
+    「폴(PAUL): Genesis 4:17-24145」·「TYNDALE BULLETIN 47:1 (1996)」였다.
+    학술지는 여기에 발행처 도장(`https://tyndalebulletin.org/`·DOI)을 쪽마다 두 줄씩
+    찍어 40줄이 더 섞였다.
+
+    **번역본에도 그대로 남는다** — 번역기가 머리글까지 옮겨 놓기 때문이다
+    (`폴(PAUL): Genesis 4:17-24`). EPUB은 번역본을 쓰므로 여기서 밀지 않으면
+    책에 그대로 나간다. 그래서 원문·번역본을 가리지 않는 같은 잣대로 민다 —
+    `_running_heads`가 되풀이로 찾아낸 문자열이라 언어를 묻지 않는다.
+
+    ★**쪽 앞뒤 끝자락(FURNITURE_EDGE줄)만 본다.** 쪽번호·머리글은 늘 거기 있고,
+    가운데를 건드리면 본문을 잃는다 — 잘못 떼어낸 본문은 되찾을 수 없다
+    (이 파일이 지켜 온 방침 그대로). 인터넷 주소도 **쪽을 넘어 되풀이될 때만**
+    도장으로 본다. 한 번만 나오는 주소는 본문이 인용한 것일 수 있다.
+    """
+    if not bodies:
+        return bodies, 0
+
+    # 되풀이되는 주소만 도장으로 인정한다 (책 전체로 센 것을 받으면 그걸 쓴다)
+    if stamps is None:
+        stamps = _url_stamps(bodies)
+
+    def _is_furniture(ln: str) -> bool:
+        t = ln.strip()
+        if not t:
+            return False
+        if t in stamps:
+            return True
+        if _PAGENO_ONLY.match(t):
+            return True
+        # 머리글은 쪽번호가 앞뒤에 붙어 나오기도 한다 — 숫자를 떼고 견준다
+        bare = re.sub(r"^\d{1,4}\s*|\s*\d{1,4}$", "", t).strip()
+        if any(f == bare or f == t for f in furniture):
+            return True
+        # ★번역기가 같은 머리글을 **판마다 다르게** 옮겨 놓는다 (2026-09-21 실측) —
+        #   「폴(PAUL): Genesis 4:17-24」와 「파울(PAUL): …」로 갈려 각각은 되풀이
+        #   문턱(min_hits)에 못 미쳐 검출을 빠져나간다. 이미 머리글로 **확정된**
+        #   문자열과 긴 토막을 공유하고 그 토막이 줄의 대부분을 덮으면 같은
+        #   머리글의 다른 판으로 본다. 짧은 줄에만 건다 — 본문은 길다.
+        if len(t) <= 60:
+            for f in furniture:
+                common = _longest_common(t, f)
+                if len(common) >= 10 and len(common) >= 0.7 * len(t):
+                    return True
+        return False
+
+    def _strip_edges(ln: str) -> tuple[str, bool]:
+        """줄 **앞뒤에 들러붙은** 머리글만 떼고 본문은 남긴다. (남은 줄, 뗐나)
+
+        ★쪽머리가 다음 쪽 첫 문장에 그대로 이어 붙는 일이 흔하다 — 실측
+        「TYNDALE BULLETIN 47:1 (1996)Genesis 4의 주석가는 …」. 줄째로 지우면
+        본문을 잃고 그냥 두면 책에 그대로 나간다. 그래서 **확정된 머리글
+        문자열과 정확히 맞는 앞뒤 토막만** 떼어낸다."""
+        t, cut = ln.strip(), False
+        for f in sorted(furniture, key=len, reverse=True):
+            if len(t) > len(f) and t.startswith(f):
+                t, cut = t[len(f):].lstrip(), True
+            if len(t) > len(f) and t.endswith(f):
+                t, cut = t[: -len(f)].rstrip(), True
+        if cut:                       # 머리글에 붙어 있던 쪽번호도 같이 뗀다
+            t = re.sub(r"^\d{1,4}\s*", "", t).strip()
+        return t, cut
+
+    out, removed = [], 0
+    for body in bodies:
+        lines = body.split("\n")
+        idx = [i for i, ln in enumerate(lines) if ln.strip()]
+        edge = set(idx[:FURNITURE_EDGE]) | set(idx[-FURNITURE_EDGE:])
+        keep = []
+        for i, ln in enumerate(lines):
+            if i in edge and _is_furniture(ln):
+                removed += 1
+                continue
+            if i in edge:
+                _t, _cut = _strip_edges(ln)
+                if _cut:
+                    removed += 1
+                    if _t:
+                        keep.append(_t)
+                    continue
+            keep.append(ln)
+        out.append("\n".join(keep).strip())
+    return out, removed
+
+
+def convert(text: str, has_notes: list[bool] | None = None,
+            furniture: set[str] | None = None,
+            stamps: set[str] | None = None) -> Result:
     """쪽 구분(`\\f`)이 있는 본문을 Markdown으로. 각주는 `[^n]` / `[^n]: …`.
 
     has_notes를 주면(services/layout이 줄 간격으로 잰 결과) **각주가 없는 쪽에서는
     아예 찾지 않는다.** 줄 첫머리 숫자는 쪽번호·러닝헤더에도 흔해서(`110 대화의
     철학과 세인 철학`) 텍스트만 보고는 헷갈린다."""
-    pages = text.split(PAGE_SEP)
+    pages = normalize_superscripts(text).split(PAGE_SEP)
+    # ★부속물은 **각주를 가르기 전에** 민다 (2026-09-21).
+    #   도장은 쪽 맨 아래, 각주 블록 **뒤에** 찍힌다. 나중에 밀면 이미 늦다 —
+    #   `_split_notes`가 그 쪽 마지막 각주의 본문으로 빨아들인 뒤라
+    #   실측에서 각주 5개 끝에 `https://tyndalebulletin.org/ …`가 붙어 나갔다.
+    # 책 전체로 센 것을 받았으면 그걸 쓴다 — 짧은 장은 혼자서 못 센다
+    if furniture is None:
+        furniture = _running_heads(pages)
+    pages, furniture_n = _strip_furniture(pages, furniture, stamps)
     bodies: list[str] = []
     found: list[Note] = []
     for pi, page in enumerate(pages):
@@ -493,8 +656,9 @@ def convert(text: str, has_notes: list[bool] | None = None) -> Result:
             run_mates.add((prev.page, prev.num))   # 앞 것도 같이 확정된다
         prev = nt
 
-    # 쪽마다 되풀이되는 머리글로 시작하는 후보는 각주가 아니다 (2026-08-27)
-    furniture = _running_heads(pages)
+    # 쪽마다 되풀이되는 머리글로 시작하는 후보는 각주가 아니다 (2026-08-27).
+    # 위에서 이미 본문에서 밀었지만, 걸러 내는 관문은 그대로 둔다 — 끝자락
+    # 세 줄 밖에 있던 머리글이 각주 후보로 올라오는 길이 아직 남아 있다.
 
     linked, orphan, rejected = 0, [], []
     kept: list[Note] = []
@@ -548,6 +712,10 @@ def convert(text: str, has_notes: list[bool] | None = None) -> Result:
     for nt in rejected:
         bodies[nt.page] = (bodies[nt.page].rstrip() + "\n\n" + f"{nt.num} {nt.text}").strip()
 
+    # 되돌린 각주 줄 자체가 머리글일 수 있다 — 한 번 더 훑는다 (대개 0줄).
+    bodies, _again = _strip_furniture(bodies, furniture, stamps)
+    furniture_n += _again
+
     md = ("\n\n".join(b.strip() for b in bodies if b.strip())
           + ("\n\n" + "\n\n".join(f"[^{keys[id(n)]}]: {n.text}" for n in kept) if kept else ""))
-    return Result(md, kept, linked, orphan)
+    return Result(md, kept, linked, orphan, furniture_n)

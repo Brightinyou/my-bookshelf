@@ -107,22 +107,38 @@ def strip_running_headers(text: str, chapter_title: str) -> tuple[str, int]:
 
     머리글만으로 된 문단은 통째로 빼고, 뒤에 본문이 붙어 있으면 앞머리만 뗀다."""
     title_key = _hdr_key(re.sub(r"^\d+[_.\s-]*", "", chapter_title or ""))
-    kept, removed = [], 0
-    for para in re.split(r"\n\s*\n", text):
-        body = para.strip()
-        if not body:
-            continue
-        words = body.split()
-        span, strip_when_glued = _running_header_span(words, title_key)
-        if span == len(words) > 0:             # 머리글뿐인 문단 — 통째로 뺀다
-            removed += 1
-            continue
-        if span and strip_when_glued:          # 뒤에 본문이 붙은 ① 모양만 앞머리를 뗀다
-            removed += 1
-            kept.append(" ".join(words[span:]).strip())
-        else:
-            kept.append(para.strip("\n"))
-    return "\n\n".join(kept), removed
+
+    # ★★쪽 구분(`\f`)을 지키며 쪽마다 따로 훑는다 (2026-09-21).
+    #   옛 판은 글 전체를 `\n\s*\n`으로 갈랐는데, **`\f`도 공백이라 그 자리에서
+    #   함께 먹혔다.** 쪽 구분이 사라지면 뒤따르는 footnotes.convert()가 책 한 권을
+    #   «한 쪽»으로 보고, ① 쪽마다 되풀이되는 머리글을 셀 수 없어 못 찾고
+    #   ② «각주는 쪽 아래에 있다»는 전제가 통째로 무너진다.
+    #   실측(Paul 논문 번역본): `\f` 8개 → 0개, 찾은 러닝헤드 2개 → 0개.
+    #   책마다 조용히 듣던 버그라 각주·머리글 처리가 내내 약했다.
+    def _one_page(page: str) -> tuple[str, int]:
+        kept, removed = [], 0
+        for para in re.split(r"\n[ \t]*\n", page):
+            body = para.strip()
+            if not body:
+                continue
+            words = body.split()
+            span, strip_when_glued = _running_header_span(words, title_key)
+            if span == len(words) > 0:         # 머리글뿐인 문단 — 통째로 뺀다
+                removed += 1
+                continue
+            if span and strip_when_glued:      # 뒤에 본문이 붙은 ① 모양만 앞머리를 뗀다
+                removed += 1
+                kept.append(" ".join(words[span:]).strip())
+            else:
+                kept.append(para.strip("\n"))
+        return "\n\n".join(kept), removed
+
+    out_pages, removed = [], 0
+    for page in text.split("\f"):
+        _p, _n = _one_page(page)
+        out_pages.append(_p)
+        removed += _n
+    return "\f".join(out_pages), removed
 
 
 def _chapter_source_text(ch_path: Path, engine: str = "", clean: bool = False,
@@ -276,11 +292,14 @@ def _fid(k: str) -> str:
     return re.sub(r"[^0-9A-Za-z_-]", "_", k)
 
 
-def _footnote_parts(text: str) -> tuple[str, dict]:
-    """(각주를 걷어낸 본문 Markdown, {번호: 각주 본문})."""
+def _footnote_parts(text: str, furniture=None, stamps=None) -> tuple[str, dict]:
+    """(각주를 걷어낸 본문 Markdown, {번호: 각주 본문}).
+
+    furniture/stamps는 **책 전체를 놓고 센** 쪽 머리글·발행처 도장이다 — 장 하나만
+    보면 짧은 장에서 못 센다(footnotes.book_furniture 주석 참고)."""
     try:
         from services import footnotes as _fn
-        md = _fn.convert(text).markdown
+        md = _fn.convert(text, furniture=furniture, stamps=stamps).markdown
     except Exception:
         md = text
     defs = {k: v.strip() for k, v in _FN_DEF.findall(md)}
@@ -577,6 +596,7 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
 
     manifest_items, spine_items, nav_items, ncx_points, text_entries = [], [], [], [], []
     chapter_parts: list[tuple[str, dict]] = []   # 장별 (본문 md, 각주 정의)
+    chapter_texts: list[str] = []                # 장별 본문 — 책 단위로 세려고 먼저 모은다
     chapter_slots: list[tuple[str, str]] = []    # 장별 (파일 이름, 제목)
     first_text = ""
     for i, ch_path in enumerate(chapters, 1):
@@ -603,7 +623,7 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
         fname = f"chap{i:03d}.xhtml"
         # ★각주는 책 전체를 본 뒤에 붙인다 — 표시와 정의가 다른 장에 갈릴 수 있어서
         #   (아래 _book_chapter_bodies 주석 참고). 여기서는 재료만 모아 둔다.
-        chapter_parts.append(_footnote_parts(text))
+        chapter_texts.append(text)
         chapter_slots.append((f"OEBPS/text/{fname}", ch_title))
         manifest_items.append(
             f'<item id="chap{i:03d}" href="text/{fname}" media-type="application/xhtml+xml"/>')
@@ -613,6 +633,18 @@ def build_epub_from_chapters(ws_name: str, stem: str, out_dir: Path,
         ncx_points.append(
             f'<navPoint id="np{i}" playOrder="{i}"><navLabel><text>{esc_title}</text></navLabel>'
             f'<content src="text/{fname}"/></navPoint>')
+
+    # ★쪽 머리글·발행처 도장은 **책 전체를 놓고** 센다 (2026-09-21).
+    #   장 하나만 보면 학술지처럼 머리글이 짝·홀 쪽에서 번갈아 나오는 판을 못 세고,
+    #   1~3쪽짜리 짧은 장은 셀 거리 자체가 없다.
+    try:
+        from services import footnotes as _fn
+        _furn, _stamps = _fn.book_furniture(chapter_texts)
+    except Exception:
+        _furn, _stamps = None, None
+    if _furn:
+        append_log(f"EPUB: 쪽 부속물 {len(_furn)}종·도장 {len(_stamps or [])}종 — {stem}")
+    chapter_parts = [_footnote_parts(t, _furn, _stamps) for t in chapter_texts]
 
     # 책 전체를 본 뒤에 장별 본문·각주를 만든다 — 표시와 정의가 다른 장에 갈려도
     # 이어 붙기 위해서다.
