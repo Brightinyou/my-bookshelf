@@ -1306,24 +1306,16 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
     if full:
         _chapter_review_wide(key, book)
         return
-    ranges = cmap.part_ranges(DEFAULT_WS, book)
-    rows, prev_part = [], ""
+    rows = []
     for cf in files:
         body = cf.read_text(encoding="utf-8", errors="ignore")
-        try:
-            n = int(cf.stem[:2])
-        except ValueError:
-            n = 0
-        part = cmap.part_of(ranges, n) if n > 0 else ""
         rows.append({
             "순번": cf.stem[:2],
-            "부": part if part != prev_part else "",   # 같은 부는 첫 장에만 적는다
             "제목": cmap.chapter_title(cf),
             "분량": tf("%s자", f"{len(body):,}"),
             "시작 부분": _re.sub(r"\s+", " ", body[:80]).strip(),
             "앞 장에 합치기": False,
         })
-        prev_part = part
     from services.ui_chapter_editor import chapter_editor
     edited = chapter_editor(rows, f"{key}_editor_{book}", full=full)
     def _apply_edits() -> tuple[int, list[tuple[str, str]]]:
@@ -1341,18 +1333,6 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
                     adjusted.append((new_title, safe))
                 cmap.rename_chapter(DEFAULT_WS, book, i, new_title)
                 changed += 1
-        # 부: 값이 적힌 줄에서 새 부가 시작한다
-        new_ranges = []
-        for i, row in enumerate(recs):
-            part = str(row.get("부", "")).strip()
-            if part:
-                try:
-                    new_ranges.append({"start": int(rows[i]["순번"]), "title": part})
-                except ValueError:
-                    pass
-        if new_ranges != ranges:
-            cmap.set_parts(DEFAULT_WS, book, new_ranges)
-            changed += 1
         if full:
             for i in sorted([i for i, r in enumerate(recs) if r.get("앞 장에 합치기")], reverse=True):
                 if cmap.merge_up(DEFAULT_WS, book, i):

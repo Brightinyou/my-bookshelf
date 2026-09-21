@@ -177,58 +177,6 @@ def sync_queue(ws_name: str, stem: str) -> None:
         ])
 
 
-# ── 부(部) 구분 ──────────────────────────────────────────────
-# 여러 부로 묶인 책이 있다(예: 『정의와 사회질서』 = 1부 원리론 / 2부 실천론).
-# 파일 이름에 부까지 넣으면 길고 중복되므로, 지도에 "몇 장부터 어느 부인지"만 적고
-# EPUB·위키 제목에서 앞에 붙여 보여준다.
-
-def part_ranges(ws_name: str, stem: str) -> list[dict]:
-    m = load_map(ws_name, stem) or {}
-    rows = m.get("parts")
-    return rows if isinstance(rows, list) else []
-
-
-def part_of(ranges: list[dict], n: int) -> str:
-    """n번째(파일 순번) 장이 속한 부의 이름. 없으면 빈 문자열."""
-    label = ""
-    for r in sorted(ranges, key=lambda x: x.get("start", 0)):
-        if n >= int(r.get("start", 0)):
-            label = str(r.get("title") or "")
-    return label
-
-
-def set_parts(ws_name: str, stem: str, ranges: list[dict]) -> None:
-    """[{"start": 1, "title": "제1부 원리론"}, …] — start번 장부터 다음 부 전까지.
-
-    제목에 `-`(또는 `없음`)을 적으면 그 장부터 부 표시를 끊는다 — 부 바깥에 있는
-    머리말·부록·역자 후기 같은 장이 앞의 부를 물려받지 않게 한다 (2026-08-17)."""
-    m = load_map(ws_name, stem) or {}
-    rows = []
-    for r in ranges:
-        title = str(r.get("title", "")).strip()
-        if not title:
-            continue
-        rows.append({"start": int(r["start"]), "title": "" if title in ("-", "없음") else title})
-    m["parts"] = rows
-    p = map_path(ws_name, stem)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
-
-
-def display_title(ws_name: str, stem: str, ch_path: Path) -> str:
-    """EPUB·위키에 쓸 장 제목 — 부가 지정돼 있으면 앞에 붙인다."""
-    title = chapter_title(ch_path)
-    ranges = part_ranges(ws_name, stem)
-    if not ranges:
-        return title
-    try:
-        n = int(ch_path.stem[:2])
-    except ValueError:
-        return title
-    part = part_of(ranges, n)
-    return f"{part} · {title}" if part and n > 0 else title
-
-
 def map_path(ws_name: str, stem: str) -> Path:
     return chapters_dir(ws_name, stem) / MAP_NAME
 
@@ -248,8 +196,6 @@ def save_map(ws_name: str, stem: str, mode: str = "", confirmed: bool | None = N
             for i, f in enumerate(files)
         ],
     }
-    if prev.get("parts"):
-        data["parts"] = prev["parts"]        # 부 구분은 파일 상태와 무관하게 보존
     for k in ("anthology", "authors"):       # 논문집 표시·글별 저자도 (2026-09-21)
         if k in prev:
             data[k] = prev[k]

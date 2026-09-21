@@ -10,8 +10,8 @@ APP = '''
 import streamlit as st
 from services.ui_chapter_editor import chapter_editor
 rows = [
-    {"순번":"01", "부":"Part I", "제목":"First", "분량":"100", "시작 부분":"Opening", "앞 장에 합치기":False},
-    {"순번":"02", "부":"", "제목":"Second", "분량":"200", "시작 부분":"Next", "앞 장에 합치기":False},
+    {"순번":"01", "제목":"First", "분량":"100", "시작 부분":"Opening", "앞 장에 합치기":False},
+    {"순번":"02", "제목":"Second", "분량":"200", "시작 부분":"Next", "앞 장에 합치기":False},
 ]
 if st.session_state.get("source_changed"):
     rows[0]["제목"] = "Saved title"
@@ -83,7 +83,6 @@ class ChapterEditorTest(unittest.TestCase):
             self.assertEqual(app.selectbox[1].label, "Chapter to edit")
             self.assertEqual(app.caption[-1].value, "Opening text")
             self.assertEqual(app.text_input[0].label, "Chapter title")
-            self.assertEqual(app.text_input[1].label, "Part")
             self.assertEqual(app.checkbox[0].label, "Merge into previous chapter")
             app.selectbox(key="test_mode").set_value("table").run()
             self.assertFalse(app.exception)

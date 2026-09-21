@@ -127,7 +127,6 @@ _EN: dict[str, str] = {
     "시작 부분": "Opening text",
     "%s자": "%s characters",
     "장 제목": "Chapter title",
-    "부(部)": "Part",
     "제목 (고칠 수 있음)": "Title (editable)",
     "앞 장에 합치기": "Merge into previous chapter",
     "이 장부터 시작하는 부의 이름. 같은 부가 이어지면 비워 두세요": "Name of the part starting with this chapter. Leave blank if the same part continues.",
@@ -1159,15 +1158,4 @@ _EN.update({
     "닫기": "Close",
     "그 자리에서는 나눌 수 없습니다 — 앞뒤 본문이 모두 있어야 합니다.": "Cannot split there — both parts need some text.",
     "「%s」 장을 끼워 넣었습니다.": "Inserted chapter \"%s\".",
-    "부(部) 나누기 — 책이 여러 부로 묶여 있을 때만": "Parts — only when the book is grouped into parts",
-    "«제1부 원리론»처럼 여러 장을 한 덩어리로 묶는 이름입니다. 여기 적으면 EPUB·위키에서 "
-    "장 제목 앞에 붙습니다(예: «제1부 원리론 · 3. 자유»). 부가 없는 책은 비워 두세요. "
-    "부가 시작하는 장의 순번과 이름을 적고, 부 바깥의 장(부록·후기)은 이름을 «-»로 끊습니다.":
-        "A part is a name grouping several chapters, like “Part I: Principles”. It is prefixed to chapter titles in "
-        "EPUB and wiki output (e.g. “Part I: Principles · 3. Freedom”). Leave empty if the book has no parts. "
-        "Enter the number of the chapter each part starts at and its name; use “-” to end a part before appendices.",
-    "시작 장(순번)": "Starts at chapter",
-    "부 이름 («-»는 끊기)": "Part name (“-” ends the part)",
-    "부 저장": "Save parts",
-    "부를 저장했습니다.": "Parts saved.",
 })

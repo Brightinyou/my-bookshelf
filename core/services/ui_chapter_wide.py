@@ -2,14 +2,13 @@
 
 연구자 지적: 확인 화면은 접혀 있어 장 제목 하나만 보이고, 제목 말고는 고칠 수 없고,
 쪽 번호가 없어 맞는지 견줄 수 없고, 1장과 3장 사이에 2장을 **끼워 넣을 길이 없고**,
-「들어가며」처럼 잘못 잡힌 장을 지울 길이 없다. 부(部)는 무엇인지도 모르겠다.
+「들어가며」처럼 잘못 잡힌 장을 지울 길이 없다.
 
 그래서 이 창은
   · 장을 **전부 펼쳐** 한 줄에 하나씩 놓고 (순번 · 쪽 · 제목 · 시작 부분),
   · 제목은 그 자리에서 고치면 바로 파일 이름에 반영되고,
   · ＋ 는 그 장 안에서 새 장이 시작할 줄을 **쪽 번호와 함께** 골라 끼워 넣고,
-  · − 는 그 장을 앞 장에 합쳐 없애며,
-  · 부(部)는 접어 두고 쓰는 사람만 편다.
+  · − 는 그 장을 앞 장에 합쳐 없앤다.
 
 파일이 곧 진실이다(services/chapter_map 머리 주석). 여기서 누른 것은 곧장 챕터
 파일에 반영되고, 본창은 다시 그릴 때 파일을 새로 읽으므로 따로 맞출 것이 없다.
@@ -66,22 +65,16 @@ def chapter_rows(ws: str, book: str, pm: cmap.PageMap | None = None,
     """본창의 요약 목록과 이 작업창이 함께 쓰는 장 목록."""
     files = cmap.chapter_files(ws, book)
     pm = pm or cmap.PageMap(ws, book)
-    ranges = cmap.part_ranges(ws, book)
     sect = set(cmap.section_title_chapters(ws, book))
     rows = []
     for i, f in enumerate(files):
         body = f.read_text(encoding="utf-8", errors="ignore")
-        try:
-            n = int(f.stem[:2])
-        except ValueError:
-            n = 0
         rows.append({
             "idx": i,
             "stem": f.stem,
             "순번": f.stem[:2],
             "쪽": page_label(pm.chapter_range(i), offset),
             "제목": cmap.chapter_title(f),
-            "부": cmap.part_of(ranges, n) if n > 0 else "",
             "글자": len(body),
             "시작 부분": _WS.sub(" ", body[:_PREVIEW_CHARS * 2]).strip()[:_PREVIEW_CHARS],
             "절제목": i in sect,
@@ -176,37 +169,6 @@ def _split_panel(ws: str, book: str, idx: int, row: dict, pm: cmap.PageMap,
                 st.rerun()
 
 
-def _parts_panel(ws: str, book: str, rows: list[dict], key: str) -> None:
-    ranges = cmap.part_ranges(ws, book)
-    with st.expander("📚 " + t("부(部) 나누기 — 책이 여러 부로 묶여 있을 때만"), expanded=bool(ranges)):
-        st.caption(t("«제1부 원리론»처럼 여러 장을 한 덩어리로 묶는 이름입니다. 여기 적으면 EPUB·위키에서 "
-                     "장 제목 앞에 붙습니다(예: «제1부 원리론 · 3. 자유»). 부가 없는 책은 비워 두세요. "
-                     "부가 시작하는 장의 순번과 이름을 적고, 부 바깥의 장(부록·후기)은 이름을 «-»로 끊습니다."))
-        import pandas as pd
-        base = [{"시작 장": int(r.get("start", 0)), "부 이름": str(r.get("title") or "-")} for r in ranges]
-        frame = pd.DataFrame(base or [{"시작 장": 1, "부 이름": ""}])
-        edited = st.data_editor(
-            frame, key=f"{key}_parts", hide_index=True, num_rows="dynamic", width="stretch",
-            column_config={
-                "시작 장": st.column_config.NumberColumn(t("시작 장(순번)"), min_value=1,
-                    max_value=max(1, len(rows)), step=1, width="small"),
-                "부 이름": st.column_config.TextColumn(t("부 이름 («-»는 끊기)"), width="large"),
-            })
-        if st.button(t("부 저장"), icon=":material/save:", key=f"{key}_parts_save"):
-            new = []
-            for rec in edited.to_dict("records"):
-                title = str(rec.get("부 이름") or "").strip()
-                try:
-                    start = int(rec.get("시작 장") or 0)
-                except (TypeError, ValueError):
-                    continue
-                if title and start >= 1:
-                    new.append({"start": start, "title": title})
-            cmap.set_parts(ws, book, new)
-            st.session_state["_wb_notice"] = t("부를 저장했습니다.")
-            st.rerun()
-
-
 def chapter_workbench(ws: str, book: str, key: str = "wb") -> None:
     files = cmap.chapter_files(ws, book)
     st.markdown(f"## 📑 {t('장 구분 편집')} — {book}")
@@ -269,8 +231,6 @@ def chapter_workbench(ws: str, book: str, key: str = "wb") -> None:
             flags.append("🔸 " + t("절 제목 — 앞 장에 합치는 것이 맞을 수 있습니다"))
         if r["껍데기"]:
             flags.append("⚠️ " + t("본문이 거의 없음"))
-        if r["부"]:
-            flags.append("📚 " + r["부"])
         c[3].caption(f"{r['글자']:,}{t('자')} · {r['시작 부분']} …" + ("  \n" + " · ".join(flags) if flags else ""))
         if c[4].button("＋", key=f"{key}_plus_{r['stem']}", help=t("이 장 안에서 새 장이 시작하는 자리를 골라 끼워 넣습니다")):
             st.session_state[f"{key}_split_open"] = None if open_idx == i else i
@@ -283,6 +243,3 @@ def chapter_workbench(ws: str, book: str, key: str = "wb") -> None:
                 st.rerun()
         if open_idx == i:
             _split_panel(ws, book, i, r, pm, offset, key)
-
-    st.divider()
-    _parts_panel(ws, book, rows, key)

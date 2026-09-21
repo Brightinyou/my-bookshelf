@@ -16,7 +16,7 @@ def chapter_editor(rows, key, full=True):
         st.session_state[f"{key}_revision"] = revision
         st.session_state.pop(f"{key}_last_mode", None)
     draft = st.session_state[draft_key]
-    cols = ["순번", "부", "제목", "분량", "시작 부분"] + (["앞 장에 합치기"] if full else [])
+    cols = ["순번", "제목", "분량", "시작 부분"] + (["앞 장에 합치기"] if full else [])
     if not draft:
         return pd.DataFrame(columns=cols)
     mode = st.selectbox(t("편집 방식"), ["single", "table"], key=f"{key}_mode",
@@ -33,8 +33,6 @@ def chapter_editor(rows, key, full=True):
             width="stretch", hide_index=True, num_rows="fixed",
             column_config={
                 "순번": st.column_config.TextColumn(t("순번"), disabled=True, width="small"),
-                "부": st.column_config.TextColumn(t("부(部)"), width="small",
-                    help=t("이 장부터 시작하는 부의 이름. 같은 부가 이어지면 비워 두세요")),
                 "제목": st.column_config.TextColumn(t("제목 (고칠 수 있음)"), width="large"),
                 "분량": st.column_config.TextColumn(t("분량"), disabled=True, width="small"),
                 "시작 부분": st.column_config.TextColumn(t("시작 부분"), disabled=True, width="large"),
@@ -54,11 +52,10 @@ def chapter_editor(rows, key, full=True):
     def remember(field, widget_key):
         st.session_state[draft_key][idx][field] = st.session_state[widget_key]
 
-    for field, label in (("제목", "장 제목"), ("부", "부(部)")):
+    for field, label in (("제목", "장 제목"),):
         widget_key = f"{key}_{revision}_{idx}_{field}"
         st.text_input(t(label), value=row.get(field, ""), key=widget_key,
-                      on_change=remember, args=(field, widget_key),
-                      help=t("이 장부터 시작하는 부의 이름. 같은 부가 이어지면 비워 두세요") if field == "부" else None)
+                      on_change=remember, args=(field, widget_key))
     st.caption(t("시작 부분"))
     st.text(row.get("시작 부분", ""))
     if full:
