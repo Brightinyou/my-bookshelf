@@ -129,7 +129,7 @@ CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`�
 > powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI codex -Launch
 > ```
 >
-> `-AI codex`(ChatGPT·기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다. Node.js 설치 중 **관리자 확인(UAC) 창**이 한 번 뜰 수 있고, winget이 없는 아주 오래된 Windows 10에서는 Node.js(→ Codex CLI) 설치가 자동으로 되지 않아 화면에 "손으로 하실 일" 목록으로 안내될 수 있습니다.
+> `-AI codex`(ChatGPT·기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다. winget이 있으면 Node.js 설치 중 **관리자 확인(UAC) 창**이 한 번 뜰 수 있습니다. winget이 없는 Windows 10에서는 nodejs.org에서 공식 zip을 받아 사용자 폴더에 풀어 씁니다 — 이 경우 UAC 창도 뜨지 않습니다.
 >
 > 기본적으로 선택한 구독 CLI의 브라우저 로그인도 바로 시작합니다 — `-AI both`는 Claude와 Codex 로그인을 모두 시도하므로 Claude Pro/Max, ChatGPT Plus/Pro 구독이 실제로 있어야 합니다. 없다면 `-AI codex`/`-AI claude`로 하나만 고르거나 `-AI none`으로 건너뛰고 API 키를 앱에서 직접 입력하세요. 설치 자체는 5~20분 걸리니 창을 닫지 말고 그대로 두세요.
 

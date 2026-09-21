@@ -71,14 +71,53 @@ function Add-UserPath ($dir) {
 function Have-Command ($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 function Have-Winget { Have-Command 'winget' }
 
+function Install-NodeLocal {
+    # winget 이 없는 Windows 10 에서도 Codex 를 쓸 수 있게 — nodejs.org 의 공식 zip 을
+    # 받아 사용자 폴더에 푼다. 설치 관리자가 아니라서 UAC 가 뜨지 않는다.
+    # 맥 install-mybookshelf.sh 의 install_node_local 과 같은 방식.
+    # PowerShell 은 줄바꿈 뒤의 elseif 를 못 읽는다 — 한 줄로 둔다.
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } elseif ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+    $dest = Join-Path $AppDir 'node'
+    try {
+        $index = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -UseBasicParsing
+        $ver = ($index | Where-Object { $_.lts } | Select-Object -First 1).version
+        if (-not $ver) { return $false }
+        $name = "node-$ver-win-$arch"
+        $zip  = Join-Path $WorkDir "$name.zip"
+        Say "Node.js $ver ($arch) 를 내려받습니다."
+        Invoke-WebRequest -Uri "https://nodejs.org/dist/$ver/$name.zip" -OutFile $zip -UseBasicParsing
+        # 파이썬 폴백과 같은 방식으로 무결성을 확인한다.
+        $sums = (Invoke-WebRequest -Uri "https://nodejs.org/dist/$ver/SHASUMS256.txt" -UseBasicParsing).Content
+        $line = $sums -split "`n" | Where-Object { $_ -match ([regex]::Escape("$name.zip") + '$') } | Select-Object -First 1
+        if ($line) {
+            $want = ($line.Trim() -split '\s+')[0]
+            $got  = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+            if ($got -ne $want.ToLower()) { throw "Node 압축 파일이 손상됐습니다 (SHA256 $got)" }
+        }
+        $tmp = Join-Path $WorkDir 'node-unzip'
+        if (Test-Path $tmp)  { Remove-Item $tmp  -Recurse -Force }
+        if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+        Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
+        New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
+        Move-Item -LiteralPath (Join-Path $tmp $name) -Destination $dest
+        Add-UserPath $dest
+        return (Have-Command 'node') -and (Have-Command 'npm.cmd')
+    } catch {
+        Warn "nodejs.org 에서 직접 내려받기에 실패했습니다: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 function Ensure-Node {
     if ((Have-Command 'node') -and (Have-Command 'npm.cmd')) { return $true }
     if (Have-Winget) {
         Say 'Node.js LTS를 설치합니다 (관리자 확인 창이 한 번 뜰 수 있습니다).'
         winget install -e --id OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements | Out-Null
         Refresh-Path
+        if ((Have-Command 'node') -and (Have-Command 'npm.cmd')) { return $true }
     }
-    return (Have-Command 'node') -and (Have-Command 'npm.cmd')
+    # winget 이 없거나 실패했을 때. 파이썬과 같이 벤더에서 직접 받는 길을 둔다.
+    return (Install-NodeLocal)
 }
 
 function Have-Python {
@@ -179,8 +218,8 @@ if ($AI -eq 'none') {
             Refresh-Path
             $codexReady = Have-Command 'codex'
         } else {
-            Warn 'Node.js를 설치하지 못해 Codex CLI를 준비하지 못했습니다.'
-            $script:Manual += 'Node.js LTS 설치 후 이 스크립트를 다시 실행'
+            Warn 'Node.js를 설치하지 못해 Codex CLI를 준비하지 못했습니다 (앱 자체는 설치됐습니다).'
+            $script:Manual += 'https://nodejs.org 에서 LTS 설치 후 이 스크립트를 다시 실행 — 또는 앱 ⚙️ 설정 탭에 API 키 입력'
         }
     }
 
