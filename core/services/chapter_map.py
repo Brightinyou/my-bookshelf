@@ -218,6 +218,32 @@ def load_map(ws_name: str, stem: str) -> dict | None:
         return None
 
 
+def recent_unconfirmed(ws_name: str, days: float = 3, limit: int = 5) -> list[str]:
+    """최근 며칠 안에 챕터가 바뀌었는데 아직 확정하지 않은 책 — 새로 바뀐 순.
+
+    확인 화면은 «이번 실행에서 나눈 책»만 보여 주는데, 앱을 다시 켜면 그 목록이
+    비어 방금 나눈 책이 사라진다 (2026-09-21 연구자: "챕터분할에 대기창이 없어졌어").
+    예전(2026-08-26)에 '확인하지 않은 책' 전체 목록을 뺀 까닭은 지나간 책 수십 권이
+    딸려 와서였으므로, 최근 것 몇 권만 되살린다."""
+    import config as cfg
+    import time
+    root = cfg.CHAPTERS_DIR
+    if not root.exists():
+        return []
+    cutoff = time.time() - days * 86400
+    found: list[tuple[float, str]] = []
+    for d in root.iterdir():
+        if not d.is_dir() or is_confirmed(ws_name, d.name):
+            continue
+        files = chapter_files(ws_name, d.name)
+        if not files:
+            continue
+        newest = max(f.stat().st_mtime for f in files)
+        if newest >= cutoff:
+            found.append((newest, d.name))
+    return [name for _t, name in sorted(found, reverse=True)[:limit]]
+
+
 def is_confirmed(ws_name: str, stem: str) -> bool:
     m = load_map(ws_name, stem)
     return bool(m and m.get("confirmed"))

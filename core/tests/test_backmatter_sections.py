@@ -111,5 +111,30 @@ class QueueSkipTest(unittest.TestCase):
         self.assertEqual(names, ["01_제1강.txt", "02_해설.txt"])
 
 
+class RecentUnconfirmedTest(unittest.TestCase):
+    """앱을 다시 켜도 최근에 나눈 미확정 책은 확인 화면에 남는다 (2026-09-21)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="recent_"))
+        self._prev = cfg.CHAPTERS_DIR
+        cfg.CHAPTERS_DIR = self.tmp
+        import os, time
+        for name, age_days, confirmed in (("새 책", 0, False), ("확정한 책", 0, True), ("옛 책", 10, False)):
+            d = self.tmp / name
+            d.mkdir()
+            f = d / "01_장.txt"
+            f.write_text("본문. " * 20, encoding="utf-8")
+            old = time.time() - age_days * 86400
+            os.utime(f, (old, old))
+            cmap.save_map(WS, name, mode="visual", confirmed=confirmed)
+
+    def tearDown(self):
+        cfg.CHAPTERS_DIR = self._prev
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_최근_미확정_책만(self):
+        self.assertEqual(cmap.recent_unconfirmed(WS), ["새 책"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1281,8 +1281,13 @@ def _chapter_review_panel(key: str, full: bool = True, only_book: str | None = N
         # 수십 권이 딸려 오고, 다 지나간 책의 "수상한 분할"을 붙잡게 된다(2026-08-18).
         _live = {_nfc(b) for b in st.session_state.get("_review_books", [])}
         _fresh = [b for b in books if _nfc(b) in _live]
-        # ★'확인하지 않은 책' 목록은 뺐다 (2026-08-26 연구자 요청 — 자주 안 쓴다).
-        # 필요해지면 여기서 확정 안 된 책을 다시 꺼내면 된다.
+        # ★'확인하지 않은 책' 전체 목록은 뺐다 (2026-08-26 연구자 요청 — 지나간 책이
+        #   수십 권 딸려 왔다). 대신 앱을 다시 켜서 이번 실행 목록이 비었을 때는
+        #   **최근 3일 안에 나눴는데 아직 확정하지 않은 책** 몇 권만 되살린다 (2026-09-21
+        #   연구자: 다시 켠 뒤 방금 나눈 『시간과 타자』가 어디에도 안 보였다).
+        if not _fresh:
+            _recent = {_nfc(b) for b in cmap.recent_unconfirmed(DEFAULT_WS)}
+            _fresh = [b for b in books if _nfc(b) in _recent]
         books = _fresh
     if not books:
         return
