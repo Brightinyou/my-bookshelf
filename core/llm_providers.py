@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from services.storage import file_lock, write_json_atomic
 
@@ -151,14 +152,14 @@ def default_provider_model() -> tuple[str, str]:
     if prov not in PROVIDERS:
         return first_available_provider_model()
     model = d.get("wiki_model") or PROVIDERS[prov]["models"][0]
-    return prov, model
+    return prov, supported_model(prov, model)
 
 
 def task_provider_model(task: str) -> tuple[str, str]:
     override = get_pref("task_models", {}).get(task)
     if isinstance(override, dict) and override.get("provider") in PROVIDERS and override.get("model"):
         # Do not silently switch a deliberately configured but unavailable provider.
-        return override["provider"], override["model"]
+        return override["provider"], supported_model(override["provider"], override["model"])
     return default_provider_model()
 
 
@@ -182,31 +183,118 @@ def _validate_model(provider: str, model: str) -> str:
     return model
 
 
-def codex_model_catalog() -> dict[str, str]:
-    """Read the CLI's local model catalog without contacting an AI provider."""
+def _codex_models() -> list[dict]:
     root = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
     try:
         data = json.loads((root / "models_cache.json").read_text(encoding="utf-8"))
-        return {m["slug"]: (m.get("display_name") or m["slug"])
-                for m in data.get("models", [])
-                if isinstance(m, dict) and isinstance(m.get("slug"), str)
-                and m["slug"] and m.get("visibility", "list") == "list"}
+        return [m for m in data.get("models", [])
+                if isinstance(m, dict) and isinstance(m.get("slug"), str) and m["slug"]]
     except (OSError, ValueError, TypeError, AttributeError):
-        return {}
+        return []
+
+
+def _retirement(m: dict) -> str:
+    up = m.get("upgrade")
+    return str(up.get("retirement_at") or "") if isinstance(up, dict) else ""
+
+
+def codex_model_catalog() -> dict[str, str]:
+    """Read the CLI's local model catalog without contacting an AI provider.
+
+    종료일이 지난 모델은 뺀다 — 캐시에 남아 있어도 부르면 404다 (2026-09-27)."""
+    now = datetime.now(timezone.utc).isoformat()
+    return {m["slug"]: (m.get("display_name") or m["slug"])
+            for m in _codex_models()
+            if m.get("visibility", "list") == "list"
+            and not (_retirement(m) and _retirement(m) <= now)}
+
+
+def codex_model_retirement(model: str) -> str:
+    """종료 예정일(YYYY-MM-DD) — 없으면 빈 문자열."""
+    for m in _codex_models():
+        if m["slug"] == model:
+            return _retirement(m)[:10]
+    return ""
+
+
+_CLAUDE_ALIASES_CACHE: dict[str, list[str]] = {}
+
+
+def claude_model_catalog() -> list[str]:
+    """이 컴퓨터의 Claude CLI가 받는 모델 별칭.
+
+    Claude CLI에는 codex의 models_cache.json 같은 목록 파일이 없다. 대신 별칭
+    (opus·sonnet·haiku …)을 받아 그 CLI가 아는 최신 모델로 잇는다 — 그래서 모델이
+    종료돼도 별칭은 404가 나지 않는다. 새 별칭(fable)은 CLI 버전이 낮으면 모르므로
+    `claude --help`의 «alias» 예시에 적힌 것만 더한다 (2026-09-27)."""
+    base = ["sonnet", "opus", "haiku"]
+    cli = claude_cli_path()
+    if not cli:
+        return base
+    if cli not in _CLAUDE_ALIASES_CACHE:
+        found: list[str] = []
+        try:
+            rc, out, err = _run_cli_safe([cli, "--help"], "", timeout=20)
+            text = re.sub(r"\s+", " ", (out or "") + (err or ""))
+            m = re.search(r"alias for the latest model \(e\.g\. ([^)]*)\)", text)
+            if m:
+                found = re.findall(r"'([a-z][a-z0-9-]*)'", m.group(1))
+        except Exception:
+            found = []
+        _CLAUDE_ALIASES_CACHE[cli] = found
+    return list(dict.fromkeys(_CLAUDE_ALIASES_CACHE[cli] + base))
+
+
+def supported_model(provider: str, model: str) -> str:
+    """이 컴퓨터의 CLI가 실제로 부를 수 있는 모델로 맞춘다.
+
+    설정은 컴퓨터마다 저장되지만 codex 버전·계정은 컴퓨터마다 다르다. 저장된 모델이
+    이 컴퓨터의 codex 목록에 없으면 요청마다 404로 실패했다(09-07 «gpt-5.5 does not
+    exist») — 부르기 전에 CLI 자신의 기본 모델로 돌린다. 목록을 못 읽으면 건드리지
+    않는다(판단 근거가 없다)."""
+    if model in ("default", ""):
+        return model
+    if provider == "claude_cli":
+        return model if model in claude_model_catalog() else "default"
+    if provider != "codex_cli":
+        return model
+    catalog = codex_model_catalog()
+    return model if not catalog or model in catalog else "default"
+
+
+def unsupported_saved_model(task: str = "") -> str:
+    """저장돼 있지만 이 컴퓨터에서 못 쓰는 모델 이름 (설정 화면 경고용)."""
+    if task and isinstance(get_pref("task_models", {}).get(task), dict):
+        o = get_pref("task_models", {})[task]
+        p, m = o.get("provider", ""), o.get("model", "")
+    else:
+        d = _load_all()
+        p, m = d.get("wiki_provider") or "", d.get("wiki_model") or ""
+    return m if m and supported_model(p, m) != m else ""
 
 
 def model_label(provider: str, model: str) -> str:
     if provider == "codex_cli":
-        return codex_model_catalog().get(model, model)
+        label = codex_model_catalog().get(model, model)
+        until = codex_model_retirement(model)
+        return f"{label} ({until} 종료 예정)" if until else label
     if provider == "claude_cli":
-        return {"sonnet": "Claude Sonnet", "opus": "Claude Opus", "haiku": "Claude Haiku"}.get(model, model)
+        return {"sonnet": "Claude Sonnet", "opus": "Claude Opus", "haiku": "Claude Haiku",
+                "fable": "Claude Fable"}.get(model, model)
     return model
 
 
 def model_choices(provider: str) -> list[str]:
     choices = list(PROVIDERS[provider]["models"])
     if provider == "codex_cli":
-        choices.extend(codex_model_catalog())
+        catalog = codex_model_catalog()
+        if catalog:
+            # ★이 컴퓨터의 codex 목록에 있는 것만 — 예전에 저장한 모델·config.toml의
+            # 모델이 끼어들면 못 쓰는 모델을 또 고를 수 있다 (2026-09-27).
+            return list(dict.fromkeys(choices + list(catalog)))
+    if provider == "claude_cli":
+        # 저장값·settings.json 모델을 끼워 넣지 않는다 — 이 CLI가 받는 별칭만 (2026-09-27)
+        return ["default"] + claude_model_catalog()
     if provider in CLI_PROVIDERS:
         choices.append(cli_configured_model(provider))
     data = _load_all()
