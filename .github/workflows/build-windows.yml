@@ -105,6 +105,8 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}\core
           PYTHONIOENCODING: utf-8
+          # 바로 앞 무음 설치가 러너 언어(영어)를 설정에 남긴다. 테스트는 한국어 화면 기준이다.
+          MYBOOKSHELF_LANG: ko
         run: '"%INSTALLED_PY%" -m unittest discover -s core\tests -q'
 
       - name: Get version
