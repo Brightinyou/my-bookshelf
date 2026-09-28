@@ -315,6 +315,10 @@ def toc_split(txt: str):
 
 def _clean_heading_title(title: str) -> str:
     title = re.sub(r"\s+", " ", title).strip()
+    # 마크다운 강조는 제목의 일부가 아니다 — 웹에서 받은 MD는 절 제목을 "#"가
+    # 아니라 "**볼드**"로만 표시하는 일이 흔하고, 그대로 두면 장 파일 이름에
+    # 별표가 박힌다 (2026-09-25 바티칸 Antiqua et Nova).
+    title = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", title).strip()
     title = re.sub(r"\s*[.·ㆍ…]{2,}\s*\d+\s*$", "", title).strip()
     title = re.sub(r"\s*[_\-–—|/]\s*\d+\s*$", "", title).strip()
     title = re.sub(r"\s+\d{1,4}\s*$", "", title).strip()
@@ -359,6 +363,22 @@ def _heading_candidates(txt: str):
             m = re.match(r"^chapter\s+(\d{1,2})\s*[\.:：\-–—]?\s*(.*)$", s, re.I)
             if m:
                 num, title = int(m.group(1)), m.group(2)
+        if num is None:
+            # 로마 숫자로 장을 매긴 글 — "I. Introduction", "Ⅲ. 지성" (2026-09-25).
+            # 여기까지 로마 숫자를 아는 규칙은 roman_toc_split 하나뿐이었는데 그쪽은
+            # 점선·쪽번호가 붙은 «차례 줄»만 인정한다. 차례 없이 본문에만 절 제목이
+            # 선 글(바티칸 Antiqua et Nova)은 규칙 단계를 통째로 지나쳐 LLM 폴백으로
+            # 떨어졌고, 거기서 긴 제목 둘이 잘려 III·IV장이 앞 장에 묻혔다.
+            # 대문자만 인정한다 — 소문자 "i.·v.·x."는 "i.e."·"v."(versus)·목록 항목과
+            # 구분되지 않는다. 남는 오탐은 numbered_heading_split의 연속 번호
+            # (I→II→III)·최소 간격 검증이 걸러낸다.
+            m = re.match(r"^([IVX]{1,6}|[Ⅰ-Ⅹ])\s*[.．)]\s+(.{2,90})$", s)
+            if m:
+                rn = _roman_to_int(m.group(1).translate(_FW_ROMAN))
+                cand_title = _clean_heading_title(m.group(2))
+                # "I. 그때 나는 …" 같은 본문 문장 가드 (마침표로 끝나는 줄)
+                if 1 <= rn <= MAX_CHAPTERS and cand_title and not re.search(r"[.!?。]$", m.group(2).strip()):
+                    num, title = rn, cand_title
         if num is None:
             m = re.match(r"^(\d{1,2})\s+([A-Z][A-Z0-9 ,:;()/'&\\-]{3,})$", s)
             if m:
@@ -532,6 +552,13 @@ _LLM_SPLIT_KW_STRONG = re.compile(
     r"|(?:^|\s)제?\s*\d{1,2}\s*[장부편](?:\s|$|[.:：)\-])", re.I)
 
 
+# LLM에게 넘길 «헤딩스러운 줄»의 길이 상한. 60자였는데 학술 문헌의 절 제목은
+# 그보다 길다 — 바티칸 Antiqua et Nova의 III장(68자)·IV장(67자)이 길이 때문에
+# 후보 목록에서 빠져, 모델이 고를 수조차 없는 채로 앞 장에 묻혔다. 같은 파일의
+# _heading_candidates가 줄은 140자·제목은 90자까지 보는 것에 맞춘다 (2026-09-25).
+_LLM_CAND_MAXLEN = 90
+
+
 def llm_toc_split(txt: str):
     """정규식 전부 실패 시 LLM으로 장 시작 줄 판정. [(title, body)] 또는 None."""
     try:
@@ -547,7 +574,7 @@ def llm_toc_split(txt: str):
     pos = 0
     for raw in txt.splitlines(True):
         s = re.sub(r"\s+", " ", raw.rstrip("\r\n")).strip()
-        if 2 <= len(s) <= 60 and not re.search(r"[.?!。…,]$", s):
+        if 2 <= len(s) <= _LLM_CAND_MAXLEN and not re.search(r"[.?!。…,]$", s):
             cands.append((pos, s))
         pos += len(raw)
     MAXC = 600
