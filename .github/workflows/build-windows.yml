@@ -76,16 +76,22 @@ jobs:
           if ($LASTEXITCODE) { throw "bundled runtime imports failed" }
           if (-not (Test-Path "$dir\.venv\Scripts\MyBookshelf.exe")) { throw "MyBookshelf.exe was not prepared" }
 
-          $srv = Start-Process $py -PassThru -WindowStyle Hidden -WorkingDirectory $dir -ArgumentList @(
-            "-m", "streamlit", "run", "$dir\core\pipeline_app.py",
-            "--server.port", "8765", "--server.headless", "true", "--browser.gatherUsageStats", "false")
+          $srv = Start-Process $py -PassThru -WindowStyle Hidden -WorkingDirectory $dir `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\st.out" -RedirectStandardError "$env:RUNNER_TEMP\st.err" -ArgumentList @(
+            "-m", "streamlit", "run", "`"$dir\core\pipeline_app.py`"",
+            "--server.port", "8765", "--server.address", "127.0.0.1", "--server.headless", "true",
+            "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false")
           $ok = $false
           for ($i = 0; $i -lt 60; $i++) {
             try { if ((Invoke-WebRequest "http://127.0.0.1:8765/_stcore/health" -UseBasicParsing -TimeoutSec 2).Content -eq "ok") { $ok = $true; break } } catch {}
             Start-Sleep 1
           }
           Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue
-          if (-not $ok) { throw "streamlit server did not come up" }
+          if (-not $ok) {
+            Write-Host "--- streamlit stdout ---"; Get-Content "$env:RUNNER_TEMP\st.out" -ErrorAction SilentlyContinue
+            Write-Host "--- streamlit stderr ---"; Get-Content "$env:RUNNER_TEMP\st.err" -ErrorAction SilentlyContinue
+            throw "streamlit server did not come up"
+          }
           Write-Host "server health ok after ${i}s"
 
           $env:PYTHONIOENCODING = "utf-8"
