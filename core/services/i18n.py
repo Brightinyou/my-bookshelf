@@ -127,7 +127,6 @@ _EN: dict[str, str] = {
     "Node.js 설치 (이미 있으면 건너뛰기) — 아래 주소에서 LTS 설치 파일(.pkg)을 받아 실행": "Install Node.js (skip if already installed) — download and run the LTS installer (.pkg) from the address below",
     "번역·요약·목차 판독에는 AI가 필요합니다. 텍스트 변환은 AI 없이도 됩니다.": "Translation, summaries and table-of-contents reading need AI. Text conversion works without it.",
     "연결 방법": "How to connect",
-    "API 키 (권장)": "API key (recommended)",
     "구독 계정 (Claude·ChatGPT)": "Subscription (Claude·ChatGPT)",
     "AI 서비스": "AI service",
     "키 발급: %s": "Get a key: %s",
