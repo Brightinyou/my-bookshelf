@@ -26,6 +26,37 @@ API_KEY_PAGES = {
 }
 
 
+# 직접 붙여 넣는 설치 명령 (2026-09-30 연구자 제안) — «설정 창 열기»가 실패할 때의
+# 대비책. 설치 스크립트(windows_setup_extras.ps1·mac_setup_extras.sh)가 실제로 쓰는
+# 명령과 같게 둔다. 맥은 npm 전역 설치가 /usr/local 권한에 막히므로 스크립트처럼
+# ~/.local 로 넣고, 그 폴더가 PATH 에 없을 수 있어 로그인도 전체 경로로 부른다.
+# 각 단계: (설명, 명령 또는 None)
+def cli_install_steps(cli: str, platform: str | None = None) -> list[tuple[str, str | None]]:
+    win = (platform or sys.platform) == "win32"
+    if cli == "claude":
+        if win:
+            return [("설치", "irm https://claude.ai/install.ps1 | iex"),
+                    # 공식 설치는 claude.exe 를 ~\.local\bin 에 두지만 PATH 에 넣지 않는다
+                    # (2026-09-30 Sandbox 실측 — 새 창에서도 «'claude' is not recognized»).
+                    # 맥처럼 전체 경로로 부른다.
+                    ("로그인", '& "$env:USERPROFILE\\.local\\bin\\claude.exe" auth login')]
+        return [("설치", "curl -fsSL https://claude.ai/install.sh | bash"),
+                ("로그인", "~/.local/bin/claude auth login")]
+    if cli == "codex":
+        if win:
+            return [("Node.js 설치 (이미 있으면 건너뛰기)",
+                     "winget install -e --id OpenJS.NodeJS.LTS"),
+                    ("winget 명령이 없다고 나오면 — 아래 주소에서 LTS 설치 파일(.msi)을 받아 실행",
+                     "https://nodejs.org/"),
+                    ("PowerShell 창을 닫고 새로 연 뒤 설치", "npm install -g @openai/codex"),
+                    ("로그인", "codex login --device-auth")]
+        return [("Node.js 설치 (이미 있으면 건너뛰기) — 아래 주소에서 LTS 설치 파일(.pkg)을 받아 실행",
+                 "https://nodejs.org/"),
+                ("설치", 'npm install -g @openai/codex --prefix "$HOME/.local"'),
+                ("로그인", "~/.local/bin/codex login --device-auth")]
+    return []
+
+
 def setup_script() -> Path | None:
     if sys.platform == "win32":
         cands = [_HERE.parent / "windows_setup_extras.ps1",
@@ -45,9 +76,11 @@ def launch_setup_window() -> tuple[bool, str]:
         return False, "설정 스크립트를 찾지 못했습니다."
     try:
         if sys.platform == "win32":
+            # 앱에서 고른 언어로 설정 창을 띄운다 (2026-09-30 — 한국어 앱에 영어 메뉴가 떴다).
+            from services.i18n import get_lang
             subprocess.Popen(
                 ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                 "-File", str(script)],
+                 "-File", str(script), "-Lang", get_lang()],
                 cwd=str(script.parent),
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
             )

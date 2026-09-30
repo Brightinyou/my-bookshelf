@@ -96,8 +96,12 @@ Filename: "{app}\.venv\Scripts\pythonw.exe"; \
 
 ; AI(Claude·Codex) 설정은 설치에서 뺐다 — 앱이 AI 없이 처음 뜨면 «AI 연결» 안내를
 ; 보이고, 구독을 고른 사람에게만 windows_setup_extras.ps1 창을 연다 (2026-09-30).
-Filename: "{sys}\wscript.exe"; \
-    Parameters: """{app}\start-app.vbs"""; \
+; ★wscript + start-app.vbs 로 열면 안 된다 (2026-09-30 Windows Sandbox 실측).
+;   VBScript 는 Windows 에서 없앨 수 있는 선택 기능이라, 없는 PC 에서는
+;   «".vbs"에 해당하는 스크립트 엔진이 없습니다» 창만 뜨고 앱이 안 열렸다.
+;   바로가기와 똑같이 venv 의 MyBookshelf.exe 를 곧장 연다.
+Filename: "{app}\.venv\Scripts\MyBookshelf.exe"; \
+    Parameters: """{app}\core\desktop.py"""; \
     WorkingDir: "{app}"; \
     Flags: nowait postinstall skipifsilent; \
     Description: "Start My Bookshelf"

@@ -114,9 +114,19 @@ def tf(s: str, *args) -> str:
 
 
 _EN: dict[str, str] = {
+    "winget 명령이 없다고 나오면 — 아래 주소에서 LTS 설치 파일(.msi)을 받아 실행": "If winget is not found — download and run the LTS installer (.msi) from the address below",
+    "시작 메뉴에서 PowerShell을 열고 아래 명령을 한 줄씩 붙여 넣으세요.": "Open PowerShell from the Start menu and paste the commands below one line at a time.",
+    "터미널(응용 프로그램 › 유틸리티)을 열고 아래 명령을 한 줄씩 붙여 넣으세요.": "Open Terminal (Applications › Utilities) and paste the commands below one line at a time.",
+    "설치와 로그인을 마치면 앱으로 돌아와 [다시 확인]을 누르거나 설정에서 켜세요.": "After installing and signing in, come back and press [Check again] or turn it on in Settings.",
+    "%s 직접 설치 (명령 복사)": "Install %s yourself (copy commands)",
+    "설치 방법 (명령 복사)": "How to install (copy commands)",
+    "설치": "Install",
+    "로그인": "Sign in",
+    "Node.js 설치 (이미 있으면 건너뛰기)": "Install Node.js (skip if already installed)",
+    "PowerShell 창을 닫고 새로 연 뒤 설치": "Close and reopen PowerShell, then install",
+    "Node.js 설치 (이미 있으면 건너뛰기) — 아래 주소에서 LTS 설치 파일(.pkg)을 받아 실행": "Install Node.js (skip if already installed) — download and run the LTS installer (.pkg) from the address below",
     "번역·요약·목차 판독에는 AI가 필요합니다. 텍스트 변환은 AI 없이도 됩니다.": "Translation, summaries and table-of-contents reading need AI. Text conversion works without it.",
     "연결 방법": "How to connect",
-    "API 키 (권장)": "API key (recommended)",
     "구독 계정 (Claude·ChatGPT)": "Subscription (Claude·ChatGPT)",
     "AI 서비스": "AI service",
     "키 발급: %s": "Get a key: %s",

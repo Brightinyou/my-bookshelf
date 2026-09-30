@@ -222,6 +222,106 @@ def list_obsidian_vaults() -> list[str]:
         return []
 
 
+def obsidian_installed() -> bool:
+    """이 컴퓨터에 옵시디언 앱이 깔려 있는가 (설정 창·winget·직접 설치 경로)."""
+    if sys.platform == "darwin":
+        return any(p.exists() for p in (Path("/Applications/Obsidian.app"),
+                                         Path.home() / "Applications" / "Obsidian.app"))
+    local = Path(os.environ.get("LOCALAPPDATA", ""))
+    return any(p.exists() for p in (local / "Programs" / "Obsidian" / "Obsidian.exe",
+                                     local / "Obsidian" / "Obsidian.exe"))
+
+
+def obsidian_running() -> bool:
+    """옵시디언이 떠 있는가. 모르면 True — 켜진 채로 obsidian.json 을 고치면 닫힐 때
+    덮어써서 등록이 사라질 수 있으므로, 확실히 꺼져 있을 때만 쓴다."""
+    try:
+        if sys.platform == "darwin":
+            return subprocess.run(["pgrep", "-x", "Obsidian"], capture_output=True).returncode == 0
+        names = _windows_process_names()
+        return names is None or "obsidian.exe" in names
+    except Exception:
+        return True
+
+
+def _windows_process_names() -> set[str] | None:
+    """떠 있는 프로세스의 실행 파일 이름(소문자). 못 읽으면 None.
+
+    ★tasklist 를 쓰면 안 된다 (2026-09-30 Windows Sandbox 실측). 옵시디언이 떠
+    있는데도 «없음»으로 읽혀 켜진 채로 obsidian.json 을 고쳤다. tasklist·WMI 는
+    막힌 PC 가 있지만 Toolhelp 스냅숏은 권한 없이 읽힌다(Get-Process 와 같은 길)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", wintypes.WCHAR * 260)]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    k32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    k32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    TH32CS_SNAPPROCESS, INVALID = 0x2, wintypes.HANDLE(-1).value
+    snap = k32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if not snap or snap == INVALID:
+        return None
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        if not k32.Process32FirstW(snap, ctypes.byref(entry)):
+            return None
+        names = set()
+        while True:
+            names.add(entry.szExeFile.lower())
+            if not k32.Process32NextW(snap, ctypes.byref(entry)):
+                break
+        return names
+    finally:
+        k32.CloseHandle(snap)
+
+
+def _vault_registered(folder: Path) -> bool:
+    try:
+        target = folder.resolve()
+        return any(Path(p).resolve() == target for p in list_obsidian_vaults())
+    except Exception:
+        return False
+
+
+def auto_register_wiki_vault(folder: Path) -> str:
+    """앱이 켜질 때 한 번 — 옵시디언 사용이 켜져 있고 깔려 있는데 위키 폴더가 아직
+    보관함이 아니면 등록한다 (2026-09-30). 설정 창은 옵시디언을 깔기만 해서, 처음
+    열면 «새 보관함 만들기» 화면이 떠 우리 노트를 못 찾았다(Windows Sandbox 실측).
+    Returns: "off"|"no_app"|"already"|"running"|"registered"|"failed"."""
+    if not llm.get_pref("use_obsidian", False):
+        return "off"
+    if not obsidian_installed():
+        return "no_app"
+    if _vault_registered(folder):
+        return "already"
+    if obsidian_running():
+        return "running"               # 다음에 켤 때 다시 본다
+    if ensure_obsidian_vault(folder):
+        # 보관함이 이것 하나뿐이면 옵시디언이 처음 켜질 때 곧장 이것을 연다.
+        try:
+            cfgf = _obsidian_config()
+            data = json.loads(cfgf.read_text(encoding="utf-8"))
+            vaults = data.get("vaults", {})
+            if len(vaults) == 1:
+                next(iter(vaults.values()))["open"] = True
+                cfgf.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+        append_log(f"옵시디언 보관함(Vault) 자동 등록: {folder}")
+        return "registered"
+    return "failed"
+
+
 def set_wiki_dir(path_str: str) -> None:
     """~/.config/mybookshelf/config.json의 dirs.wiki 갱신 — 앱 재시작 후 적용. (2026-06-11)"""
     f = cfg.CONFIG_FILE
