@@ -651,7 +651,27 @@ _status_details = (t("설정된 AI (연결 상태 아님)") + f": {llm.PROVIDERS
                    + t("AI 구독(CLI)") + ": " + (", ".join(_avail_cli_short) or t("없음")) + "\n"
                    + t("AI API 키") + f": {len(_avail_api_providers)}\n"
                    + t("위키 생성기") + ": " + t("생성 중" if wg_ok else "대기"))
-st.markdown(status_chip(f"{_status_name} · Wiki {_wiki_count}", _status_details), unsafe_allow_html=True)
+
+
+def _priority_names() -> list[str]:
+    """이어받기가 켜져 있으면 1순위 › 2순위 이름. 한도로 쉬는 AI 에는 표시를 붙인다
+    (2026-09-30 연구자 요청 — 둘 다 켜도 위쪽 표시에 하나만 보였다)."""
+    names = []
+    for _p, _m in llm.priority_list():
+        _n = llm.model_label(_p, llm.cli_configured_model(_p) if _m == "default" else _m) or t("기본")
+        if llm.is_exhausted(_p):
+            _n += " (" + t("한도") + ")"
+        names.append(_n)
+    return names
+
+
+_prio_names = _priority_names() if llm.failover_enabled() else []
+if len(_prio_names) > 1:
+    _status_details += "\n" + t("우선순위") + ": " + " › ".join(_prio_names)
+    _chip_ai = " › ".join(_prio_names)
+else:
+    _chip_ai = _status_name
+st.markdown(status_chip(f"{_chip_ai} · Wiki {_wiki_count}", _status_details), unsafe_allow_html=True)
 def _render_cli_install_guide(cli: str) -> None:
     """CLI를 직접 설치하는 명령을 복사 단추가 붙은 칸으로 보여 준다 (2026-09-30).
 
@@ -2170,6 +2190,45 @@ def _settings_engine_id(task: str = "translate") -> str:
     return f"{_wp}:{_wm}" if _wp and _wm else ""
 
 
+def _ai_option_label(opt: str) -> str:
+    """«연결 · 모델» 한 줄 — AI 연결과 모델을 한 칸에서 고른다 (2026-09-30 연구자 요청).
+    opt 는 "provider:model" 문자열(번역 엔진 id 와 같은 꼴)."""
+    p, _, m = str(opt).partition(":")
+    if p not in llm.PROVIDERS:
+        return str(opt)
+    if m == "default":
+        _cfg = llm.cli_configured_model(p)
+        ml = t("CLI 기본 설정 따르기") + (f" ({llm.model_label(p, _cfg)})" if _cfg else "")
+    else:
+        ml = llm.model_label(p, m)
+    return f"{llm.PROVIDERS[p]['label']} · {ml}"
+
+
+def _ai_options(providers) -> list[str]:
+    return [f"{p}:{m}" for p in providers for m in llm.model_choices(p)]
+
+
+def _split_opt(opt: str) -> tuple[str, str]:
+    p, _, m = opt.partition(":")
+    return p, m
+
+
+def _apply_ai_choice(key: str, task: str) -> None:
+    """«AI 연결» 칸을 바꿨을 때 한 번만 저장한다(on_change). ★매 실행마다 «고른 값 ≠
+    저장값이면 저장·rerun»으로 하면, 저장값이 고른 값과 달라지는 경우(지원 안 되는
+    모델 → 기본값)에 화면이 끝없이 다시 그려진다(2026-09-30 테스트에서 발견)."""
+    p, m = _split_opt(st.session_state.get(f"{key}_conn", ""))
+    if not p:
+        return
+    try:
+        if task:
+            llm.set_task_model(task, p, m)
+        else:
+            llm.set_wiki_model(p, m)
+    except ValueError as exc:
+        st.session_state[f"{key}_conn_error"] = str(exc)
+
+
 def _render_model_editor(key: str, task: str = "") -> None:
     current = llm.task_provider_model(task) if task else llm.default_provider_model()
     providers = [p for p in llm.PROVIDERS if llm.has_key(p)
@@ -2185,44 +2244,72 @@ def _render_model_editor(key: str, task: str = "") -> None:
                 llm.set_task_model(task)
                 st.rerun()
             p, m = llm.default_provider_model()
-            st.caption(f"{llm.PROVIDERS[p]['label']} · {m}")
+            st.caption(_ai_option_label(f"{p}:{m}"))
             if task == "ocr" and p not in llm.CLI_PROVIDERS:
                 st.warning(t("이미지 재판독은 CLI 모델을 선택해 주세요."))
             return
-    provider = st.selectbox(t("AI 연결"), providers,
-                            index=providers.index(current[0]) if current[0] in providers else 0,
-                            format_func=lambda p: llm.PROVIDERS[p]["label"], key=f"{key}_provider")
     _stale = llm.unsupported_saved_model(task)
     if _stale:
         st.warning(tf("저장된 모델 «%s»는 이 컴퓨터의 CLI가 지원하는 목록에 없어 «CLI 기본 설정 따르기»로 실행합니다. 목록에서 다시 고르세요.", _stale))
-    choices = llm.model_choices(provider)
-    selected = current[1] if current[0] == provider and current[1] in choices else choices[0]
-    model = st.selectbox(t("모델"), choices, index=choices.index(selected),
-                           format_func=lambda m: t("CLI 기본 설정 따르기") if m == "default" else llm.model_label(provider, m),
-                           key=f"{key}_{provider}_choice",
-                           help=t("이 컴퓨터의 Codex CLI가 지원하는 모델만 보입니다. 실제 사용 권한은 ‘연결·모델 확인’으로 확인하세요.") if provider == "codex_cli" else None)
-    if model == "default":
-        st.caption(t("CLI 설정값") + ": " + (llm.cli_configured_model(provider) or t("실행 시 결정")))
-    save_col, check_col = st.columns(2)
-    if save_col.button(t("모델 적용"), key=f"{key}_save", disabled=not model.strip(), width="stretch"):
-        try:
-            if task:
-                llm.set_task_model(task, provider, model)
-            else:
-                llm.set_wiki_model(provider, model)
-            st.rerun()
-        except ValueError as exc:
-            st.error(str(exc))
-    if check_col.button(t("연결·모델 확인"), key=f"{key}_check", disabled=not model.strip(), width="stretch",
-                        help=t("짧은 요청 1회로 사용 가능 여부를 확인합니다. 사용량이 소모됩니다.")):
+    # ★«AI 연결»과 «모델»을 두 칸으로 나누지 않는다 (2026-09-30 연구자 요청). 예전에는
+    #   연결만 바꾸고 [모델 적용]을 안 누르면 반쯤 바뀐 채 «선택한 AI 연결을 사용할 수
+    #   없습니다»가 떴다. 한 칸에서 고르면 곧바로 저장한다.
+    options = _ai_options(providers)
+    _cur = f"{current[0]}:{current[1]}"
+    if _cur in options:
+        idx = options.index(_cur)
+    else:
+        idx = next((i for i, o in enumerate(options) if _split_opt(o)[0] == current[0]), 0)
+    chosen = st.selectbox(t("AI 연결"), options, index=idx, format_func=_ai_option_label,
+                          key=f"{key}_conn", on_change=_apply_ai_choice, args=(key, task),
+                          help=t("연결과 모델을 함께 고릅니다. 고르면 바로 적용됩니다."))
+    _err = st.session_state.pop(f"{key}_conn_error", "")
+    if _err:
+        st.error(_err)
+    provider, model = _split_opt(chosen)
+    if st.button(t("연결·모델 확인"), key=f"{key}_check", width="stretch",
+                 help=t("짧은 요청 1회로 사용 가능 여부를 확인합니다. 사용량이 소모됩니다.")):
         try:
             with st.spinner(t("확인 중…")):
-                answer = llm.complete(provider, model.strip(), "Reply only OK.", "Connection test.", max_tokens=16)
+                # 이어받기를 거치지 않는다 — 이 AI 자체가 되는지를 봐야 한다.
+                answer = llm._complete_once(provider, model.strip(), "Reply only OK.", "Connection test.",
+                                            max_tokens=16)
             if not answer.strip():
                 raise ValueError(t("모델이 빈 응답을 반환했습니다."))
             st.success(t("선택한 설정으로 응답을 받았습니다."))
         except Exception as exc:
             st.error(t("모델 또는 로그인 설정을 확인하세요.") + " " + str(exc)[-350:])
+
+
+def _render_failover_settings() -> None:
+    """구독 CLI 이어받기 스위치와 2순위 AI (2026-09-30 연구자 요청)."""
+    clis = [p for p in llm.CLI_PROVIDERS if llm.has_key(p)]
+    enabled = llm.failover_enabled()
+    on = st.toggle(t("사용량 한도에 걸리면 다른 구독 AI로 이어받기"), value=enabled and len(clis) >= 2,
+                   key="cli_failover_toggle", disabled=len(clis) < 2,
+                   on_change=lambda: llm.set_failover_enabled(bool(st.session_state.get("cli_failover_toggle"))),
+                   help=t("Claude CLI와 Codex CLI 사이에서만 넘겨받습니다. API 키(쓴 만큼 요금)로는 넘기지 않습니다."))
+    if len(clis) < 2:
+        st.caption(t("Claude CLI와 Codex CLI를 둘 다 켜야 쓸 수 있습니다."))
+        return
+    if not on:
+        return
+    primary = llm.default_provider_model()
+    if primary[0] not in llm.CLI_PROVIDERS:
+        st.caption(t("1순위가 API 키 연결이면 이어받기가 쓰이지 않습니다. 1순위를 구독 CLI로 고르세요."))
+    options = _ai_options([p for p in clis if p != primary[0]])
+    if not options:
+        return
+    _bk = llm.backup_provider_model()
+    current = f"{_bk[0]}:{_bk[1]}" if _bk else ""
+    if current not in options:
+        current = next((o for o in options if _bk and _split_opt(o)[0] == _bk[0]), options[0])
+        llm.set_backup_provider_model(*_split_opt(current))
+    st.selectbox(t("2순위 — 이어받을 AI"), options, index=options.index(current),
+                 format_func=_ai_option_label, key="cli_backup_choice",
+                 on_change=lambda: llm.set_backup_provider_model(
+                     *_split_opt(st.session_state.get("cli_backup_choice", ""))))
+    st.caption(t("이어받는 동안 앞 번역을 견본으로 넘겨 문체와 용어를 맞추고, 이어받은 구간은 번역 결과와 기록에 남깁니다. 한도에 걸린 AI는 1시간 동안 쉬게 합니다."))
 
 
 def _task_model_caption(task: str):
@@ -4220,6 +4307,7 @@ if _active_view == "settings":
         # ── AI 설정은 목록에 넣지 않고 여기서 바로 보여 준다 (연구자 요청) ──
         st.markdown("#### " + t("AI 설정"))
         _render_model_editor("ai_default")
+        _render_failover_settings()
         with st.expander(t("작업별 AI 설정")):
             for _task, _label in (("translate", "번역"), ("summary", "문서요약"),
                                    ("ocr", "이미지 재판독"), ("toc", "목차 판독"), ("cleanup", "자간정리")):

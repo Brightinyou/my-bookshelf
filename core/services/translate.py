@@ -517,7 +517,8 @@ def translate(text: str, engine: str, glossary: dict | None = None,
             _translate_errors_logged.add(sig)
             append_log(msg)
     try:
-        out = llm.complete(provider, model, sys_prompt, text, max_tokens=8192)
+        out = llm.complete(provider, model, sys_prompt, text, max_tokens=8192,
+                           fallback_system_extra=fallback_style_extra(target or target_language()))
         if not (out or "").strip():
             # 예외 없이 빈 응답이 오는 길목 — 예전에는 아무 흔적도 남지 않아
             # 원문 그대로 흘러가는 것만 보였다 (2026-09-07).
@@ -535,6 +536,77 @@ def translate(text: str, engine: str, glossary: dict | None = None,
             raise llm.ModelConfigurationError(
                 f"AI 모델 또는 인증 설정을 확인하세요 [{engine}]: {str(e)[-350:]}") from e
         return None
+
+
+# ─── AI 이어받기 때 문체 맞추기 (2026-09-30 연구자 요청) ─────────────────────
+# 구독 AI 가 한도에 걸려 다른 구독 AI 가 이어받을 때만 쓴다(llm.complete 의
+# fallback_system_extra). 평소 번역 지시문은 그대로다.
+#   · 문체 견본 — 앞에서 번역한 단락 몇 개를 «이 문체를 따르라»로 넘긴다.
+#   · 용어 목록 — 번역문의 «번역어(원어)» 짝(첫 등장 표기)을 모아 같은 번역어를 쓰게 한다.
+#     고유명사뿐 아니라 괄호로 원어를 밝힌 학술 용어도 들어간다.
+# 책이 바뀌면 비우고, 같은 책의 이미 번역된 장에서 다시 채운다.
+_style_samples: list[tuple[str, str]] = []
+_style_terms: dict[str, str] = {}
+_style_scope = ""
+_STYLE_SAMPLE_N = 3
+_STYLE_SAMPLE_CHARS = 700
+# 한 낱말만 — 여러 낱말을 허용하면 앞 낱말의 조사까지 딸려 온다(«레비나스는 타자성(alterity)»
+# → «는 타자성»). 낱말은 줄 머리나 공백·여는 부호 뒤에서 시작해야 한다.
+_TERM_RE = _re.compile(r"(?:(?<=^)|(?<=[\s“\"'‘(]))([가-힣][가-힣·]{0,15})\s?\(([A-Za-z][A-Za-z0-9 .'’\-]{1,48})\)",
+                       _re.M)
+
+
+def collect_terms(translated: str) -> dict[str, str]:
+    """번역문에서 «번역어(원어)» 짝을 모은다. {원어: 번역어}, 먼저 나온 것이 이긴다."""
+    terms: dict[str, str] = {}
+    for ko, src in _TERM_RE.findall(translated or ""):
+        src = src.strip(" .'’-")
+        if len(src) >= 2 and src not in terms:
+            terms[src] = ko.strip()
+    return terms
+
+
+def style_memory_reset(scope: str, seed_translations: list[str] | tuple = ()) -> None:
+    """scope(책)가 바뀌면 견본·용어를 비우고, 그 책의 이미 번역된 글에서 다시 채운다."""
+    global _style_scope
+    if scope == _style_scope:
+        return
+    _style_scope = scope
+    _style_samples.clear()
+    _style_terms.clear()
+    for text in seed_translations:
+        for src, ko in collect_terms(text).items():
+            _style_terms.setdefault(src, ko)
+        paras = [p.strip() for p in (text or "").split("\n\n") if len(p.strip()) > 120]
+        for p in paras[:_STYLE_SAMPLE_N]:
+            if len(_style_samples) < _STYLE_SAMPLE_N:
+                _style_samples.append(("", p[:_STYLE_SAMPLE_CHARS]))
+
+
+def style_memory_add(src: str, translated: str) -> None:
+    """번역에 성공한 단락을 견본·용어에 보탠다(짧은 제목 등은 견본으로 쓰지 않는다)."""
+    for s, ko in collect_terms(translated).items():
+        _style_terms.setdefault(s, ko)
+    if len((translated or "").strip()) > 120:
+        _style_samples.append((src[:_STYLE_SAMPLE_CHARS], translated.strip()[:_STYLE_SAMPLE_CHARS]))
+        del _style_samples[:-_STYLE_SAMPLE_N]
+
+
+def fallback_style_extra(target: str = "") -> str:
+    """이어받은 AI 에게 줄 지시 — 견본·용어가 없으면 빈 문자열."""
+    if not _style_samples and not _style_terms:
+        return ""
+    tgt_name = langdetect.name(target or target_language(), "en") or "Korean"
+    parts = ["Earlier parts of this same document were translated by another model. "
+             f"Keep the {tgt_name} wording, tone and sentence style consistent with them."]
+    if _style_terms:
+        pairs = "; ".join(f"{s} = {ko}" for s, ko in list(_style_terms.items())[-120:])
+        parts.append("Use exactly these established renderings (write the target form only, "
+                     "without repeating the original in parentheses): " + pairs)
+    if _style_samples:
+        parts.append("Style samples of the earlier translation (do not translate or repeat them):\n"
+                     + "\n---\n".join(ko for _src, ko in _style_samples))
+    return "\n".join(parts)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1060,6 +1132,16 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                                   regions=planner.load_layout(ch_path))
         paras = [unit["text"] for unit in plan["units"]]
         _save_json_atomic(audit_path, plan)
+        # 이어받기 대비 문체 기억 — 같은 책의 이미 번역된 장으로 채운다(책이 바뀔 때만).
+        _seeds = []
+        for _other in sorted(ch_path.parent.glob(f"??_*{_suf}.txt")):
+            if _other.name != ko_path.name:
+                try:
+                    _seeds.append(_other.read_text(encoding="utf-8")[:20000])
+                except OSError:
+                    pass
+        style_memory_reset(str(ch_path.parent), _seeds)
+        switches: list[dict] = []          # 다른 구독 AI 가 이어받은 구간
         out: list[str] = []
         bilingual_pairs: list[tuple[str, str]] = []  # (원문, 번역) — dropped 단락은 제외(out과 동일 기준)
         translated_n = preserved_n = dropped_n = failed_n = resumed_n = api_calls = 0
@@ -1159,12 +1241,28 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                 except llm.ModelConfigurationError as exc:
                     ko, fatal_error = None, str(exc)
                 api_calls += 1
+                _used = llm.last_call()
                 if _translation_is_valid(p, ko, _target):
                     out.append(ko)
                     bilingual_pairs.append((p, ko))
                     translated_n += 1
                     fail_streak = 0
                     cached_rows[idx] = {"idx": idx, "src": p, "tgt": ko, "status": "translated"}
+                    style_memory_add(p, ko)
+                    if _used.get("switched_from"):
+                        # 어느 단락부터 어느 AI 가 이어받았는지 남긴다 — 한도가 풀리면
+                        # 그 구간만 원래 AI 로 다시 번역할 수 있게 (2026-09-30).
+                        cached_rows[idx]["ai"] = f"{_used['provider']}:{_used['model']}"
+                        _seg = switches[-1] if switches else None
+                        if (_seg and _seg["to"] == _used["provider"]
+                                and _seg["from"] == _used["switched_from"] and _seg["last"] == idx - 1):
+                            _seg["last"] = idx
+                        else:
+                            switches.append({"from": _used["switched_from"], "to": _used["provider"],
+                                             "model": _used["model"], "first": idx, "last": idx})
+                            append_log(f"AI 이어받기 — {ch_path.name} {idx}단락부터 "
+                                       f"{llm.PROVIDERS[_used['provider']]['label']} "
+                                       f"({llm.PROVIDERS[_used['switched_from']]['label']} 사용량 한도)")
                 else:
                     out.append(p)
                     bilingual_pairs.append((p, p))
@@ -1194,6 +1292,10 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             detail += f" · 삭제 {dropped_n}"
         if plan["removed"]:
             detail += f" · 반복 머리글 분리 {len(plan['removed'])}줄"
+        if switches:
+            detail += " · 이어받음 " + ", ".join(
+                f"{llm.PROVIDERS[sw['to']]['label']} {sw['first']}~{sw['last']}단락" for sw in switches)
+        _switch_info = {"ai_switches": switches} if switches else {}
         plan["results"] = [cached_rows[i] for i in sorted(cached_rows)]
         _save_json_atomic(audit_path, plan)
         _save_progress()
@@ -1206,6 +1308,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                 "target": _target, "total": total, "translated": translated_n,
                 "failed": failed_n, "pending": max(0, total - done_n), "stopped": True,
                 "cache_version": planner.VERSION,
+                **_switch_info,
             })
             append_log(f"번역 중단 요청 — {ch_path.name} ({done_n}/{total}단락까지 하고 멈춤)")
             return False, (f"중단됨: 번역 {translated_n}/{total}"
@@ -1227,6 +1330,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                 "failed": failed_n, "pending": max(0, total - idx), "error": fatal_error,
                 "blocked": bool(fatal_error),
                 "cache_version": planner.VERSION,
+                **_switch_info,
             })
             return False, (f"부분완료: 번역 {translated_n}/{total} · 실패 {failed_n} — "
                            + (fatal_error or "다시 시작하면 성공한 문단은 재사용합니다"))
@@ -1251,7 +1355,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         progress_path.unlink(missing_ok=True)
         _save_json_atomic(status_path, {"state": "complete", "engine": engine,
                                       "target": _target, "total": total, "failed": 0,
-                                      "cache_version": planner.VERSION})
+                                      "cache_version": planner.VERSION, **_switch_info})
         return True, detail
     except Exception as e:
         if "status_path" in locals():
