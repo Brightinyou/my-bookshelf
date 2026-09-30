@@ -1,4 +1,6 @@
 """AI 연결을 설치에서 앱 첫 화면으로 옮긴 것 (2026-09-30)."""
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 import codecs
 import sys

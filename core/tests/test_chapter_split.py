@@ -10,6 +10,8 @@
   · **본문 글자는 하나도 잃지 않는다** — 앞뒤를 도로 이으면 원문과 같다.
   · 후보 줄은 '제목처럼 생긴 줄'이고, 검색어로 좁힐 수 있다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import shutil
 import tempfile
 import unittest

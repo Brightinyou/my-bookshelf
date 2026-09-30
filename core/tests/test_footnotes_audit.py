@@ -10,6 +10,8 @@
 ★**고치지 않고 알리기만 한다.** 빠진 자리를 자동으로 메우려면 각주가 어디서 끝나고
 본문이 어디서 다시 시작하는지 알아야 하는데 그건 확신할 수 없는 판단이다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 from services import footnotes as fn

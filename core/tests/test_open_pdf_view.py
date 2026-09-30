@@ -9,6 +9,8 @@
 바뀌면 옮겨 다니지만 `com.apple.Preview`는 그대로다.
 ★미리보기가 안 되면 **조용히 기본 앱으로 내려간다** — 창이 안 뜨는 것보다 낫다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import subprocess
 import unittest
 from pathlib import Path

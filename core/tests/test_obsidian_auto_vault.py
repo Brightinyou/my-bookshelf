@@ -3,6 +3,8 @@
 설정 창은 옵시디언을 깔기만 해서 obsidian.json 이 없었고, 옵시디언을 열면 «새 보관함
 만들기» 화면이 떠 우리 노트를 못 찾았다(Windows Sandbox 실측).
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 from unittest import mock
 import json

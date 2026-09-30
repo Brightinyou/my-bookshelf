@@ -7,6 +7,8 @@
   · − 는 앞 장에 합치고, ＋ 는 쪽 번호가 붙은 후보에서 골라 새 장을 끼워 넣는다.
   · 절 제목 장은 표시되고 한 단추로 모두 합쳐진다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import shutil
 import tempfile
 import unittest

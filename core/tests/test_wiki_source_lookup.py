@@ -17,6 +17,8 @@
   · find_txt는 지금 쓰는 폴더에서 찾는다.
   · 부른 쪽이 파일 경로를 건네주면 process_book은 이름으로 다시 찾지 않는다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import shutil
 import tempfile
 import unittest

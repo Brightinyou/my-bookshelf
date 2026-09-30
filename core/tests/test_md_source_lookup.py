@@ -16,6 +16,8 @@
   · find_md는 지금 쓰는 1_txt/에서 먼저 찾는다 — find_txt와 같은 순서로.
   · 분할이 끝나 1_txt/완료/로 옮겨진 뒤에도 찾는다(_archive_split_source가 .md도 옮긴다).
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import shutil
 import tempfile
 import unittest

@@ -4,6 +4,8 @@
 본문 숫자를 잘못 각주로 바꾸면 되돌릴 수 없다. 그래서 '안 바꾸는 것'을 지키는
 시험이 '바꾸는 것'을 지키는 시험만큼 중요하다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import re
 import unittest
 

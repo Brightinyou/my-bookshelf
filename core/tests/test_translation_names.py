@@ -9,6 +9,8 @@
   · **이미 만들어 둔 `_ko.txt`는 계속 찾아진다** — 도착언어를 바꿔도 예전
     번역본이 사라지면 안 된다(실제로 47챕터가 그 이름으로 저장돼 있다).
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import tempfile
 import unittest
 from pathlib import Path

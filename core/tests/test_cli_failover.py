@@ -3,6 +3,8 @@
 한 구독 AI 가 사용량 한도에 걸리면 켜 둔 다른 구독 AI 로 같은 요청을 넘긴다. API 키로는
 넘기지 않는다. 이어받을 때만 앞 번역 견본·용어 목록을 지시문에 붙인다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 from unittest import mock
 import json

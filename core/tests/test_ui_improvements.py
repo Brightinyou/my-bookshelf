@@ -1,4 +1,6 @@
 """Real Streamlit render/rerun checks; use a disposable MYBOOKSHELF_CONFIG_DIR."""
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 import os
 import threading

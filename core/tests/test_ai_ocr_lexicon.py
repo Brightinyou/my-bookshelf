@@ -9,6 +9,8 @@
 
 ★어휘는 **후보를 고르는 데만** 쓴다. 만드는 데 쓰면 `망원경`이 `바벨탑`이 된다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 from services import ai_ocr

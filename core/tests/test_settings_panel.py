@@ -15,6 +15,8 @@
   · 위젯 key는 파일 전체에서 겹치지 않는다 (같은 화면이 두 벌 남으면 여기서 걸린다).
   · 폴더 편집기가 저장하는 세션 키는 `_current_*_dir()`이 읽는 그 이름이어야 한다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import collections
 import re
 import unittest

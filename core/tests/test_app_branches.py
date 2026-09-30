@@ -9,6 +9,8 @@
 여기서 못 박는 것: 「AI 없음」 경고 뒤에는 반드시 `else:` 가 오거나, 경고 블록이
 곧바로 끝나야 한다 — 본문이 경고와 같은 블록에 딸려 들어가면 안 된다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import re
 import unittest
 from pathlib import Path

@@ -8,6 +8,8 @@
 ★이 파일이 지키려는 것은 «떼어내는 것»만이 아니다. 잘못 떼어낸 본문은 되찾을 수
 없으므로 «안 떼는 것»을 지키는 시험을 같은 수로 둔다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 from services import footnotes
