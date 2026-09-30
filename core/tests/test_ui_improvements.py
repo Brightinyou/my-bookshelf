@@ -122,9 +122,11 @@ class UIImprovementsTest(unittest.TestCase):
              patch.object(llm, "codex_model_catalog", return_value={"account-model": "Account Model"}):
             self.app.run()
             self.assertFalse(any(x.label == "모델 ID" for x in self.app.text_input))
-            self.assertNotIn("모델 ID 직접 입력", self.app.selectbox(key="ai_default_codex_cli_choice").options)
-            self.app.selectbox(key="ai_default_codex_cli_choice").select("account-model").run()
-            self.app.button(key="ai_default_save").click().run()
+            # 연결과 모델을 한 칸에서 고르고, 고르면 바로 저장한다 (2026-09-30).
+            box = self.app.selectbox(key="ai_default_conn")
+            self.assertFalse(any("모델 ID 직접 입력" in o for o in box.options))
+            idx = next(i for i, o in enumerate(box.options) if o.endswith("· Account Model"))
+            box.select_index(idx).run()
             save.assert_called_once_with("codex_cli", "account-model")
             self.assertFalse(self.app.exception)
 

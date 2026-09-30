@@ -521,8 +521,8 @@ def set_codex_cli_enabled(enabled: bool) -> None:
 
 
 # ── 통일 호출: text-in → text-out ──
-def complete(provider: str, model: str, system: str, prompt: str,
-             max_tokens: int = 8192, api_key: str | None = None) -> str:
+def _complete_once(provider: str, model: str, system: str, prompt: str,
+                   max_tokens: int = 8192, api_key: str | None = None) -> str:
     """선택 공급자/모델로 1회 완성. 키 없거나 호출 실패하면 예외를 던진다."""
     if provider == "claude_cli":
         return _claude_cli(model, system, prompt)
@@ -647,8 +647,8 @@ def _strip_fence(t: str) -> str:
     return t
 
 
-def complete_json(provider: str, model: str, system: str, prompt: str,
-                  max_tokens: int = 16384, api_key: str | None = None, retries: int = 5) -> dict:
+def _complete_json_once(provider: str, model: str, system: str, prompt: str,
+                        max_tokens: int = 16384, api_key: str | None = None, retries: int = 5) -> dict:
     """JSON 출력 통일(공급자별 JSON 모드). 위키 생성용. 실패 시 재시도(429는 65초)."""
     if provider in ("claude_cli", "codex_cli"):
         # API 키 불필요 — CLI 구독 사용. 재시도 루프에서 처리.
@@ -699,7 +699,141 @@ def complete_json(provider: str, model: str, system: str, prompt: str,
             last = e
             if attempt >= retries - 1:
                 raise
+            if provider in CLI_PROVIDERS and failover_enabled() and usage_limit_error(e):
+                raise          # 65초씩 기다리지 말고 곧장 다른 구독 AI로 (아래 complete_json)
             m = str(e).lower()
             is_429 = "429" in m or "resource_exhausted" in m or "rate_limit" in m or "overloaded" in m
             time.sleep(65 if is_429 else 4)
     raise last
+
+
+# ─── 구독 CLI 이어받기 (2026-09-30 연구자 요청) ──────────────────────────
+# 한 구독 AI(Claude CLI·Codex CLI)가 사용량 한도에 걸리면 켜 둔 다른 구독 AI로 같은
+# 요청을 다시 보내 이어서 처리한다. API 키(쓴 만큼 요금)로는 넘기지 않는다.
+# 한도에 걸린 AI 는 한동안 «쉬는 중»으로 두어 단락마다 다시 두드리지 않는다.
+FAILOVER_COOLDOWN = 60 * 60
+_exhausted: dict[str, float] = {}           # provider → 다시 써 볼 시각
+_exhausted_lock = threading.Lock()
+_call = threading.local()                   # 이 스레드의 마지막 호출: 실제로 답한 AI
+_last_switch: dict = {}
+
+
+def failover_enabled() -> bool:
+    return bool(get_pref("cli_failover", False))
+
+
+def set_failover_enabled(enabled: bool) -> None:
+    set_pref("cli_failover", bool(enabled))
+
+
+def backup_provider_model() -> tuple[str, str] | None:
+    """2순위(이어받을) 구독 AI. 저장 형식 {"provider":…, "model":…}."""
+    raw = get_pref("cli_backup", None)
+    if isinstance(raw, dict) and raw.get("provider") in CLI_PROVIDERS and raw.get("model"):
+        return raw["provider"], supported_model(raw["provider"], raw["model"])
+    return None
+
+
+def set_backup_provider_model(provider: str, model: str) -> None:
+    if provider not in CLI_PROVIDERS:
+        raise ValueError("이어받을 AI 는 구독 CLI 만 고를 수 있습니다")
+    set_pref("cli_backup", {"provider": provider, "model": _validate_model(provider, model)})
+
+
+def priority_list() -> list[tuple[str, str]]:
+    """화면에 보일 순서: 1순위(기본 AI), 이어받기가 켜져 있으면 2순위."""
+    order = [default_provider_model()]
+    backup = backup_provider_model() if failover_enabled() else None
+    if backup and backup[0] != order[0][0]:
+        order.append(backup)
+    return order
+
+
+def mark_exhausted(provider: str, seconds: int = FAILOVER_COOLDOWN) -> None:
+    with _exhausted_lock:
+        _exhausted[provider] = time.time() + seconds
+
+
+def is_exhausted(provider: str) -> bool:
+    with _exhausted_lock:
+        until = _exhausted.get(provider, 0)
+        if until and until <= time.time():
+            _exhausted.pop(provider, None)
+            return False
+        return bool(until)
+
+
+def failover_candidates(failed_provider: str) -> list[tuple[str, str]]:
+    """failed_provider 대신 쓸 구독 AI — 우선순위대로, 켜져 있고 쉬는 중이 아닌 것."""
+    out: list[tuple[str, str]] = []
+    for prov, model in (default_provider_model(), backup_provider_model()):
+        if not prov or prov == failed_provider or prov not in CLI_PROVIDERS:
+            continue
+        if not has_key(prov) or is_exhausted(prov) or any(p == prov for p, _ in out):
+            continue
+        out.append((prov, model))
+    return out
+
+
+def last_call() -> dict:
+    """이 스레드의 마지막 complete/complete_json 이 실제로 쓴 AI.
+    {"provider", "model", "switched_from"(이어받았으면 원래 AI, 아니면 "")}"""
+    return dict(getattr(_call, "info", {}) or {})
+
+
+def last_switch() -> dict:
+    """가장 최근의 이어받기 {"from", "to", "at"} — 화면 표시용."""
+    return dict(_last_switch)
+
+
+def _with_failover(provider: str, model: str, run, fallback_system_extra: str = ""):
+    """run(provider, model, extra) 를 부르고, 구독 CLI 가 한도에 걸리면 다른 구독 CLI 로."""
+    _call.info = {"provider": provider, "model": model, "switched_from": ""}
+    use_failover = provider in CLI_PROVIDERS and failover_enabled()
+    if not (use_failover and is_exhausted(provider)):
+        try:
+            return run(provider, model, "")
+        except Exception as e:
+            if not (use_failover and usage_limit_error(e)):
+                raise
+            mark_exhausted(provider)
+            first_error = e
+    else:
+        first_error = RuntimeError(f"{provider} 사용량 한도 — 쉬는 중")
+    for alt, alt_model in failover_candidates(provider):
+        try:
+            result = run(alt, alt_model, fallback_system_extra)
+        except Exception as e:
+            if usage_limit_error(e):
+                mark_exhausted(alt)
+                continue
+            raise
+        _call.info = {"provider": alt, "model": alt_model, "switched_from": provider}
+        if _last_switch.get("from") != provider or _last_switch.get("to") != alt:
+            _last_switch.update({"from": provider, "to": alt, "at": time.time()})
+        return result
+    raise first_error
+
+
+def complete(provider: str, model: str, system: str, prompt: str,
+             max_tokens: int = 8192, api_key: str | None = None,
+             fallback_system_extra: str = "") -> str:
+    """선택 공급자/모델로 1회 완성. 키 없거나 호출 실패하면 예외를 던진다.
+    이어받기가 켜져 있으면 구독 CLI 의 사용량 한도에서 다른 구독 CLI 로 넘긴다 —
+    그때만 fallback_system_extra(앞 번역 견본·용어 목록 등)를 지시문 끝에 붙인다."""
+    def run(p, m, extra):
+        return _complete_once(p, m, system + (("\n\n" + extra) if extra else ""), prompt,
+                              max_tokens=max_tokens, api_key=api_key)
+    return _with_failover(provider, model, run, fallback_system_extra)
+
+
+def complete_json(provider: str, model: str, system: str, prompt: str,
+                  max_tokens: int = 16384, api_key: str | None = None, retries: int = 5,
+                  fallback_system_extra: str = "") -> dict:
+    """JSON 출력 통일(공급자별 JSON 모드). 위키 생성용. 실패 시 재시도(429는 65초).
+    구독 CLI 한도는 기다리지 않고 이어받는다(이어받기가 켜져 있을 때)."""
+    def run(p, m, extra):
+        sys_text = ((system or "Output only one valid JSON object.") + "\n\n" + extra) if extra else system
+        return _complete_json_once(p, m, sys_text, prompt,
+                                   max_tokens=max_tokens, api_key=api_key, retries=retries)
+    return _with_failover(provider, model, run, fallback_system_extra)
