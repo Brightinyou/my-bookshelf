@@ -1,5 +1,5 @@
 ﻿#define MyAppName           "My Bookshelf"
-#define MyAppVersion        "1.5.0"
+#define MyAppVersion        "1.5.1"
 
 [Setup]
 AppId={{3F8A9C12-B47D-4E21-A56F-82C310D4F1AB}
