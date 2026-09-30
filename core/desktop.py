@@ -437,6 +437,102 @@ def _popup_args(argv: list[str]) -> tuple[str, str] | None:
     return argv[i + 1], title
 
 
+# ─── WebView2 (2026-09-30) ──────────────────────────────────────────────
+# pywebview 는 WebView2 가 없으면 옛 IE 엔진(mshtml)으로 떨어지는데, 그것은
+# Streamlit 화면을 그리지 못해 **아무 안내 없는 빈 창**이 된다(Windows Sandbox
+# 실측 — Edge·WebView2 가 없는 윈도우). 설치 프로그램이 부트스트래퍼로 깔지만,
+# 오프라인 등으로 실패했을 때를 위해 앱도 확인하고 기본 브라우저로 대신 연다.
+WEBVIEW2_GUID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+WEBVIEW2_DOWNLOAD = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+
+
+def _read_reg_pv(hive: str, path: str) -> str:
+    import winreg
+    root = {"HKLM": winreg.HKEY_LOCAL_MACHINE, "HKCU": winreg.HKEY_CURRENT_USER}[hive]
+    # 32·64비트 보기를 모두 본다 — 설치 스크립트(HKLM32·HKLM64)와 맞춘다.
+    for view in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+        try:
+            with winreg.OpenKey(root, path, 0, winreg.KEY_READ | view) as k:
+                pv = str(winreg.QueryValueEx(k, "pv")[0] or "")
+                if pv:
+                    return pv
+        except OSError:
+            continue
+    return ""
+
+
+def webview2_version(read_pv=None) -> str:
+    """설치된 WebView2 런타임 버전, 없으면 "". MS 공식 판정법 — EdgeUpdate\\Clients
+    의 pv 값이 비었거나 0.0.0.0 이면 미설치. 기계 단위(HKLM, WOW6432Node)와 사용자
+    단위(HKCU)를 모두 본다. 설치 프로그램이 관리자 권한 없이 돌면 HKCU 에 깔린다."""
+    read_pv = read_pv or _read_reg_pv
+    for hive, path in (
+        ("HKLM", rf"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_GUID}"),
+        ("HKLM", rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_GUID}"),
+        ("HKCU", rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_GUID}"),
+    ):
+        try:
+            pv = (read_pv(hive, path) or "").strip()
+        except Exception:
+            pv = ""
+        if pv and pv != "0.0.0.0":
+            return pv
+    return ""
+
+
+def _no_webview2_message(url: str) -> str:
+    # 주소도 적는다 — 브라우저가 아예 없는 PC 에서는 «열었습니다»가 거짓이 된다
+    # (2026-09-30 오프라인 Sandbox 실측: Windows 가 «'http' 링크를 열 수 없습니다»를 띄움).
+    try:
+        from services.i18n import get_lang
+        ko = get_lang() == "ko"
+    except Exception:
+        ko = True
+    if ko:
+        return ("이 컴퓨터에는 앱 창을 그리는 Microsoft WebView2 가 없어서 "
+                "My Bookshelf 를 기본 브라우저에서 열었습니다.\n"
+                f"열리지 않았으면 브라우저 주소창에 다음 주소를 입력하세요:\n{url}\n\n"
+                "이 안내 창을 닫으면 My Bookshelf 가 종료됩니다. 쓰는 동안에는 열어 두세요.\n\n"
+                f"WebView2 를 설치하면 다음부터 앱 창으로 열립니다:\n{WEBVIEW2_DOWNLOAD}")
+    return ("Microsoft WebView2, which draws the app window, is not installed on this "
+            "computer, so My Bookshelf opened in your default browser.\n"
+            f"If it did not open, type this address in your browser's address bar:\n{url}\n\n"
+            "Closing this message quits My Bookshelf. Keep it open while you work.\n\n"
+            f"Install WebView2 to use the app window next time:\n{WEBVIEW2_DOWNLOAD}")
+
+
+def _open_in_browser(url: str) -> bool:
+    try:
+        import webbrowser
+        return bool(webbrowser.open(url))
+    except Exception:
+        return False
+
+
+def _pywebview_renderer() -> str | None:
+    """pywebview 가 실제로 고를 엔진("edgechromium"|"mshtml"|"cef"). 못 알면 None.
+
+    ★레지스트리만 보면 안 된다 (2026-09-30 맥 세션 검토). pywebview 는 .NET 4.6.2
+    이상인지, WebView2 Beta·Dev·Canary 채널까지 보고 고른다. 우리 판정이 어긋나면
+    WebView2 로 잘 그려질 PC 까지 브라우저로 떨어진다 — 지금보다 나빠지는 쪽이다.
+    그래서 빈 창의 직접 원인인 «mshtml 로 떨어짐»을 pywebview 에게 그대로 묻는다."""
+    try:
+        from webview.platforms import winforms
+        return str(winforms.renderer)
+    except Exception:
+        return None
+
+
+def _needs_browser_fallback() -> bool:
+    if sys.platform != "win32":
+        return False
+    renderer = _pywebview_renderer()
+    if renderer is not None:
+        return renderer == "mshtml"
+    # pywebview 를 못 불러오면 창은 어차피 못 뜬다 — WebView2 도 없으면 브라우저로.
+    return not webview2_version()
+
+
 def run_popup(url: str, title: str) -> int:
     """앱의 한 화면을 **별도의 넓은 창**으로 띄운다 (2026-09-21 연구자 요청).
 
@@ -447,6 +543,8 @@ def run_popup(url: str, title: str) -> int:
 
     본창을 만드는 main()과 달리 옛 서버를 죽이지도, 새 서버를 띄우지도 않는다 —
     그랬다가는 본창이 붙어 있는 서버가 끊긴다."""
+    if _needs_browser_fallback():
+        return 0 if _open_in_browser(url) else 1     # 본창과 같이 브라우저 탭으로
     try:
         import webview
     except ImportError as exc:
@@ -466,6 +564,39 @@ def run_popup(url: str, title: str) -> int:
         return 0
     except Exception:
         return _fail("The popup window could not be created.", traceback.format_exc())
+
+
+def _stop_server(proc) -> None:
+    """창 닫기(X) 시 서버를 확실히 종료한다. Popen 핸들 하나만 정리하면
+    streamlit이 띄운 자식 프로세스가 남을 수 있어, 커맨드라인 기준으로도
+    한 번 더 정리한다 (기본 동작, 2026-07-25)."""
+    if proc and proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    _kill_all_streamlit_procs()
+
+
+def _run_in_browser(url: str, proc) -> int:
+    """WebView2 없이 — 기본 브라우저로 열고, 안내 창이 떠 있는 동안 서버를 살려 둔다.
+    안내 창을 닫으면 창을 닫은 것과 같이 서버를 끈다."""
+    try:
+        if not _open_in_browser(url):
+            return _fail("The desktop window could not be created.",
+                         "Microsoft WebView2 is missing and the browser did not open.\n"
+                         f"Open {url} manually or install WebView2: {WEBVIEW2_DOWNLOAD}")
+        _write_launch_log("Microsoft WebView2 is missing - opened in the default browser.", url)
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, _no_webview2_message(url), APP_TITLE, 0x40)
+        except Exception:
+            while proc and proc.poll() is None:      # 안내 창을 못 띄우면 서버가 끝날 때까지
+                time.sleep(1)
+        return 0
+    finally:
+        _stop_server(proc)
 
 
 def main() -> int:
@@ -515,6 +646,10 @@ def main() -> int:
             "The app server did not start in time.",
             "Run setup.bat again or check whether security software blocked Python.",
         )
+
+    # WebView2 가 없으면 창이 비어 버린다 — 기본 브라우저로 대신 연다 (2026-09-30).
+    if _needs_browser_fallback():
+        return _run_in_browser(url, proc)
 
     # Compact UI: 380×600 minimum, 480×760 initial size. Restore the last size,
     # clamped to the current display so unplugging a monitor cannot hide the window.
@@ -621,16 +756,7 @@ def main() -> int:
             traceback.format_exc(),
         )
     finally:
-        # 창 닫기(X) 시 서버를 확실히 종료한다. Popen 핸들 하나만 정리하면
-        # streamlit이 띄운 자식 프로세스가 남을 수 있어, 커맨드라인 기준으로도
-        # 한 번 더 정리한다 (기본 동작, 2026-07-25).
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-        _kill_all_streamlit_procs()
+        _stop_server(proc)
 
 
 if __name__ == "__main__":
