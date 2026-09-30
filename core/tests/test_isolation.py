@@ -15,6 +15,11 @@ class IsolationTest(unittest.TestCase):
         for path in (cfg.CONFIG_DIR, cfg.BASE_DIR, cfg.CHAPTERS_DIR, cfg.WIKI_DIR, llm.KEYS_FILE):
             self.assertTrue(Path(path).resolve().is_relative_to(root), path)
 
+    def test_obsidian_vault_list_lives_in_temp_root(self):
+        from services import wiki
+        self.assertTrue(wiki._obsidian_config().resolve().is_relative_to(_isolation.ROOT.resolve()),
+                        wiki._obsidian_config())
+
     def test_every_test_module_imports_isolation_first(self):
         here = Path(__file__).resolve().parent
         for p in sorted(here.glob("test_*.py")):

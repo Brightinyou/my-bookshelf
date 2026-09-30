@@ -37,6 +37,9 @@ if not os.environ.get(_FLAG):
         json.dumps({"base_dir": str(ROOT / "data")}, ensure_ascii=False), encoding="utf-8")
     os.environ[_FLAG] = str(ROOT)
     os.environ["MYBOOKSHELF_CONFIG_DIR"] = str(ROOT / "config")
+    # 옵시디언 보관함 목록(%APPDATA%\obsidian\obsidian.json)도 — 보관함 자동 등록이
+    # 실제 목록에 시험 보관함을 적지 않게 (2026-09-30).
+    os.environ["MYBOOKSHELF_OBSIDIAN_CONFIG"] = str(ROOT / "obsidian" / "obsidian.json")
     os.environ.pop("MYBOOKSHELF_WIKI_DIR", None)
     atexit.register(shutil.rmtree, ROOT, True)
 else:
