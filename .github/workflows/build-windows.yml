@@ -22,7 +22,7 @@ env:
 jobs:
   build-installer:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     permissions:
       contents: write
 
@@ -47,9 +47,87 @@ jobs:
         run: ./dev/installer/fetch-poppler.ps1
         shell: pwsh
 
+      # 동봉 파이썬 런타임 — 받는 PC에서 python.org·pip 설치를 없앤다 (2026-09-29).
+      - name: Fetch bundled Python runtime
+        run: ./dev/installer/fetch-runtime.ps1
+        shell: pwsh
+
       - name: Build installer
         run: iscc "dev\installer\MyBookshelf.iss"
         shell: cmd
+
+      # ★이 러너는 매번 새 윈도우다 — 받는 사람의 새 PC에 가장 가깝다.
+      #   만든 Setup.exe 를 실제로 무음 설치하고, 설치된 .venv 로 앱이 뜨는지 본다.
+      #   러너에도 파이썬이 깔려 있으므로 .venv 의 base 가 동봉 runtime 인지까지 확인한다.
+      - name: Smoke test - silent install on a clean runner
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "My Bookshelf"
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process "dist\windows\Setup.exe" -Wait -PassThru -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+            "/DIR=`"$dir`"", "/LOG=`"$env:RUNNER_TEMP\setup.log`"")
+          Write-Host "Setup exit=$($p.ExitCode) in $([int]$sw.Elapsed.TotalSeconds)s"
+          if (Test-Path "$dir\install.log") { Get-Content "$dir\install.log" }
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\setup.log" -Tail 40; throw "Setup failed" }
+
+          $py = "$dir\.venv\Scripts\python.exe"
+          & $py -c "import sys, streamlit, webview, clr, tkinter, pandas, pypdfium2, rhwp, hwpx; print('base_prefix', sys.base_prefix); assert sys.base_prefix.lower().endswith('runtime'), sys.base_prefix; print('imports OK')"
+          if ($LASTEXITCODE) { throw "bundled runtime imports failed" }
+          if (-not (Test-Path "$dir\.venv\Scripts\MyBookshelf.exe")) { throw "MyBookshelf.exe was not prepared" }
+
+          # ★바로가기가 실제로 여는 MyBookshelf.exe 로도 띄운다 (2026-09-30 PC 실측).
+          #   python.exe(venv 중계)는 동봉 runtime 의 DLL 을 찾아가지만, Scripts 로 복사한
+          #   MyBookshelf.exe 는 옆에 python3xx.dll 이 없으면 PATH 의 다른 파이썬 DLL 을
+          #   불러와 «No module named 'webview'» 로 멈췄다. PATH 에서 파이썬을 모두 빼고,
+          #   pythonw 복사본이라 표준출력이 없으므로 결과는 파일로 받는다.
+          $probe = "$env:RUNNER_TEMP\own-exe.txt"
+          $savedPath = $env:Path
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          $own = Start-Process "$dir\.venv\Scripts\MyBookshelf.exe" -PassThru -ArgumentList @(
+            "-c", "`"import sys, webview, streamlit; open(r'$probe','w').write(sys.base_prefix)`"")
+          $env:Path = $savedPath
+          # DLL 을 못 찾으면 윈도우가 오류 창을 띄워 놓고 기다린다 — 끝없이 기다리지 않는다.
+          if (-not $own.WaitForExit(60000)) {
+            Stop-Process -Id $own.Id -Force -ErrorAction SilentlyContinue
+            throw "MyBookshelf.exe hung (missing python DLL dialog?)"
+          }
+          $base = Get-Content $probe -ErrorAction SilentlyContinue
+          Write-Host "MyBookshelf.exe exit=$($own.ExitCode) base_prefix=$base"
+          if ($own.ExitCode -ne 0 -or -not "$base".ToLower().EndsWith("runtime")) { throw "MyBookshelf.exe did not start on the bundled runtime" }
+
+          $srv = Start-Process $py -PassThru -WindowStyle Hidden -WorkingDirectory $dir `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\st.out" -RedirectStandardError "$env:RUNNER_TEMP\st.err" -ArgumentList @(
+            "-m", "streamlit", "run", "`"$dir\core\pipeline_app.py`"",
+            "--server.port", "8765", "--server.address", "127.0.0.1", "--server.headless", "true",
+            "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false")
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            try { if ((Invoke-WebRequest "http://127.0.0.1:8765/_stcore/health" -UseBasicParsing -TimeoutSec 2).Content -eq "ok") { $ok = $true; break } } catch {}
+            Start-Sleep 1
+          }
+          Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) {
+            Write-Host "--- streamlit stdout ---"; Get-Content "$env:RUNNER_TEMP\st.out" -ErrorAction SilentlyContinue
+            Write-Host "--- streamlit stderr ---"; Get-Content "$env:RUNNER_TEMP\st.err" -ErrorAction SilentlyContinue
+            throw "streamlit server did not come up"
+          }
+          Write-Host "server health ok after ${i}s"
+
+          $env:PYTHONIOENCODING = "utf-8"
+          & $py -c "from streamlit.testing.v1 import AppTest; at = AppTest.from_file(r'$dir\core\pipeline_app.py', default_timeout=180).run(); [print(e.value[:400]) for e in at.exception]; print('page exceptions', len(at.exception)); raise SystemExit(1 if at.exception else 0)"
+          if ($LASTEXITCODE) { throw "first page raised" }
+          "INSTALLED_PY=$py" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      # 단위 테스트를 동봉 런타임으로 한 번 더 돌린다. cmd 인 까닭은 test-windows.yml 참고.
+      - name: Unit tests on the bundled runtime
+        shell: cmd
+        env:
+          PYTHONPATH: ${{ github.workspace }}\core
+          PYTHONIOENCODING: utf-8
+          # 바로 앞 무음 설치가 러너 언어(영어)를 설정에 남긴다. 테스트는 한국어 화면 기준이다.
+          MYBOOKSHELF_LANG: ko
+        run: '"%INSTALLED_PY%" -m unittest discover -s core\tests -q'
 
       - name: Get version
         id: ver
@@ -63,7 +141,7 @@ jobs:
         shell: pwsh
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MyBookshelf-Setup-v${{ steps.ver.outputs.version }}
           path: |

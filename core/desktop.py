@@ -157,6 +157,23 @@ def prepare_own_exe(exe: Path | None = None) -> Path | None:
             if os.path.exists(APP_ICON):
                 _stamp_icon(target, Path(APP_ICON))
             stamp.write_text(want, encoding="utf-8")
+        # ★인터프리터 DLL도 옆에 둔다 (2026-09-30 실측). 복사본은 python314.dll 을
+        #   자기 폴더 → PATH 순으로 찾는데, Scripts 에는 그것이 없어서 PATH 의
+        #   C:\Python314\python314.dll 을 잡았다. 그러자 base_prefix 가 번들
+        #   runtime 이 아닌 C:\Python314 가 되어 runtime 의 site-packages 를 못 보고
+        #   «No module named 'webview'» 로 창이 안 떴다.
+        #   이름을 박지 않고 원본 폴더의 *.dll 을 다 옮겨 판올림을 따라간다.
+        #   .exe.src 표식과 따로 DLL 마다 크기·시각을 견준다 — 표식이 맞아도
+        #   DLL 이 빠졌거나 원본만 바뀐 경우를 놓치지 않는다(copy2 는 시각도 옮긴다).
+        for dll in _base.parent.glob("*.dll"):
+            dst = target.parent / dll.name
+            src_st = dll.stat()
+            if dst.exists():
+                dst_st = dst.stat()
+                if (dst_st.st_size == src_st.st_size
+                        and int(dst_st.st_mtime) == int(src_st.st_mtime)):
+                    continue
+            shutil.copy2(dll, dst)
     except OSError:
         return target if target.exists() else None
     return target

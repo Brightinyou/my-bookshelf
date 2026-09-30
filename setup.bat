@@ -42,6 +42,16 @@ if exist "core\requirements.txt" (
 echo [My Bookshelf] Installing runtime...
 echo.
 
+rem Bundled runtime (2026-09-29): Setup.exe ships runtime\python.exe with every
+rem package already installed at build time. Then .venv only has to point at it,
+rem which is offline and takes seconds - no python.org, no pip, no network.
+set "BUNDLED=0"
+if exist "runtime\python.exe" (
+    set "PYCMD="%CD%\runtime\python.exe""
+    set "PYTHON_HINT=bundled runtime"
+    set "BUNDLED=1"
+)
+
 call :detect_python
 if not defined PYCMD (
     echo [ERROR] Python 3.10 or newer is required.
@@ -53,6 +63,7 @@ if not defined PYCMD (
 
 for /f "delims=" %%v in ('%PYCMD% --version 2^>nul') do echo [OK] %%v
 if defined PYTHON_HINT echo [OK] Using %PYTHON_HINT%
+if "%BUNDLED%"=="1" goto :bundled_venv
 
 if exist ".venv" if not exist ".venv\Scripts\python.exe" (
     echo [WARN] Broken virtual environment found. Recreating it...
@@ -101,7 +112,22 @@ if errorlevel 1 (
 call ".venv\Scripts\python.exe" -c "import streamlit, webview"
 if errorlevel 1 goto :runtime_fail
 echo [OK] Desktop runtime verified.
+goto :after_runtime
 
+:bundled_venv
+rem --clear: an older .venv may point at a system Python (pre-bundle installs).
+rem Rebuild it against the bundle so both never mix.
+echo [STEP] Linking .venv to the bundled runtime...
+call %PYCMD% -m venv --clear --without-pip --system-site-packages ".venv"
+if errorlevel 1 (
+    echo [ERROR] Failed to create .venv
+    goto :fail
+)
+call ".venv\Scripts\python.exe" -c "import streamlit, webview"
+if errorlevel 1 goto :runtime_fail
+echo [OK] Desktop runtime verified.
+
+:after_runtime
 if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit" >nul 2>nul
 if not exist "%USERPROFILE%\.streamlit\credentials.toml" (
     > "%USERPROFILE%\.streamlit\credentials.toml" echo [general]

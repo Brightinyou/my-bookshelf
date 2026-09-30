@@ -22,7 +22,7 @@ class WindowsSetupTest(unittest.TestCase):
         self.assertIn('Source: "..\\..\\setup.bat"', installer)
         self.assertIn('Source: "..\\..\\glossary.bat"', installer)
 
-    def test_installer_launches_interactive_cli_setup(self):
+    def test_installer_leaves_cli_setup_to_the_app(self):
         installer = (ROOT / "dev" / "installer" / "MyBookshelf.iss").read_text(
             encoding="utf-8-sig"
         )
@@ -30,8 +30,10 @@ class WindowsSetupTest(unittest.TestCase):
             ROOT / "dev" / "installer" / "windows_setup_extras.ps1"
         ).read_text(encoding="utf-8")
 
+        # 스크립트는 계속 설치하되(앱의 «AI 연결» 안내가 연다) 설치 마지막에 띄우지 않는다.
         self.assertIn('Source: "windows_setup_extras.ps1"', installer)
-        self.assertIn('Flags: waituntilterminated postinstall skipifsilent', installer)
+        self.assertNotIn('Set up Claude or Codex', installer)
+        self.assertNotIn('File ""{app}\\windows_setup_extras.ps1', installer)
         self.assertIn("& claude auth login", script)
         self.assertIn("& codex login --device-auth", script)
         self.assertIn("'pref_use_claude_cli'", script)
