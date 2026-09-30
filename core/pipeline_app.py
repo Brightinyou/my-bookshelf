@@ -1816,8 +1816,34 @@ def _checklist_keys(items: list[dict], prefix: str) -> list[str]:
     return keys
 
 
+def _delete_button(container, label: str, key: str, n: int) -> bool:
+    """목록 선택 삭제 — 한 번 더 확인받는다. True는 «삭제 확정»을 누른 그 한 번뿐.
+
+    처리 대기 목록은 기본으로 전부 선택돼 나오므로(2026-09-27), 실행 버튼 바로 옆의
+    삭제가 한 번에 눌리면 대기 파일 전부가 지워진다. 그래서 눈에 덜 띄는 모양으로
+    두고, 누르면 그 자리에서 확정/취소를 묻는다."""
+    armed = f"{key}__armed"
+    if n == 0:
+        st.session_state.pop(armed, None)
+    if not st.session_state.get(armed):
+        if container.button(label, icon=":material/delete:", key=key, type="tertiary",
+                            disabled=n == 0):
+            st.session_state[armed] = True
+            st.rerun()
+        return False
+    container.caption(tf("선택한 %d개를 삭제할까요?", n))
+    ok_col, cancel_col = container.columns(2)
+    confirmed = ok_col.button(t("삭제 확정"), icon=":material/delete:", key=f"{key}__ok", width="stretch")
+    if cancel_col.button(t("취소"), icon=":material/close:", key=f"{key}__cancel", width="stretch"):
+        st.session_state.pop(armed, None)
+        st.rerun()
+    if confirmed:
+        st.session_state.pop(armed, None)
+    return confirmed
+
+
 def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool = False,
-               renamable: bool = False) -> list:
+               renamable: bool = False, preselect: bool = False) -> list:
     """체크박스 파일 목록. items=[{"key":str,"label":str,"meta":str,"obj":any,"group":str?}]
 
     renamable=True면 각 줄에 ✏️ 단추가 붙어 **목록 안에서 바로** 장 제목을 고칠 수 있다.
@@ -1827,8 +1853,14 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
     "group"이 있으면 책별로 접이식 챕터 목록을 만들고, 책 제목 옆에
     책 전체를 한 번에 선택/해제하는 체크박스를 함께 둔다(선택 단위 자체는 항목별
     그대로 — 위키탭처럼 책 단위로 고를 수 있게, 2026-07-25).
+    preselect=True면 처음 나타난 항목을 선택된 채로 둔다 — 대기 목록은 대개 전부
+    처리하려고 넣은 것이라, 비활성 «처리 (0개)» 앞에서 무엇을 할지 헤매지 않게
+    (2026-09-27). 사용자가 해제한 항목은 다시 켜지 않는다.
     Returns: 선택된 obj 목록."""
     _keys = _checklist_keys(items, prefix)
+    if preselect:
+        for _k in _keys:
+            st.session_state.setdefault(_k, True)
     _group_indices: dict[str, list[int]] = {}
     for idx, it in enumerate(items):
         _g = it.get("group")
@@ -1840,16 +1872,18 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
         for j in _group_indices.get(grp, []):
             st.session_state[_keys[j]] = _val
 
-    h1, h2, h3 = _responsive_columns([1.3, 1, 4], f"list_header_{prefix}")
-    if h1.button(t("전체 선택"), icon=":material/select_all:", key=f"{prefix}_sa", width="stretch"):
+    def _toggle_all(all_key: str) -> None:
+        _val = st.session_state.get(all_key, False)
         for _k in _keys:
-            st.session_state[_k] = True
-        st.rerun()
-    if h2.button(t("해제"), icon=":material/deselect:", key=f"{prefix}_da", width="stretch"):
-        for _k in _keys:
-            st.session_state[_k] = False
-        st.rerun()
-    h3.caption(tf("총 %d개", len(items)))
+            st.session_state[_k] = _val
+
+    # 「전체 선택」「해제」 두 단추 → 체크박스 하나 (2026-09-27)
+    _all_key = f"{prefix}_all"
+    _chosen_n = sum(bool(st.session_state.get(_k, False)) for _k in _keys)
+    st.session_state[_all_key] = bool(_keys) and _chosen_n == len(_keys)
+    h1, h2 = _responsive_columns([3, 1], f"list_header_{prefix}")
+    h1.checkbox(t("전체 선택"), key=_all_key, on_change=_toggle_all, args=(_all_key,))
+    h2.caption(tf("%d / %d개 선택", _chosen_n, len(items)))
     def _render_item(idx):
         it = items[idx]
         k = _keys[idx]
@@ -1893,7 +1927,12 @@ def _checklist(items: list[dict], prefix: str, height: int = 320, viewable: bool
     # Render every chapter even inside closed expanders. Streamlit then retains
     # its checkbox state; closing a book must never deselect its chapters.
     from hashlib import sha256
-    with st.container(height=height, border=True):
+    # 몇 줄 안 되는 목록은 높이를 내용에 맞춘다. 고정 높이였을 때 «처리 대기 (3개)»
+    # 인데 둘만 보이고 셋째는 표시 없는 안쪽 스크롤 뒤에 숨었다 (2026-09-27).
+    # 책별 묶음은 접힌 채 한 줄이므로 묶음 수로 센다.
+    _rows = len({it.get("group") for it in items if it.get("group") is not None}) \
+        + sum(1 for it in items if it.get("group") is None)
+    with st.container(height=height if _rows > 5 else "content", border=True):
         rendered_groups = set()
         for idx, it in enumerate(items):
             grp = it.get("group")
@@ -2062,12 +2101,15 @@ def _render_model_editor(key: str, task: str = "") -> None:
     provider = st.selectbox(t("AI 연결"), providers,
                             index=providers.index(current[0]) if current[0] in providers else 0,
                             format_func=lambda p: llm.PROVIDERS[p]["label"], key=f"{key}_provider")
+    _stale = llm.unsupported_saved_model(task)
+    if _stale:
+        st.warning(tf("저장된 모델 «%s»는 이 컴퓨터의 CLI가 지원하는 목록에 없어 «CLI 기본 설정 따르기»로 실행합니다. 목록에서 다시 고르세요.", _stale))
     choices = llm.model_choices(provider)
     selected = current[1] if current[0] == provider and current[1] in choices else choices[0]
     model = st.selectbox(t("모델"), choices, index=choices.index(selected),
                            format_func=lambda m: t("CLI 기본 설정 따르기") if m == "default" else llm.model_label(provider, m),
                            key=f"{key}_{provider}_choice",
-                           help=t("Codex가 저장한 모델 목록입니다. 실제 사용 권한은 ‘연결·모델 확인’으로 확인하세요.") if provider == "codex_cli" else None)
+                           help=t("이 컴퓨터의 Codex CLI가 지원하는 모델만 보입니다. 실제 사용 권한은 ‘연결·모델 확인’으로 확인하세요.") if provider == "codex_cli" else None)
     if model == "default":
         st.caption(t("CLI 설정값") + ": " + (llm.cli_configured_model(provider) or t("실행 시 결정")))
     save_col, check_col = st.columns(2)
@@ -2309,12 +2351,11 @@ if _active_view in {"1_txt", "all_run"}:
              "obj": _PathAsUpload(f)}
             for f in _pending_all1
         ]
-        _sel1 = _checklist(_items1, "ocr1", height=250, viewable=True)
+        _sel1 = _checklist(_items1, "ocr1", height=250, viewable=True, preselect=True)
         _b1c1, _b1c2 = st.columns(2)
         _run_sel1 = _b1c1.button(tf("텍스트 변환 처리 (%d개)", len(_sel1)), icon=":material/play_arrow:", key="ocr1_run_sel",
                                    width="stretch", type="primary", disabled=len(_sel1)==0)
-        _del1 = _b1c2.button(tf("삭제 (%d개)", len(_sel1)), icon=":material/delete:", key="ocr1_del_sel",
-                             width="stretch", disabled=len(_sel1)==0)
+        _del1 = _delete_button(_b1c2, tf("삭제 (%d개)", len(_sel1)), "ocr1_del_sel", len(_sel1))
         if _del1 and _sel1:
             for _dobj1 in _sel1:
                 try:
@@ -2854,15 +2895,14 @@ if _active_view == "2_split":
 
     st.markdown(tf("#### 분할 대기 (%d권)", len(_split_pend2)))
     if _split_pend2:
-        _sel2 = _checklist(_split_pend2, "split2", height=280, viewable=True)
+        _sel2 = _checklist(_split_pend2, "split2", height=280, viewable=True, preselect=True)
         _b2c1, _b2c2, _b2c3 = st.columns(3)
         _rs2 = _b2c1.button(tf("분할 처리 (%d권)", len(_sel2)), icon=":material/play_arrow:", key="split2_run_sel",
                               width="stretch", type="primary", disabled=len(_sel2)==0)
         _next2 = _b2c2.button(tf("다음단계로 이동 (%d권)", len(_sel2)), icon=":material/arrow_forward:", key="split2_next",
                               width="stretch", disabled=len(_sel2)==0,
                               help=t("분할 없이 단일장으로 저장하고 한국어가 아니면 번역, 한국어면 문서요약으로 이동"))
-        _del2 = _b2c3.button(tf("삭제 (%d권)", len(_sel2)), icon=":material/delete:", key="split2_del",
-                             width="stretch", disabled=len(_sel2)==0)
+        _del2 = _delete_button(_b2c3, tf("삭제 (%d권)", len(_sel2)), "split2_del", len(_sel2))
         if _del2 and _sel2:
             for _dobj2 in _sel2:
                 _dstem2 = _dobj2["stem"]
@@ -2921,8 +2961,7 @@ if _active_view == "2_split":
         _sh_next2 = _shc2.button(tf("다음단계로 이동 (%d권)", len(_sel_short2)), icon=":material/arrow_forward:",
                                  key="shortsplit2_next", type="primary", width="stretch", disabled=len(_sel_short2) == 0,
                                  help=t("분할 없이 단일장으로 저장하고 한국어가 아니면 번역, 한국어면 문서요약으로 이동"))
-        _sh_del2 = _shc3.button(tf("삭제 (%d권)", len(_sel_short2)), icon=":material/delete:",
-                                key="shortsplit2_del", width="stretch", disabled=len(_sel_short2) == 0)
+        _sh_del2 = _delete_button(_shc3, tf("삭제 (%d권)", len(_sel_short2)), "shortsplit2_del", len(_sel_short2))
 
         if _sh_split2 and _sel_short2:
             _short_done2 = 0
@@ -3205,12 +3244,11 @@ if _active_view == "3_translate":
                 _run_start("tr3", _retry3)
             if _retry3:
                 st.caption(t("성공한 문단은 재사용하고 실패한 문단부터 다시 번역합니다."))
-            _sel3 = _checklist(_tr_pend3, "tr3", height=280, viewable=True)
+            _sel3 = _checklist(_tr_pend3, "tr3", height=280, viewable=True, preselect=True)
             _b3c1, _b3c2 = st.columns(2)
             _rs3 = _b3c1.button(tf("시작 (%d개)", len(_sel3)), icon=":material/play_arrow:", key="tr3_start",
                                   width="stretch", type="primary", disabled=len(_sel3)==0)
-            _del3 = _b3c2.button(tf("삭제 (%d개)", len(_sel3)), icon=":material/delete:", key="tr3_del",
-                                 width="stretch", disabled=len(_sel3)==0)
+            _del3 = _delete_button(_b3c2, tf("삭제 (%d개)", len(_sel3)), "tr3_del", len(_sel3))
             if _del3 and _sel3:
                 queue_remove("tab3_ready", _sel3)
                 st.rerun()
@@ -3443,12 +3481,11 @@ if _active_view == "4_summary":
         st.divider()
         st.markdown(tf("#### 요약 대기 (%d개) / 완료 %d개", len(_sum_pend4), _sum_done4))
         if _sum_pend4:
-            _sel4 = _checklist(_sum_pend4, "summ4", height=280, viewable=True, renamable=True)
+            _sel4 = _checklist(_sum_pend4, "summ4", height=280, viewable=True, preselect=True, renamable=True)
             _b4c1, _b4c2 = st.columns(2)
             _rs4 = _b4c1.button(tf("시작 (%d개)", len(_sel4)), icon=":material/play_arrow:", key="summ4_start",
                                   width="stretch", type="primary", disabled=len(_sel4)==0)
-            _del4 = _b4c2.button(tf("삭제 (%d개)", len(_sel4)), icon=":material/delete:", key="summ4_del",
-                                 width="stretch", disabled=len(_sel4)==0)
+            _del4 = _delete_button(_b4c2, tf("삭제 (%d개)", len(_sel4)), "summ4_del", len(_sel4))
             _sel4_rels = [str(_cfx.relative_to(cfg.BASE_DIR)) for _cfx, _bx in _sel4]
             if _del4 and _sel4:
                 queue_remove("tab4_ready", _sel4_rels)
@@ -3766,8 +3803,7 @@ if _active_view == "5_wiki":
             if _epc5a.button(tf("선택 항목 큐에 추가 (%d권)", len(_epsel5)), icon=":material/add:", key="epub5m_add",
                              width="stretch", disabled=len(_epsel5) == 0):
                 queue_add("tab5_ready", _epsel5); st.rerun()
-            if _epc5b.button(tf("삭제 (%d권)", len(_epsel5)), icon=":material/delete:", key="epub5m_del",
-                             width="stretch", disabled=len(_epsel5) == 0):
+            if _delete_button(_epc5b, tf("삭제 (%d권)", len(_epsel5)), "epub5m_del", len(_epsel5)):
                 queue_remove("tab5_ready", _epsel5); st.rerun()
     st.divider()
 
@@ -3923,8 +3959,7 @@ if _active_view == "5_wiki":
         _b5c1, _b5c2 = st.columns(2)
         _rs5 = _b5c1.button(tf("시작 (%d권)", len(_sel5)), icon=":material/play_arrow:", key="wiki5_run_sel",
                               width="stretch", type="primary", disabled=len(_sel5)==0)
-        _del5 = _b5c2.button(tf("삭제 (%d권)", len(_sel5)), icon=":material/delete:", key="wiki5_del",
-                             width="stretch", disabled=len(_sel5)==0)
+        _del5 = _delete_button(_b5c2, tf("삭제 (%d권)", len(_sel5)), "wiki5_del", len(_sel5))
         if _del5 and _sel5:
             queue_remove("tab5_ready", [_o5["stem"] for _o5 in _sel5])
             st.rerun()
@@ -3980,8 +4015,7 @@ if _active_view == "5_wiki":
         if _madd5c1.button(tf("선택 항목 큐에 추가 (%d권)", len(_msel5)), icon=":material/add:", key="wiki5m_add",
                            width="stretch", disabled=len(_msel5)==0):
             queue_add("tab5_ready", _msel5); st.rerun()
-        if _madd5c2.button(tf("삭제 (%d권)", len(_msel5)), icon=":material/delete:", key="wiki5m_del",
-                           width="stretch", disabled=len(_msel5)==0):
+        if _delete_button(_madd5c2, tf("삭제 (%d권)", len(_msel5)), "wiki5m_del", len(_msel5)):
             queue_remove("tab5_ready", _msel5); st.rerun()
 
     # 단일 TXT 기반 (챕터 분할 없는 책 — 큐 외 별도 경로)
@@ -4012,8 +4046,7 @@ if _active_view == "5_wiki":
         _s5c1, _s5c2 = st.columns(2)
         _run5s = _s5c1.button(tf("Wiki 생성 (%d권)", len(_sel5s)), icon=":material/play_arrow:", key="wiki5s_run",
                      width="stretch", type="primary", disabled=len(_sel5s)==0)
-        _del5s = _s5c2.button(tf("삭제 (%d권)", len(_sel5s)), icon=":material/delete:", key="wiki5s_del",
-                     width="stretch", disabled=len(_sel5s)==0)
+        _del5s = _delete_button(_s5c2, tf("삭제 (%d권)", len(_sel5s)), "wiki5s_del", len(_sel5s))
         if _run5s and _sel5s:
             for _wo5s in _sel5s:
                 _ok5s = trigger_gemini_wiki(_wo5s["txt"])

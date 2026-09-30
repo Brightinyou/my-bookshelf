@@ -114,6 +114,11 @@ def tf(s: str, *args) -> str:
 
 
 _EN: dict[str, str] = {
+    "삭제 확정": "Confirm delete",
+    "선택한 %d개를 삭제할까요?": "Delete %d selected?",
+    "취소": "Cancel",
+    "저장된 모델 «%s»는 이 컴퓨터의 CLI가 지원하는 목록에 없어 «CLI 기본 설정 따르기»로 실행합니다. 목록에서 다시 고르세요.": "Saved model “%s” is not supported by this computer's CLI, so the CLI default will be used. Please choose again.",
+    "이 컴퓨터의 Codex CLI가 지원하는 모델만 보입니다. 실제 사용 권한은 ‘연결·모델 확인’으로 확인하세요.": "Only models supported by this computer's Codex CLI are shown. Use ‘Check connection/model’ to confirm access.",
     "%d / %d개 선택": "%d / %d selected",
     "챕터 %d개": "%d chapters",
     "%s 폴더 열기": "Open %s folder",

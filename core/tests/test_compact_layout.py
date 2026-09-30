@@ -76,7 +76,9 @@ class CompactLayoutTest(unittest.TestCase):
     def test_screenshot_adjustments_preserve_fixed_row_alignment(self):
         fixed = COMPACT_CSS.split("@media")[0]
         self.assertIn("grid-template-columns:minmax(0,1fr) 40px", fixed)
-        self.assertIn("justify-self:start; width:40px", fixed)
+        # 목록 항목은 한 줄 — 아이콘은 제목 오른쪽 40px 칸에 선다 (둘째 줄 금지)
+        self.assertIn("grid-auto-flow:column; grid-auto-columns:40px", fixed)
+        self.assertNotIn("grid-row:2", fixed)
         self.assertIn("st-key-stage_folders_", fixed)
         self.assertIn("20px * var(--mb-font-scale)", COMPACT_CSS)
         self.assertIn("10.5px * var(--mb-font-scale)", COMPACT_CSS)

@@ -164,7 +164,17 @@ def find_txt(base: Path, ws_name: str, stem: str) -> Path | None:
     return p2 if p2.exists() else None
 
 def find_md(base: Path, ws_name: str, stem: str) -> Path | None:
-    """_md/ 우선, 없으면 워크스페이스 루트에서 .md 찾기."""
+    """1_txt/ 우선 → 1_txt/완료/ → _md/ 보관 → 워크스페이스 루트.
+
+    MD를 직접 업로드하면 convert._do_ocr_only가 TXT와 같은 1_txt/에 저장하는데,
+    여기서는 구버전 보관 폴더만 뒤져 «TXT/MD 파일이 없습니다»로 분할·단일장 저장이
+    모두 실패했다 — 목록은 1_txt/의 .md를 보여주므로 화면과 실행이 어긋났다
+    (2026-09-25).
+    """
+    p0 = cfg.TXT_DIR / f"{stem}.md"
+    if p0.exists(): return p0
+    p_arch = cfg.TXT_ARCHIVE_DIR / f"{stem}.md"      # 분할 후 보관
+    if p_arch.exists(): return p_arch
     p1 = md_dir(base, ws_name) / f"{stem}.md"
     if p1.exists(): return p1
     p2 = base / ws_name / f"{stem}.md"
