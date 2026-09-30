@@ -10,7 +10,7 @@ from services import i18n
 
 def app_source():
     source = (Path(__file__).parents[1] / "pipeline_app.py").read_text(encoding="utf-8")
-    names = {"_responsive_columns", "_checklist_keys", "_checklist"}
+    names = {"_responsive_columns", "_checklist_keys", "_checklist", "_delete_button"}
     definitions = "\n\n".join(ast.get_source_segment(source, node)
         for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name in names)
     return '''
@@ -22,7 +22,8 @@ items = st.session_state.get("items", [
     {"key":"b1", "label":"Chapter B1", "meta":"100", "obj":"b1", "group":"Book B"},
     {"key":"a2", "label":"Chapter A2", "meta":"100", "obj":"a2", "group":"Book A"},
 ])
-st.session_state["selected"] = _checklist(items, "test")
+st.session_state["selected"] = _checklist(items, "test", preselect=st.session_state.get("pre", False))
+st.session_state["deleted"] = st.session_state.get("deleted", 0) + _delete_button(st, "Delete", "test_del", len(st.session_state["selected"]))
 '''
 
 
@@ -41,17 +42,46 @@ class GroupedChecklistTest(unittest.TestCase):
         self.assertFalse(next(x for x in app.checkbox if x.label == "Book A").value)
         self.assertFalse(app.exception)
 
-    def test_closed_groups_keep_selection_and_global_buttons_apply_to_all(self):
+    def test_closed_groups_keep_selection_and_select_all_checkbox_applies_to_all(self):
         app = self.app()
         self.assertEqual(len(app.expander), 2)
         self.assertTrue(all(not x.proto.expanded for x in app.expander))
         self.assertEqual(len(app.expander[0].checkbox), 2)
-        app.button(key="test_sa").click().run()
+        app.checkbox(key="test_all").check().run()
         self.assertEqual(app.session_state["selected"], ["a1", "b1", "a2"])
         app.run()
         self.assertEqual(app.session_state["selected"], ["a1", "b1", "a2"])
-        app.button(key="test_da").click().run()
+        self.assertTrue(app.checkbox(key="test_all").value)
+        app.checkbox(key="test_all").uncheck().run()
         self.assertEqual(app.session_state["selected"], [])
+        self.assertFalse(app.exception)
+
+    def test_preselect_selects_new_items_but_keeps_user_deselection(self):
+        app = AppTest.from_string(app_source(), default_timeout=10)
+        app.session_state["pre"] = True
+        app.run()
+        self.assertEqual(app.session_state["selected"], ["a1", "b1", "a2"])
+        self.assertTrue(app.checkbox(key="test_all").value)
+        app.checkbox(key="test_b1").uncheck().run()
+        app.run()
+        self.assertEqual(app.session_state["selected"], ["a1", "a2"])
+        self.assertFalse(app.checkbox(key="test_all").value)
+        self.assertFalse(app.exception)
+
+    def test_delete_needs_confirmation_and_cancel_disarms(self):
+        app = AppTest.from_string(app_source(), default_timeout=10)
+        app.session_state["pre"] = True
+        app.run()
+        app.button(key="test_del").click().run()
+        self.assertEqual(app.session_state["deleted"], 0)
+        app.button(key="test_del__cancel").click().run()
+        self.assertEqual(app.session_state["deleted"], 0)
+        app.button(key="test_del").click().run()
+        app.button(key="test_del__ok").click().run()
+        self.assertEqual(app.session_state["deleted"], 1)
+        app.run()
+        self.assertEqual(app.session_state["deleted"], 1)
+        self.assertTrue(any(b.key == "test_del" for b in app.button))
         self.assertFalse(app.exception)
 
     def test_similar_book_names_do_not_share_checkbox_keys(self):

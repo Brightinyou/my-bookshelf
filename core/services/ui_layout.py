@@ -59,14 +59,13 @@ COMPACT_CSS = """
     width:100% !important; min-width:0 !important;
 }
 [class*="st-key-format_row_"] button { min-height:40px; padding:6px !important; }
+/* 항목 한 줄: 체크 | 제목(+메타) | 아이콘들. 보기 아이콘이 제목 아래 둘째 줄로 떨어지면
+   항목 하나가 두 배 높이가 돼 고정 높이 목록에서 뒤 항목이 가려졌다 (2026-09-27). */
 [class*="st-key-document_row_"] [data-testid="stHorizontalBlock"] {
-    display:grid !important; grid-template-columns:32px minmax(0,1fr) 44px; gap:4px;
+    display:grid !important; grid-template-columns:32px minmax(0,1fr); grid-template-rows:auto;
+    grid-auto-flow:column; grid-auto-columns:40px; gap:4px; align-items:start;
 }
 [class*="st-key-document_row_"] [data-testid="stColumn"] { min-width:0 !important; width:100% !important; }
-[class*="st-key-document_row_"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(1) { grid-column:1; grid-row:1; }
-[class*="st-key-document_row_"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) { grid-column:2 / -1; grid-row:1; }
-[class*="st-key-document_row_"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(3):not(:last-child) { grid-column:3; grid-row:2; width:40px !important; }
-[class*="st-key-document_row_"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child:nth-child(n+3) { grid-column:2; grid-row:2; justify-self:start; width:40px !important; }
 @media (max-width:560px) {
     .block-container { padding: .65rem .65rem 1.5rem !important; }
     [data-testid="stVerticalBlock"] { gap:.65rem; }
@@ -120,7 +119,7 @@ COMPACT_CSS = """
         display:grid !important; grid-template-columns:32px minmax(0,1fr);
     }
     [class*="st-key-list_header_"] [data-testid="stHorizontalBlock"] {
-        display:grid !important; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto; align-items:center;
+        display:grid !important; grid-template-columns:minmax(0,1fr) auto; align-items:center;
     }
 }
 """
