@@ -78,26 +78,43 @@ class PathFallbackTest(unittest.TestCase):
         self.assertTrue(paths[os.getpid()].lower().endswith(".exe"))
 
 
-class ScriptsWithoutWmiTest(unittest.TestCase):
-    def test_stop_app_uses_process_path_and_catches_own_exe(self):
+class StopAppScriptTest(unittest.TestCase):
+    """Stop·설치·제거가 함께 쓰는 stop-app.ps1 — 경로와 명령줄의 합집합."""
+    SCRIPT = ROOT / "stop-app.ps1"
+
+    def test_union_of_path_and_command_line(self):
+        s = self.SCRIPT.read_text(encoding="utf-8-sig")
+        self.assertIn("Get-Process", s)                        # WMI 없이
+        self.assertIn("'.venv\\Scripts'", s)
+        self.assertIn("'runtime'", s)
+        self.assertIn("Get-CimInstance Win32_Process -ErrorAction Stop", s)   # 옛 설치본(stub 밖 인터프리터)
+        self.assertIn("'MyBookshelf.exe'", s)
+        self.assertIn("*pipeline_app.py*", s)
+        self.assertIn("*desktop.py*", s)
+        self.assertIn("$ids.Remove($PID)", s)
+
+    def test_saved_with_bom_for_powershell_51(self):
+        import codecs
+        self.assertTrue(self.SCRIPT.read_bytes().startswith(codecs.BOM_UTF8))
+
+    def test_stop_bat_calls_the_script_without_escaping_the_quote(self):
         bat = (ROOT / "stop-app.bat").read_text(encoding="utf-8")
         cmd = next(l for l in bat.splitlines() if l.startswith("powershell"))
-        self.assertNotIn("Get-CimInstance", cmd)
-        self.assertIn("Get-Process", cmd)
-        self.assertIn("MyBookshelf", cmd)
-        self.assertIn(".venv\\Scripts", cmd)
+        self.assertIn('-File "%~dp0stop-app.ps1"', cmd)
+        self.assertIn('-Root "%~dp0."', cmd)       # "%~dp0" 은 \" 가 되어 따옴표가 풀린다
 
-    def test_installer_prepare_and_uninstall_use_process_path(self):
+    def test_installer_prepare_and_uninstall_use_the_script(self):
         iss = (ROOT / "dev" / "installer" / "MyBookshelf.iss").read_text(encoding="utf-8-sig")
+        self.assertIn('Source: "..\\..\\stop-app.ps1";', iss)
         prepare = iss[iss.index("function PrepareToInstall"):]
         prepare = prepare[:prepare.index("\nend;")]
-        self.assertNotIn("Get-CimInstance Win32_Process |", prepare)
-        self.assertIn("Get-Process", prepare)
-        uninstall = iss[iss.index("[UninstallRun]"):iss.index("[Code]")]
+        self.assertIn("ExtractTemporaryFile('stop-app.ps1')", prepare)   # 옛 설치본엔 없다
+        self.assertIn("{tmp}\\stop-app.ps1", prepare)
+        start = iss.index("\n[UninstallRun]")
+        uninstall = iss[start:iss.index("\n[Code]", start)]
         uninstall = "\n".join(l for l in uninstall.splitlines() if not l.lstrip().startswith(";"))
         self.assertNotIn("taskkill", uninstall)
-        self.assertIn("Get-Process", uninstall)
-        self.assertIn("MyBookshelf", uninstall)
+        self.assertIn('{app}\\stop-app.ps1', uninstall)
 
     def test_update_helper_does_not_need_wmi(self):
         from services import updater

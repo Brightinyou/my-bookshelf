@@ -50,6 +50,7 @@ Source: "..\..\MyBookshelf.iconset\*";   DestDir: "{app}\MyBookshelf.iconset"; F
 Source: "..\..\start-app.vbs";           DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\start.bat";               DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\stop-app.bat";            DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\stop-app.ps1";            DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\setup.bat";               DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\install-obsidian.bat";    DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\glossary.bat";            DestDir: "{app}"; Flags: ignoreversion
@@ -119,9 +120,9 @@ Type: dirifempty; Name: "{app}"
 
 [UninstallRun]
 ; ★2026-09-30: taskkill /im python.exe 는 **이 PC의 모든 파이썬**을 끄면서 정작 앱 창
-;   (MyBookshelf.exe)은 못 껐다. PrepareToInstall 과 같이 설치 폴더에서 뜬 것만 끈다.
+;   (MyBookshelf.exe)은 못 껐다. PrepareToInstall·«Stop My Bookshelf» 와 같은 stop-app.ps1.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-    Parameters: "-NoProfile -Command ""$r = '{app}'; $dirs = @((Join-Path $r '.venv\Scripts'), (Join-Path $r 'runtime')) | ForEach-Object {{ $_.ToLower() }; Get-Process | Where-Object {{ $_.Path -and $_.ProcessName -match '^(python|pythonw|MyBookshelf)$' -and ($dirs -contains (Split-Path $_.Path -Parent).ToLower()) } | ForEach-Object {{ Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }"""; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\stop-app.ps1"" -Root ""{app}"""; \
     Flags: runhidden waituntilterminated; RunOnceId: "KillApp"
 
 [Code]
@@ -137,21 +138,22 @@ var
 begin
   Result := '';
 
-  { ★2026-09-30: 명령줄(Get-CimInstance) 대신 실행 파일 경로(Get-Process Path)로 찾는다.
-    WMI 가 «액세스가 거부되었습니다»로 막힌 PC(Windows Sandbox 실측)에서는 아무것도 못 꺼서,
-    업데이트 때 앱이 켜진 채로 파일이 덮여 쓰였다(2026-08-27 증상). 설치 폴더의
-    .venv\Scripts·runtime 에서 뜬 파이썬·MyBookshelf.exe 는 모두 이 앱의 것이다. }
+  { ★2026-09-30: stop-app.ps1(실행 파일 경로 + 명령줄의 합집합)로 끈다. 예전에는 명령줄
+    (Get-CimInstance)만 봐서 WMI 가 «액세스가 거부되었습니다»로 막힌 PC(Windows Sandbox 실측)
+    에서는 아무것도 못 꺼, 업데이트 때 앱이 켜진 채로 파일이 덮여 쓰였다(2026-08-27 증상).
+    업데이트 대상인 옛 설치본은 설치 폴더에 stop-app.ps1 이 없으므로 설치 파일에서 임시로 푼다. }
   AppDir := ExpandConstant('{app}');
-  StringChangeEx(AppDir, '''', '''''', True);
-  Exec(
-    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoProfile -Command "$r = ''' + AppDir + '''; ' +
-    '$dirs = @((Join-Path $r ''.venv\Scripts''), (Join-Path $r ''runtime'')) | ForEach-Object { $_.ToLower() }; ' +
-    'Get-Process | Where-Object { $_.Path -and $_.ProcessName -match ''^(python|pythonw|MyBookshelf)$'' -and ' +
-    '($dirs -contains (Split-Path $_.Path -Parent).ToLower()) } | ' +
-    'ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }"',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode
-  );
+  try
+    ExtractTemporaryFile('stop-app.ps1');
+    Exec(
+      ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\stop-app.ps1') +
+      '" -Root "' + AppDir + '"',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode
+    );
+  except
+    { 끄지 못해도 설치는 계속한다 — 예전과 같다. }
+  end;
   { ★MyBookshelf.exe 도 끈다(2026-09-29). 앱은 .venv\Scripts\MyBookshelf.exe 로 도는데
     setup.bat 이 동봉 런타임에 .venv 를 다시 이을 때(--clear) 그 파일이 잠겨 있으면 실패한다. }
   { 포트와 파일 잠금이 풀릴 틈을 준다 }
