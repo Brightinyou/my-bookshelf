@@ -1156,6 +1156,13 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         if skip_reference_chapters() and is_reference_chapter(ch_path):
             if want_plain:
                 ko_path.write_text(text.replace(_PAGE_TOKEN, "\f"), encoding="utf-8")
+            if want_bilingual:
+                # 대역본만 켠 경우에도 그 장이 빠지지 않게 — 규칙대로 보존한 단락과 같은
+                # 모양(원문 | 원문)으로 쓴다 (2026-09-30 맥 세션 검토).
+                _ref_paras = [b.strip() for b in _re.split(r"\n\s*\n", text) if b.strip()]
+                _save_bilingual_atomic(
+                    bilingual_path,
+                    [(b + "\n\n" + b).replace(_PAGE_TOKEN, "\f") for b in _ref_paras])
             partial_path.unlink(missing_ok=True)
             progress_path.unlink(missing_ok=True)
             _save_json_atomic(status_path, {"state": "complete", "engine": engine, "failed": 0,

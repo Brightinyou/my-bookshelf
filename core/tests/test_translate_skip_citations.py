@@ -43,7 +43,7 @@ class ReferenceChapterTest(unittest.TestCase):
                   "01_Introduction.txt"):
             self.assertFalse(tr.is_reference_chapter(Path(n)), n)
 
-    def _run(self, skip_on: bool):
+    def _run(self, skip_on: bool, want_plain: bool = True, want_bilingual: bool = False):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         ch = Path(tmp.name) / "Some Paper" / "07_References.txt"
@@ -57,8 +57,21 @@ class ReferenceChapterTest(unittest.TestCase):
              mock.patch.object(tr, "target_language", return_value="ko"), \
              mock.patch.object(tr, "translate_title", return_value="참고문헌"), \
              mock.patch.object(tr.jobs, "stop_requested", return_value=False):
-            ok, msg = tr.translate_one_chapter(ch, "codex_cli:gpt-x")
+            ok, msg = tr.translate_one_chapter(ch, "codex_cli:gpt-x", want_plain=want_plain,
+                                               want_bilingual=want_bilingual)
         return ch, ok, msg, call
+
+    def test_bilingual_only_still_writes_the_chapter(self):
+        """대역본만 켜도 참고문헌 장이 대역본에서 빠지지 않는다(원문 | 원문)."""
+        ch, ok, msg, call = self._run(skip_on=True, want_plain=False, want_bilingual=True)
+        self.assertTrue(ok, msg)
+        call.assert_not_called()
+        self.assertFalse(ch.with_name("07_References_ko.txt").exists())
+        blocks = ch.with_name("07_References_bilingual.txt").read_text(encoding="utf-8").split("\n\n---\n\n")
+        self.assertEqual(len(blocks), 2)
+        for blk in blocks:
+            src, tgt = blk.split("\n\n", 1)
+            self.assertEqual(src.strip(), tgt.strip())
 
     def test_reference_chapter_is_kept_in_original_without_ai(self):
         ch, ok, msg, call = self._run(skip_on=True)
@@ -73,6 +86,21 @@ class ReferenceChapterTest(unittest.TestCase):
     def test_switch_off_translates_it(self):
         _ch, _ok, _msg, call = self._run(skip_on=False)
         self.assertTrue(call.called)
+
+
+class QueueFilterTest(unittest.TestCase):
+    """참고문헌 장이 번역에 들어간 진짜 원인 — 대기열에 넣는 곳 중 한 곳만 거르고 있었다."""
+
+    def test_every_chapter_queue_site_filters_backmatter(self):
+        import re
+        src = (Path(__file__).resolve().parents[1] / "pipeline_app.py").read_text(encoding="utf-8")
+        # 대기열로 가는 목록들(_new·_new_chs2·_new_chs2b) — 중복 책 찾기·분할 목록·EPUB 책
+        # 목록은 대기열과 무관하고, EPUB 은 참고문헌도 담아야 하므로 거르지 않는다.
+        sites = re.findall(r"(_new(?:_chs2b?)?) = \[str\(f\.relative_to\(cfg\.BASE_DIR\)\)(.*?)\]", src, re.S)
+        self.assertGreaterEqual(len(sites), 4)
+        for name, body in sites:
+            self.assertIn("_is_backmatter_file(f)", body, name)
+        self.assertIn("not _is_backmatter_file(f)", src[src.index("def _chapter_rel_paths"):][:600])
 
 
 if __name__ == "__main__":

@@ -1202,6 +1202,14 @@ def _stage_folder(stage_id: str) -> Path:
     return cfg.BASE_DIR
 
 
+def _is_backmatter_file(f: Path) -> bool:
+    """참고문헌·찾아보기 같은 뒷부속 장인가 — 번역·요약 대기열에 넣지 않는다.
+    ★대기열에 넣는 곳이 여럿인데 이 거르기는 _chapter_rel_paths 한 곳에만 있어서,
+      장 분할 뒤 바로 넘기는 길로는 참고문헌 장이 번역에 들어갔다 (2026-09-30 실측:
+      Butlin 외 2026 «07_References» → 서지 조각 «실패 4단락»)."""
+    return cmap.is_backmatter_title(cmap.chapter_title(f))
+
+
 def _chapter_rel_paths(ws_name: str, stem: str) -> list[str]:
     ch_dir = chapters_dir(ws_name, stem)
     if not ch_dir.exists():
@@ -1211,7 +1219,7 @@ def _chapter_rel_paths(ws_name: str, stem: str) -> list[str]:
     return [
         str(f.relative_to(cfg.BASE_DIR))
         for f in sorted(ch_dir.glob("??_*.txt"))
-        if not f.stem.endswith(_DERIVED) and not cmap.is_backmatter_title(cmap.chapter_title(f))
+        if not f.stem.endswith(_DERIVED) and not _is_backmatter_file(f)
     ]
 
 
@@ -2887,7 +2895,7 @@ if _active_view == "2_split":
             return False, f"{_stem}: {_serr}"
         _cdir = chapters_dir(_ws, _stem)
         _new = [str(f.relative_to(cfg.BASE_DIR)) for f in sorted(_cdir.glob("??_*.txt"))
-                if not f.stem.endswith(_DERIVED)]
+                if not f.stem.endswith(_DERIVED) and not _is_backmatter_file(f)]
         if not _new:
             return False, f"{_stem}: 챕터 생성 안 됨"
         queue_remove("tab2_ready", [_stem])
@@ -3154,7 +3162,7 @@ if _active_view == "2_split":
                 _ch_dir2 = chapters_dir(_o2["ws"], _o2["stem"])
                 _new_chs2 = [str(f.relative_to(cfg.BASE_DIR))
                              for f in sorted(_ch_dir2.glob("??_*.txt"))
-                             if not f.stem.endswith(_DERIVED)]
+                             if not f.stem.endswith(_DERIVED) and not _is_backmatter_file(f)]
                 if _new_chs2:
                     queue_add("tab3_ready" if _route_translate(_o2["stem"]) else "tab4_ready", _new_chs2)
                     _archive_split_source(_o2["stem"])
@@ -3180,7 +3188,7 @@ if _active_view == "2_split":
                 queue_remove("tab2_ready", [_o2["stem"]])
                 _new_chs2 = [str(f.relative_to(cfg.BASE_DIR))
                              for f in sorted(_one_path2.parent.glob("??_*.txt"))
-                             if not f.stem.endswith(_DERIVED)]
+                             if not f.stem.endswith(_DERIVED) and not _is_backmatter_file(f)]
                 _stage2 = "3_translate" if _route_translate(_o2["stem"]) else "4_summary"
                 if _new_chs2:
                     queue_add("tab3_ready" if _stage2 == "3_translate" else "tab4_ready", _new_chs2)
@@ -3230,7 +3238,7 @@ if _active_view == "2_split":
                     _ch_dir2b = chapters_dir(DEFAULT_WS, _ns2)
                     _new_chs2b = [str(f.relative_to(cfg.BASE_DIR))
                                   for f in sorted(_ch_dir2b.glob("??_*.txt"))
-                                  if not f.stem.endswith(_DERIVED)]
+                                  if not f.stem.endswith(_DERIVED) and not _is_backmatter_file(f)]
                     if _new_chs2b:
                         if _route_translate(_ns2):
                             queue_add("tab3_ready", _new_chs2b)

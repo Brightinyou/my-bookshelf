@@ -397,11 +397,13 @@ def diagnose_split(ws_name: str, stem: str) -> list:
                 break
 
     # ④ 번역이 원문 그대로 남은 단락 — 대역 파일이 있으면 센다
-    from services.translate import should_skip_translation
+    from services.translate import should_skip_translation, translation_status
     for p in files:
         bil = p.with_name(p.stem + "_bilingual.txt")
         if not bil.exists():
             continue
+        if translation_status(p).get("skipped") == "references":
+            continue        # 설정대로 번역하지 않은 참고문헌 장 — «번역 안 됨» 경고가 아니다
         blocks = bil.read_text(encoding="utf-8", errors="ignore").split("\n\n---\n\n")
         left = 0
         for blk in blocks:
