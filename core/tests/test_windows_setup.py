@@ -41,6 +41,19 @@ class WindowsSetupTest(unittest.TestCase):
         self.assertIn("'pref_use_obsidian'", script)
         self.assertIn("Obsidian.Obsidian", script)
 
+    def test_app_launch_does_not_depend_on_vbscript(self):
+        """VBScript 를 없앤 PC(Windows Sandbox 실측)에서도 설치 뒤 앱이 열려야 한다."""
+        installer = (ROOT / "dev" / "installer" / "MyBookshelf.iss").read_text(
+            encoding="utf-8-sig"
+        )
+        run = installer.split("[Run]", 1)[1].split("[UninstallDelete]", 1)[0]
+        self.assertNotIn("wscript.exe", run)
+        self.assertIn('Filename: "{app}\\.venv\\Scripts\\MyBookshelf.exe"', run)
+
+        start = (ROOT / "start.bat").read_text(encoding="utf-8")
+        self.assertLess(start.index(".venv\\Scripts\\MyBookshelf.exe"),
+                        start.index("wscript.exe"))
+
     def test_unattended_installer_supports_both_clis_and_login(self):
         script = (ROOT / "install-mybookshelf.ps1").read_text(encoding="utf-8-sig")
 
