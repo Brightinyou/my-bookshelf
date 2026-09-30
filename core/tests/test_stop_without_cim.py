@@ -4,6 +4,8 @@ Windows Sandbox 에서 Get-CimInstance Win32_Process 가 «액세스가 거부�
 그러면 옛 서버·창 정리, «Stop My Bookshelf», 설치·업데이트 전 앱 끄기가 모두 조용히
 실패했다. 명령줄은 WMI 로만 읽히지만 실행 파일 경로는 권한 없이 읽힌다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 from unittest import mock
 import os

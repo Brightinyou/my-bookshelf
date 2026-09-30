@@ -9,6 +9,8 @@
 ★각주를 **찾는** 규칙은 services/footnotes.convert가 이미 갖고 있다. 여기서는
 표시만 바꾼다 — 규칙을 두 벌로 만들면 한쪽만 고치게 된다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import re
 import unittest
 

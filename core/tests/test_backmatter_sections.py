@@ -12,6 +12,8 @@
   · 「관계문헌」류는 뒷부속으로 알아보고 번역·요약 대기열에서 뺀다.
   · 시각 판독 없이도 마지막 장 꼬리의 「관계문헌」은 제 이름으로 떼어진다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import shutil
 import tempfile
 import unittest

@@ -8,6 +8,8 @@
 (실측 45쪽: 지운 화소 42개, 판독 결과 완전 동일). 이진화도 하지 않는다 — 적응
 이진화를 넣었더니 유사도가 0.928로 떨어지고 `벽돌이`를 통째로 잃었다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 try:

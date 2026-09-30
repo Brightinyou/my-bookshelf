@@ -10,6 +10,8 @@
   · 방금 설치하며 고른 언어가 예전 설정을 이긴다.
   · 그러나 **한 번만** 이긴다 — 앱에서 언어를 바꾸면 재시작해도 그대로여야 한다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import json
 import os
 import shutil

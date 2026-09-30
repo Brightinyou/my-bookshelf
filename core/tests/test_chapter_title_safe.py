@@ -11,6 +11,8 @@
 
 ★그리고 **원래 제목에 있던 하이픈은 건드리지 않아야** 한다(`co-evolution`).
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 from services.chapter_map import MAX_TITLE_BYTES, _safe

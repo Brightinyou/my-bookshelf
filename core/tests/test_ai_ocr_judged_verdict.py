@@ -8,6 +8,8 @@
 기존 `garble_rate` 관문으로는 못 걸렀다 — 이 책의 불량 레이어는 글자가 깨진 게
 아니라 1음절 낱말이 빠진 것이라 깨짐률이 1.9~14.6으로 임계 15에 못 미친다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 from services import ai_ocr

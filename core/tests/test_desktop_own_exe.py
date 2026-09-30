@@ -4,6 +4,8 @@
 C:\\Python314\\python314.dll 을 잡았고, base_prefix 가 번들 runtime 이 아닌
 C:\\Python314 가 되어 «No module named 'webview'» 로 창이 안 떴다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 from unittest.mock import patch
 import os

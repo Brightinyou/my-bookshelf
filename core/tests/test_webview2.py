@@ -3,6 +3,8 @@
 GitHub 윈도우 러너에는 WebView2 가 이미 있어 부재 상황은 재현되지 않는다. 판정은
 레지스트리를 흉내 내어 묶고, 실제 부재는 Sandbox 실측으로 확인한다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 from unittest import mock
 import unittest

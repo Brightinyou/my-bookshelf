@@ -9,6 +9,8 @@
 그대로 둔다 — 고치려다 멀쩡한 쪽을 망치면 안 된다. 그래서 테스트의 절반이
 '안 바꾸는 것'을 지킨다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import tempfile
 import unittest
 from pathlib import Path

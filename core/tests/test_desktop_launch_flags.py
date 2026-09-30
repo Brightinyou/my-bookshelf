@@ -5,6 +5,8 @@
 Streamlit이 config.toml을 못 찾아서. 설정 파일 위치와 무관하게 플래그로
 넘어가는지, 그리고 그 값이 config.toml과 어긋나지 않는지 붙들어 둔다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 from unittest.mock import patch
 import re

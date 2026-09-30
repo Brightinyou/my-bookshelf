@@ -9,6 +9,8 @@
 그래서 상태를 작업 폴더의 파일로 옮겼다. 이 테스트가 지키는 것은 하나다 —
 **다른 프로세스에서 건 중단이 보여야 한다.**
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import json
 import os
 import shutil

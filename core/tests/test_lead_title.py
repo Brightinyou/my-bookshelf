@@ -5,6 +5,8 @@
 제목·저자·초록·서론이 함께 들어 있어서 '머리말'이라는 이름이 사실과 어긋난다
 (2026-08-25 Dorobantu 논문에서 연구자 지적).
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 import chapter_wiki

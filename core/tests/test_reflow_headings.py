@@ -11,6 +11,8 @@
   · **한글 본문은 예전과 똑같이 이어 붙는다** — 한글은 어절 경계 줄바꿈이 흔해
     짧은 줄이 널려 있어서, 제목으로 오인하면 본문이 조각난다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 from services import reflowlib

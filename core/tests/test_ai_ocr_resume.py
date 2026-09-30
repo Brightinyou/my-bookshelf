@@ -8,6 +8,8 @@
 ★**진짜 빈 쪽은 건드리지 않는다** — 간지·백지는 `verify()`가 `ok`("빈 쪽")로
 판정하고, 그 쪽의 0바이트는 맞는 답이다(10쪽).
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import json
 import tempfile
 import unittest

@@ -550,11 +550,13 @@ _use_hx = bool(llm.get_pref("use_hwpx", False))
 _use_ep = bool(llm.get_pref("use_epub", False))
 def _out_short() -> str:
     parts = [nm for on, nm in [(_use_dx, "DOCX"), (_use_hx, "HWPX"), (_use_ep, "EPUB"), (_use_ob, "위키")] if on]
+    # 화면 언어로 — 영어 화면에 «DOCX 생성»이 그대로 나왔다 (2026-09-30).
     if not parts:
-        return "출력 선택"
+        return t("출력 선택")
     if parts == ["위키"]:
-        return "위키반영"
-    return "+".join(parts) + ("" if "위키" in parts else " 생성")
+        return t("위키반영")
+    joined = "+".join(t(p) for p in parts)
+    return joined if "위키" in parts else tf("%s 생성", joined)
 def _out_flow() -> str:
     parts = [nm for on, nm in [(_use_dx, "Word(.docx)"), (_use_hx, "한글(.hwpx)"),
                                 (_use_ep, "EPUB"), (_use_ob, "Obsidian Wiki")] if on]
@@ -622,7 +624,7 @@ def _short_model(model: str, tool: str = "") -> str:
     """`claude-sonnet-4-6` → `Sonnet 4.6`. 앞에 붙는 도구 이름(Claude)과 겹치는
     접두만 뗀다 — Codex의 `gpt-5.5`는 겹치지 않으므로 `GPT-5.5`로 살려 둔다."""
     if model in ("", "default"):
-        return "기본"
+        return t("기본")
     m = model
     if tool and m.lower().startswith(tool.lower() + "-"):
         m = m[len(tool) + 1:]

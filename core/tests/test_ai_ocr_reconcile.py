@@ -5,6 +5,8 @@
 30쪽에서 `망원경`이 `바벨탑`으로 바뀌었는데 쪽 유사도는 0.988이라 ok로 통과했다.
 같은 쪽을 두 번 읽으면 모델이 헷갈린 자리에서만 결과가 갈리므로 그 자리가 드러난다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 from services import ai_ocr

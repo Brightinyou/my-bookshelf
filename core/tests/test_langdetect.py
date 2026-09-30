@@ -6,6 +6,8 @@
   2) 외국어 책을 도착언어로 오판 → 번역 단계를 건너뛰어 원서가 그대로 요약된다.
 아래 테스트는 그 두 방향을 모두 막는다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import unittest
 
 from services import langdetect as ld

@@ -5,6 +5,8 @@
 공백 아닌 글자는 원문과 한 글자도 달라지지 않는다. 예전 방식이 사후 검증
 (_clean_is_valid)으로 지키던 것을 지금은 설계로 지키므로 여기서 못 박아 둔다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 import random
 import re
 import unittest

@@ -5,6 +5,8 @@ Wiki 버튼 key 가 «책 이름 앞 20글자 + 장 제목»이라 겹쳐 Stream
 나고, 화면이 «화면 구성 중…»에서 멈췄다. 제목으로 파일을 다시 찾아서 두 번째 버튼은
 첫 번째 머리말을 가리키기도 했다.
 """
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # noqa: E401
+import _isolation  # noqa: F401,E402 — 실제 설정·자료 폴더 대신 임시 폴더 (먼저 불러와야 한다)
 from pathlib import Path
 from unittest.mock import patch
 import os
