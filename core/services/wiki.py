@@ -183,6 +183,9 @@ def check_wiki_orphans() -> dict:
 # ─── Obsidian 보관함(Vault) 관리 ─────────────────────────────
 
 def _obsidian_config() -> Path:
+    # 테스트는 실제 보관함 목록 대신 임시 파일을 쓴다(core/tests/_isolation.py).
+    if os.environ.get("MYBOOKSHELF_OBSIDIAN_CONFIG"):
+        return Path(os.environ["MYBOOKSHELF_OBSIDIAN_CONFIG"])
     # 맥은 APPDATA가 없음 — Application Support 경로 사용 (2026-07-03)
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "obsidian" / "obsidian.json"
