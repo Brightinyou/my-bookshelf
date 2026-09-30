@@ -3973,14 +3973,19 @@ if _active_view == "5_wiki":
         else:
             _meta5 = tf("%d챕터", _total5)
         # 챕터 이름 목록 (NN_제목.txt → 제목)
-        _ch_names5 = [_re.sub(r'^\d+_', '', f.stem) for f in sorted(_ch5.glob("??_*.txt"))
+        # ★파일 목록도 함께 들고 다닌다 (2026-09-30). 한 책에 같은 제목의 장이 둘일 수
+        #   있어서(실측: 「00_머리말」·「02_머리말」) 제목으로 파일을 다시 찾으면 두 번째도
+        #   첫 번째 파일을 가리켰고, 버튼 key 도 겹쳐 문서출력 화면이 통째로 멈췄다.
+        _ch_files5 = [f for f in sorted(_ch5.glob("??_*.txt"))
                       if not f.stem.endswith(_DERIVED)] if _ch5.exists() else []
+        _ch_names5 = [_re.sub(r'^\d+_', '', f.stem) for f in _ch_files5]
         _wiki_item5 = {
             "key": _stem5,
             "label": _stem5,
             "meta": _meta5,
             "obj": {"ws": DEFAULT_WS, "stem": _stem5},
             "ch_names": _ch_names5,
+            "ch_files": _ch_files5,
         }
         # '이미 위키 노트가 있음' 갱신 확인은 위키 출력을 실제로 켰을 때만 의미가
         # 있다 — EPUB(또는 DOCX/HWPX)만 켠 경우 위키 보관함 상태와 무관하게 항상
@@ -4024,17 +4029,15 @@ if _active_view == "5_wiki":
                     open_path(_view_dir5)
                 if _it5["ch_names"]:
                     with st.expander(f"  ↳ {_ch_preview5}", expanded=False):
-                        _ch5_dir = chapters_dir(DEFAULT_WS, _it5["obj"]["stem"])
-                        for _cn5 in _it5["ch_names"]:
+                        for _ci5, (_cn5, _cn5_txt) in enumerate(zip(_it5["ch_names"], _it5["ch_files"])):
                             # NN_제목.txt → NN_제목_wiki.md(구형 json 폴백) 탐색
-                            _cn5_txt = next((_ch5_dir.glob(f"??_{_cn5}.txt")), None) if _ch5_dir.exists() else None
-                            _cn5_json = summary_file_for(_cn5_txt) if _cn5_txt else None
+                            _cn5_json = summary_file_for(_cn5_txt) if _cn5_txt.exists() else None
                             _has_json5 = _cn5_json is not None
                             _cj1, _cj2 = st.columns([4, 1])
                             if _has_json5:
                                 _cj1.markdown(f"✅ **{_cn5}**")
-                                _safe_key5 = _re.sub(r"[^a-zA-Z0-9가-힣]", "_", _cn5)[:30]
-                                if _cj2.button("Wiki", icon=":material/menu_book:", key=f"ch5w_{_it5['key'][:20]}_{_safe_key5}", width="stretch"):
+                                # key 는 책 전체 이름 + 장 순번 — 제목·앞 20글자로는 겹친다.
+                                if _cj2.button("Wiki", icon=":material/menu_book:", key=f"ch5w_{_it5['key']}_{_ci5}", width="stretch"):
                                     _bok5, _bmsg5 = build_single_chapter_wiki(DEFAULT_WS, _it5["obj"]["stem"], _cn5_json, wiki_dir=_cur_wiki5_path)
                                     (st.success if _bok5 else st.error)(
                                         f"{'✅ ' + Path(_bmsg5).name if _bok5 else '❌ ' + _bmsg5}")
