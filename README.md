@@ -1,137 +1,66 @@
 # My Bookshelf
 
-**책·논문·원고를 읽기 좋은 요약 노트와 전자책으로 바꾸는 개인 연구 도구.**
-PDF·DOCX·HWP·HWPX·TXT를 넣으면 번역과 요약을 거쳐 **EPUB·Word(.docx)·한글(.hwpx)·Obsidian 위키**로 내보냅니다.
+**책·논문·원고를 넣으면, 번역하고 요약해서 읽기 좋은 노트와 전자책으로 만들어 주는 프로그램입니다.**
+
+PDF·Word(.docx)·한글(.hwp/.hwpx)·텍스트(.txt) 파일을 넣으면 → **요약 노트(Obsidian 위키) · Word 문서 · 한글 문서 · 전자책(EPUB)** 으로 받아 볼 수 있습니다.
 
 [![Windows 내려받기](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjJ2OC4ySDNWM3ptOS44IDBIMjF2OC4yaC04LjJWM3pNMyAxMi44aDguMlYyMUgzdi04LjJ6bTkuOCAwSDIxVjIxaC04LjJ2LTguMnoiLz48L3N2Zz4K)](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe)
 [![macOS 내려받기](https://img.shields.io/badge/macOS-.pkg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)
 
-> 🇬🇧 English manual: [README.en.md](README.en.md) · 📘 각 탭 상세: [사용 설명서](docs/MANUAL.md)
-
-Windows와 macOS 모두 지원합니다. 같은 코어(`core/`)를 쓰고 **설치 방법만 다릅니다** — 아래 [2. 설치](#2-설치)에서 쓰시는 운영체제 부분만 보시면 됩니다.
+> 🇬🇧 English: [README.en.md](README.en.md) · 📘 화면별 자세한 설명: [사용 설명서](docs/MANUAL.md)
 
 ---
 
-## ⚡ 3분 빠른 시작
+## 이렇게 씁니다 (한눈에 보기)
 
-| | 할 일 |
-|---|---|
-| **1. 설치** | 위 배지에서 <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` 또는 <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg`를 받아 실행합니다. 처음 한 번은 **보안 경고를 통과**해야 하고, 설치 중 파이썬 환경 준비에 몇 분 걸립니다. → [자세히](#2-설치) |
-| **2. AI 연결** | macOS PKG는 설치 직후 터미널에서 **Claude·Codex(ChatGPT)·둘 다·나중에** 중 하나를 묻습니다. 건너뛰었다면 앱의 `⚙️ 설정` 탭에서 CLI를 켜거나 API 키를 넣습니다. → [자세히](#3-첫-설정--ai-연결) |
-| **3. 문서 넣기** | `📄 텍스트 변환` 탭에 파일을 끌어다 놓고 **[▶ 시작]**. 이후 단계는 **팝업이 물어보는 대로** 이어집니다. |
-| **4. 결과 받기** | `📖 출력` 탭에서 EPUB·Word·한글·Obsidian 중 원하는 형식을 켜고 **[▶ 시작]**. |
+```
+① 설치  →  ② AI 연결  →  ③ 파일 넣기  →  ④ 결과 받기
+```
+
+1. 위 버튼으로 **설치 파일을 받아 설치**합니다. (아래 [설치하기](#설치하기))
+2. 앱을 처음 열면 나오는 **«AI 연결»** 안내를 따라 AI를 연결합니다. (아래 [AI 연결하기](#ai-연결하기))
+3. **텍스트 변환** 화면에 파일을 끌어다 놓고 **[▶ 시작]** 을 누릅니다.
+4. 한 단계가 끝날 때마다 **다음 단계로 갈지 물어봅니다.** [예]를 누르며 따라가면 마지막에 결과 파일이 만들어집니다.
 
 ---
 
 ## 목차
 
-1. [이 프로그램은 무엇인가](#1-이-프로그램은-무엇인가)
-2. [설치](#2-설치) — [<img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows](#windows) · [<img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS](#macos)
-3. [첫 설정 — AI 연결](#3-첫-설정--ai-연결)
-4. [작업 흐름](#4-작업-흐름)
-5. [시작 · 중단 · 이어하기](#5-시작--중단--이어하기)
-6. [언어 설정과 번역](#6-언어-설정과-번역)
-7. [데이터 위치](#7-데이터-위치)
-8. [문제 해결](#8-문제-해결)
-9. [저작권 및 면책](#9-저작권-및-면책)
+1. [설치하기](#설치하기) — [Windows](#windows) · [macOS](#macos)
+2. [AI 연결하기](#ai-연결하기)
+3. [사용하기](#사용하기)
+4. [결과 파일은 어디에?](#결과-파일은-어디에)
+5. [자주 묻는 질문 · 문제 해결](#자주-묻는-질문--문제-해결)
+6. [꼭 알아 두실 점 (저작권·개인정보)](#꼭-알아-두실-점-저작권개인정보)
+7. [고급 · 개발자용](#고급--개발자용)
 
 ---
 
-## 1. 이 프로그램은 무엇인가
-
-책, 논문, 원고 등 PDF·DOCX·HWP·HWPX·TXT를 넣으면, 다음 단계를 거쳐 **읽기 좋은 요약 위키 노트**를 만듭니다. (Obsidian 보관함(Vault)에 저장 가능)
-
-```
-PDF/DOCX/HWP/HWPX/TXT  →  텍스트 변환  →  챕터 분할  →  번역(도착언어가 아닌 문서)  →  문서요약  →  EPUB · Word(.docx) · 한글(.hwpx) · Obsidian Wiki (모두 가능)
-```
-
-- **PDF**는 텍스트 레이어가 있으면 바로 처리됩니다. **스캔본이거나 OCR 품질이 나쁜 PDF**도 됩니다 — 텍스트 변환 탭의 «🔬 본문 품질 검사»가 불량을 짚어 주면 **AI로 다시 읽습니다**(쪽수에 따라 몇 분~수십 분). **DOCX·HWP·HWPX·TXT**는 그대로 바로 처리됩니다.
-- 번역·요약·위키 생성에는 **AI**를 씁니다. API 키를 넣거나, Claude/ChatGPT 구독 CLI를 켜서 사용합니다.
-- 결과 노트는 **저자·핵심 요약·장별 개요·핵심 인용·핵심 키워드**를 담고, 어려운 원전은 용어 원어 병기·풀어 쓰기로 읽기 쉽게 만듭니다.
-
----
-
-## 2. 설치
-
-<div align="center">
-
-### ⬇️ 내려받기
-
-| | 받을 파일 |
-|---|---|
-| <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **Windows** | [**Setup.exe** ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) |
-| <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> **macOS** | [**MyBookshelf.pkg** ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg) |
-
-위 링크를 누르면 **최신 판이 바로 내려받아집니다.** 예전 판이나 다른 파일은 [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)에 있습니다.
-
-⚡ 터미널·PowerShell 이 익숙하시면 **한 줄로 끝내는 방법**도 있습니다 — 파이썬·앱·AI 연결까지 한 번에. [<img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows](#oneline-win) · [<img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS](#oneline-mac)
-
-</div>
-
----
+## 설치하기
 
 <a id="windows"></a>
 
 ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows
 
-#### 1단계 — 내려받기
+**1. 내려받기**
+[**Setup.exe 내려받기 ⬇️**](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) (약 100MB)
 
-- **[`Setup.exe` 내려받기 ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe)** — 권장. 바로 실행하면 됩니다.
-- 브라우저가 `.exe` 내려받기를 막으면, [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)의 **Assets**에서 `MyBookshelf-Setup-vX.Y.Z.zip` 을 받으세요. 압축을 풀면 같은 `Setup.exe`가 나옵니다.
+> 브라우저가 내려받기를 막으면 [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest) 아래쪽 **Assets** 에서 `MyBookshelf-Setup-v….zip` 을 받아 압축을 푸세요. 같은 `Setup.exe` 가 들어 있습니다.
 
-#### 2단계 — 실행 (처음 한 번만: 보안 경고 통과 ⚠️)
+**2. 실행 — 처음 한 번은 보안 경고가 뜹니다 ⚠️**
+`Setup.exe` 를 더블클릭하면 파란 창(*"Windows의 PC 보호"*)이 뜰 수 있습니다. 개인이 만든 프로그램이라 뜨는 안내이니 걱정하지 않으셔도 됩니다.
 
-`Setup.exe`를 더블클릭하면 Windows가 *"PC를 보호했습니다"* 라는 파란 창을 띄웁니다. 개인이 만들어 나누는 프로그램이라 **상용 코드 서명 인증서를 갖추지 않았을 때 뜨는 안내**입니다.
+- **[추가 정보]** → **[실행]** 을 누르세요.
 
-1. 파란 창에서 **[추가 정보]** 를 누릅니다.
-2. 아래에 나타나는 **[실행]** 버튼을 누릅니다.
+**3. 설치**
+- 언어(한국어/English)를 고르고 **[다음]** 을 누르다 보면 설치가 끝납니다. 보통 **1~2분** 걸립니다.
+- 파이썬 같은 프로그램을 따로 설치하실 필요가 없습니다. 모두 설치 파일에 들어 있습니다.
+- 컴퓨터에 앱 화면을 그리는 **Microsoft WebView2** 가 없으면 설치 중에 자동으로 받아 설치합니다(1분 안팎, 인터넷 필요). 이때 진행 막대가 좌우로 흐르면 정상입니다.
 
-#### 3단계 — 설치 언어 고르기
+**4. 앱 열기**
+설치 마지막 화면에서 **[마침]** 을 누르면 앱이 열립니다. 다음부터는 **바탕화면이나 시작 메뉴의 «My Bookshelf»** 를 누르세요.
 
-한국어 / English 중 고릅니다. 앱 화면에 쓰이는 언어이며, 나중에 **설정 탭에서 언제든 바꿀 수 있습니다.**
-
-#### 4단계 — 파이썬 (자동)
-
-파이썬 3.14가 없으면 설치 프로그램이 *"자동으로 받아 설치할까요?"* 라고 묻습니다. **[예]** 를 누르면 알아서 내려받아 설치합니다. 이미 3.10 이상이 설치돼 있으면 이 단계는 건너뜁니다.
-
-#### 5단계 — 첫 실행 준비 (자동)
-
-설치 마지막에 *"Preparing Python environment"* 가 뜨고 **몇 분간 멈춘 듯 보입니다 — 정상입니다.** 필요한 패키지를 받는 중입니다(네트워크에 따라 **5~20분**).
-
-- 설치 위치: `C:\Users\<사용자>\AppData\Local\My Bookshelf`
-- 진행 기록: 그 폴더의 `install.log`
-- 실행이 안 되면: 같은 폴더의 `launch-error.log`
-
-#### 6단계 — AI 연결
-
-설치가 끝나면 **My Bookshelf - Additional setup** PowerShell 창이 열립니다. **Claude·Codex(ChatGPT)·둘 다·나중에** 중 하나를 고르면 선택한 CLI를 설치하고, 이어서 옵시디언 설치 여부를 묻습니다. 그 뒤 브라우저 로그인 창을 바로 엽니다. **둘 다**를 고르면 Claude 로그인 뒤 Codex 로그인이 이어지며, 준비된 CLI와 옵시디언은 앱 설정에도 자동으로 등록됩니다.
-
-CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`에서 Gemini·OpenAI·Anthropic 중 하나의 API 키를 넣습니다.
-
-#### 7단계 — 실행
-
-바탕화면 또는 시작 메뉴의 **My Bookshelf** 아이콘을 누릅니다. 두 번째 실행부터는 몇 초면 창이 뜹니다.
-
-> **업데이트**: 앱의 **설정 탭 → 업데이트 확인**으로 새 판을 받을 수 있습니다.
-> 다만 **v1.2.33 이전 판을 쓰고 계셨다면 이번 한 번은 직접 받아 설치**해야 합니다(저장소가 통합되기 전 판이라 옛 주소를 보고 있습니다).
-
-<a id="oneline-win"></a>
-
-> [!TIP]
-> ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows — ⚡ 한 줄로 끝내기
->
-> *위 1~7단계를 건너뜁니다.*
->
-> PowerShell 이 익숙하시면, **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다.
->
-> ```powershell
-> irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
-> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI codex -Launch
-> ```
->
-> `-AI codex`(ChatGPT·기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian`(옵시디언도 설치) · `-TargetLang en` 등을 줄 수 있습니다. winget이 있으면 Node.js 설치 중 **관리자 확인(UAC) 창**이 한 번 뜰 수 있습니다. winget이 없는 Windows 10에서는 nodejs.org에서 공식 zip을 받아 사용자 폴더에 풀어 씁니다 — 이 경우 UAC 창도 뜨지 않습니다.
->
-> 기본적으로 선택한 구독 CLI의 브라우저 로그인도 바로 시작합니다 — `-AI both`는 Claude와 Codex 로그인을 모두 시도하므로 Claude Pro/Max, ChatGPT Plus/Pro 구독이 실제로 있어야 합니다. 없다면 `-AI codex`/`-AI claude`로 하나만 고르거나 `-AI none`으로 건너뛰고 API 키를 앱에서 직접 입력하세요. 설치 자체는 5~20분 걸리니 창을 닫지 말고 그대로 두세요.
+이제 [AI 연결하기](#ai-연결하기)로 넘어가세요.
 
 ---
 
@@ -139,236 +68,133 @@ CLI 대신 API를 쓰려면 **나중에**를 고른 뒤 앱의 `⚙️ 설정`�
 
 ### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS
 
-#### 1단계 — 내려받기
+**1. 내려받기**
+[**MyBookshelf.pkg 내려받기 ⬇️**](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)
 
-- **[`MyBookshelf.pkg` 내려받기 ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)** — 이것만 받으면 됩니다. 더블클릭하면 설치 관리자가 **응용 프로그램** 폴더에 넣어 줍니다.
-- 맥 관리자 암호를 쓸 수 없다면, [릴리스 페이지](https://github.com/Brightinyou/my-bookshelf/releases/latest)의 **Assets**에서 `MyBookshelf-vX.Y.Z-mac.zip` 을 받으세요. 압축을 풀면 앱 파일만 나옵니다.
+> 파일이 수백 KB로 작은 것이 정상입니다. 필요한 것은 설치하면서 받아 옵니다.
 
-> 파일 크기가 수백 KB로 작습니다 — **정상입니다.** `.pkg` 설치 중 파이썬 환경을 내려받아 준비합니다.
+**2. 실행 — 처음 한 번은 보안 경고가 뜹니다 ⚠️**
+- 다운로드 폴더의 `MyBookshelf.pkg` 를 **control-클릭(또는 오른쪽 클릭) → 열기 → 열기** 로 실행하세요.
+- 그래도 막히면: **Apple 메뉴 → 시스템 설정 → 개인정보 보호 및 보안** 에서 **[그래도 열기]** 를 누르세요.
 
-#### 2단계 — 처음 한 번만: 보안 경고 통과 ⚠️
+**3. 설치**
+**[계속] → [설치] → 맥 암호 입력**. 파이썬이 없으면 python.org에서 받아 자동으로 설치하므로, 인터넷 상태에 따라 **몇 분** 걸릴 수 있습니다. 설치 창을 닫지 마세요.
 
-개인이 만들어 나누는 프로그램이라 Apple 서명·공증을 거치지 않았을 때 *"확인되지 않은 개발자"* 경고가 뜰 수 있습니다.
+**4. 앱 열기**
+설치가 끝나면 앱이 자동으로 열립니다. 다음부터는 **Launchpad** 나 **응용 프로그램** 폴더의 **My Bookshelf** 를 누르세요.
 
-- **`.pkg`**: 다운로드 폴더의 `MyBookshelf.pkg`를 **control-클릭(또는 우클릭) → 열기 → 열기**로 실행합니다.
-- **zip**: 먼저 `MyBookshelf.app`을 **응용 프로그램** 폴더로 옮긴 다음, 그 아이콘을 **control-클릭 → 열기 → 열기**로 실행합니다. 다운로드 폴더에서 바로 실행하면 macOS의 임시 격리 경로 때문에 아무 반응 없이 멈출 수 있습니다.
-- 그래도 차단되면 한 번 더블클릭해 경고를 띄운 뒤 **Apple 메뉴 → 시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기(또는 확인 없이 열기)**를 누릅니다.
-
-#### 3단계 — 앱과 파이썬 환경 설치
-
-`.pkg` 설치 관리자에서 **[계속] → [설치] → 맥 암호**를 입력합니다. 설치 프로그램은 다음을 자동으로 처리합니다.
-
-1. Python 3.10 이상을 찾되 현재 Mac과 아키텍처가 맞는 설치본을 우선 사용합니다.
-2. 없으면 python.org의 Python 3.14.6을 받아 SHA256을 확인한 뒤 설치합니다.
-3. 앱 전용 가상환경을 만들고 필요한 Python 패키지를 설치합니다.
-
-네트워크에 따라 몇 분 걸릴 수 있으므로 설치 관리자를 닫지 마세요.
-
-> **zip은 다릅니다.** Mac에 Python 3.10 이상이 이미 있어야 합니다. 없으면 첫 실행 때 python.org 설치 페이지를 안내하며, Python을 설치한 뒤 앱을 다시 열면 가상환경과 패키지를 준비합니다.
-
-#### 4단계 — 터미널에서 AI 고르기
-
-`.pkg`의 Python 준비가 끝나면 **My Bookshelf — 추가 설정** 터미널 창이 열립니다.
-
-| 선택 | 설치 내용 | 예상 추가 용량 |
-|---|---|---:|
-| **1. Claude** | Claude Code CLI · Claude Pro/Max 구독 | 약 293MB |
-| **2. Codex** | Codex CLI · ChatGPT Plus/Pro 구독 | 약 363MB(Node.js 포함) |
-| **3. 둘 다** | Claude와 Codex 모두 설치 · 기본 작업 AI는 Codex(ChatGPT) | 약 656MB |
-| **4. 나중에** | CLI를 설치하지 않고 앱에서 API 키 설정 | 0MB |
-
-번호를 입력한 뒤 Enter를 누릅니다. 아무것도 입력하지 않고 Enter를 누르면 기본값인 **4. 나중에**가 선택됩니다. 이미 설치된 CLI는 다시 받지 않으며 추가 용량도 0MB로 표시됩니다.
-
-> Homebrew가 이미 있으면 Node.js 설치에 사용합니다. Homebrew가 없다고 새로 설치하지는 않으며, 공식 Node.js LTS를 사용자 폴더에 직접 설치합니다.
-
-#### 5단계 — 옵시디언 고르기
-
-AI 선택이 끝나면 옵시디언을 설치할지 묻습니다(약 515MB). 기본값은 **아니요**입니다.
-
-- **예**: Homebrew가 있으면 사용하고, 없으면 공식 최신 macOS DMG를 받아 `~/Applications`에 설치합니다.
-- **아니요**: 기본 출력을 **EPUB + Word**로 둡니다. 옵시디언을 설치하면 **EPUB + 옵시디언 위키**로 맞춥니다.
-- 이미 `/Applications` 또는 `~/Applications`에 설치돼 있으면 다운로드를 건너뜁니다.
-
-출력 형식과 옵시디언 보관함은 나중에 앱의 `⚙️ 설정`에서 언제든 바꿀 수 있습니다.
-
-#### 6단계 — CLI 로그인과 앱 실행
-
-CLI를 골랐다면 설치 창이 곧바로 브라우저 로그인 창을 엽니다. **둘 다**를 골랐다면 Claude 로그인 뒤 Codex 로그인이 이어집니다. 로그인 뒤에는 새 터미널을 열어도 `claude`와 `codex`를 바로 쓸 수 있도록 경로를 자동 등록합니다.
-
-로그인이나 설치를 취소했어도 앱의 `⚙️ 설정`에서 다시 켜거나 API 키를 넣을 수 있습니다. 마지막 Enter는 추가 설정을 끝냅니다.
-
-그다음 Launchpad 또는 응용 프로그램 폴더에서 **My Bookshelf**를 실행합니다. `.pkg` 설치본은 Python 환경이 이미 준비돼 있어 바로 열립니다.
-
-> 설치 기록: `~/Library/Application Support/MyBookshelf/install.log`<br>
-> 앱 실행 기록: `~/Library/Application Support/MyBookshelf/app.log`
-
-<a id="oneline-mac"></a>
-
-> [!TIP]
-> ### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS — ⚡ 한 줄로 끝내기
->
-> *위 1~6단계를 건너뜁니다.*
->
-> 터미널이 익숙하시면, 내려받기부터 **파이썬·앱·AI CLI·기본 설정까지 스크립트 하나로** 끝납니다. `.pkg`도 파이썬과 선택한 AI CLI·옵시디언을 설치하며, 이 방법은 옵션을 명령에 미리 적는 무인 설치입니다.
->
-> ```bash
-> curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
-> bash install-mybookshelf.sh --ai codex --launch
-> ```
->
-> `--ai codex`(ChatGPT·기본) · `--ai claude` · `--ai both` · `--ai none`을 쓸 수 있습니다. `--ai claude --ai codex`처럼 두 번 적어도 둘 다 설치합니다. `--obsidian`(옵시디언도 설치) · `--target-lang en` 등은 `bash install-mybookshelf.sh --help`에서 볼 수 있습니다.
->
-> **이 방법은 보안 경고를 만나지 않습니다** — `installer` 명령으로 설치하기 때문입니다.
-> 선택한 CLI의 **브라우저 로그인 창도 설치 중 자동으로 열립니다.** API 키 입력만 앱 설정에서 직접 합니다.
+이제 [AI 연결하기](#ai-연결하기)로 넘어가세요.
 
 ---
 
-## 3. 첫 설정 — AI 연결
+## AI 연결하기
 
-앱의 `⚙️ 설정` 탭에서 **둘 중 하나**를 준비합니다. **AI 모델은 설정에서 한 번만 고르면** 모든 단계가 그 모델을 씁니다.
+번역과 요약은 AI가 합니다. 앱을 처음 열면 **«AI 연결»** 안내가 나옵니다. 둘 중 **편한 쪽 하나**를 고르세요.
 
-- **AI 구독(CLI)** — API 키 없이 구독으로 사용 (**권장**). 우선순위가 API 키보다 높습니다.
-- **AI API 키** — Gemini / OpenAI / Anthropic 키를 직접 입력. 쓴 만큼 과금됩니다.
+| | 구독 계정 | API 키 |
+|---|---|---|
+| **이런 분께** | ChatGPT Plus/Pro 나 Claude Pro/Max 를 **이미 구독 중**인 분 | 구독은 없고 **쓴 만큼만** 내고 싶은 분 |
+| **요금** | 추가 요금 없음 (구독에 포함) | 쓴 만큼 나옴 |
+| **준비** | 앱이 도구 설치와 로그인을 안내 | 키를 받아 붙여 넣기 |
 
----
+### 구독 계정으로 연결 (추천)
 
-### 처음이신가요? — CLI 설치하기
+1. «AI 연결» 안내에서 **구독 계정** 이 선택된 상태로 **[설정 창 열기]** 를 누릅니다.
+2. 새 창이 뜨면 번호를 고릅니다: **1** Claude · **2** Codex(ChatGPT) · **3** 둘 다 · **4** 나중에
+3. 필요한 도구를 자동으로 설치한 뒤 **브라우저 로그인 화면**이 열립니다. 평소 쓰는 계정으로 로그인하세요.
+4. 앱으로 돌아와 **[다시 확인]** 을 누르면 연결이 끝납니다.
 
-이미 **ChatGPT Plus/Pro** 나 **Claude Pro/Max** 를 쓰고 계시다면, **추가 요금 없이** 그 구독으로 이 앱을 돌릴 수 있습니다. 둘 중 하나만 있으면 됩니다.
+> **설정 창이 안 열리면** 안내 아래의 **«Claude 직접 설치 (명령 복사)»** 를 펼쳐 보세요. 복사 버튼으로 명령을 복사해 PowerShell(맥은 터미널)에 한 줄씩 붙여 넣으면 됩니다.
 
-#### 준비물 — Node.js
+> **옵시디언(Obsidian)은?** 설정 창이 옵시디언도 설치할지 묻습니다. 옵시디언은 요약 노트를 서로 링크로 이어 보여 주는 **무료 메모 앱**입니다. 없어도 괜찮습니다 — 결과는 Word 문서로 받으실 수 있고, 나중에 설정에서 언제든 켤 수 있습니다.
 
-두 CLI 모두 Node.js가 필요합니다. 한 번만 설치하면 됩니다.
+### API 키로 연결
 
-- [**Node.js 내려받기**](https://nodejs.org/) — **LTS** 라고 적힌 쪽을 받아 설치하세요.
-- 설치 확인: 터미널(Windows는 **PowerShell**, macOS는 **터미널**)을 열고
-  ```
-  node --version
-  ```
-  `v20.x` 처럼 나오면 준비된 것입니다.
+1. «AI 연결» 안내에서 **API 키** 를 고릅니다.
+2. AI 서비스(Gemini·OpenAI·Anthropic)를 고르면 **키 발급 주소**가 나옵니다. 거기서 키를 받으세요.
+3. 키를 붙여 넣고 **[저장]** 을 누르면 끝입니다. 키는 이 컴퓨터에만 저장됩니다.
 
-#### ① ChatGPT를 쓰신다면 — Codex CLI
+### 나중에 바꾸려면
 
-```
-npm install -g @openai/codex
-codex
-```
+**⚙️ 설정 → AI 설정 → «AI 연결»** 한 칸에서 AI와 모델을 함께 고릅니다. **고르면 바로 적용**됩니다.
 
-`codex` 를 처음 실행하면 브라우저가 열리며 ChatGPT 로그인을 묻습니다. 한 번만 하면 됩니다.
-
-- 안내: [Codex CLI 문서](https://developers.openai.com/codex/cli/)
-
-#### ② Claude를 쓰신다면 — Claude Code CLI
-
-```
-npm install -g @anthropic-ai/claude-code
-claude
-```
-
-`claude` 를 처음 실행하면 브라우저가 열리며 Claude 로그인을 묻습니다. 한 번만 하면 됩니다.
-
-- 안내: [Claude Code 설치 문서](https://docs.claude.com/en/docs/claude-code/setup)
-
-#### 마지막 — 앱에서 켜기
-
-설치·로그인을 마쳤으면 **My Bookshelf를 껐다 켜고**, `⚙️ 설정` 탭에서 해당 토글을 켜면 됩니다. 앱이 알아서 찾습니다.
-
-> 잘 안 되면: 터미널에서 `codex` 또는 `claude` 를 쳤을 때 실행되는지 먼저 확인하세요.
-> 그 명령이 실행되지 않으면 앱도 찾지 못합니다.
+> 💡 **구독이 둘 다 있다면** «사용량 한도에 걸리면 다른 구독 AI로 이어받기» 를 켜 두세요. 한쪽이 한도에 걸려도 다른 쪽이 이어서 처리합니다. 화면 위쪽에 `1순위 › 2순위` 로 표시됩니다.
 
 ---
 
-### API 키로 쓰시려면
+## 사용하기
 
-`⚙️ 설정` 탭에 키를 붙여 넣으면 됩니다.
+화면 위쪽 메뉴에서 차례대로 진행합니다. 파일은 **끌어다 놓거나 [파일 선택]** 으로 넣습니다.
 
-- [Google AI Studio (Gemini)](https://aistudio.google.com/apikey)
-- [OpenAI Platform](https://platform.openai.com/api-keys)
-- [Anthropic Console](https://console.anthropic.com/settings/keys)
+| 순서 | 메뉴 | 하는 일 |
+|:---:|---|---|
+| 1 | 📄 **텍스트 변환** | 파일에서 글자를 뽑아냅니다. 스캔한 PDF도 됩니다. |
+| 2 | ✂️ **챕터 분할** | 책을 장(챕터)별로 나눕니다. |
+| 3 | 🌐 **번역** | 외국어 문서를 한국어(또는 설정한 언어)로 옮깁니다. 한국어 문서는 건너뜁니다. |
+| 4 | 📝 **문서요약** | 장마다 요약 노트를 만듭니다. |
+| 5 | 📖 **문서출력** | Word · 한글 · 전자책(EPUB) · Obsidian 위키 중 원하는 형식으로 내보냅니다. |
 
-> 구독(CLI)과 API 키가 둘 다 있으면 **구독이 우선**입니다.
+- 각 단계는 **[▶ 시작]** 으로 시작하고, **[■ 중단]** 을 누르면 지금 하던 것까지만 하고 멈춥니다.
+- 멈춘 작업은 **[▶ 시작]** 을 다시 누르면 **이어서** 합니다. 처음부터 다시 하지 않습니다.
+- 한 단계가 끝나면 다음 단계로 갈지 묻습니다. **[예, 바로 진행]** 을 누르면 됩니다.
+
+📘 버튼 하나하나의 설명은 [사용 설명서](docs/MANUAL.md)에 있습니다.
 
 ---
 
-또한 `⚙️ 설정 → 옵시디언(Obsidian) 보관함 설정`에서 위키 노트를 저장할 폴더(Vault)를 확인·변경합니다.
+## 결과 파일은 어디에?
 
----
+**문서** 폴더 안의 **My Bookshelf** 폴더에 저장됩니다.
 
-## 4. 작업 흐름
-
-상단 메뉴에서 다섯 단계를 오갑니다. 각 탭의 업로드 영역은 **파일 선택·끌어다 놓기** 모두 됩니다.
-
-| 단계 | 하는 일 |
+| 폴더 | 들어 있는 것 |
 |---|---|
-| **① 📄 텍스트 변환** | PDF·DOCX·HWP·HWPX·TXT에서 본문을 뽑아 TXT로 저장합니다. URL·DOI·arXiv 번호로 논문을 바로 받아올 수도 있습니다. |
-| **② ✂️ 챕터 분할** | 책 TXT를 장 단위 파일로 나눕니다. 나눌 필요가 없으면 통째로 다음 단계로 보냅니다. |
-| **③ 🌐 번역** | 원문 언어를 자동으로 감지해 설정한 **도착언어**로 옮깁니다. 원문·번역을 나란히 둔 대역본도 만들 수 있습니다. |
-| **④ 📝 문서요약** | 장별 요약 노트를 만듭니다 — 저자·핵심 요약·개요·핵심 인용·핵심 키워드. 분량은 원문 대비 5~40%로 조절합니다. |
-| **⑤ 📖 출력** | **EPUB · Word(.docx) · 한글(.hwpx) · Obsidian 위키** 중 원하는 것을 켜서 내보냅니다(여러 개 동시 가능). |
+| `3_챕터/책이름/` | 장별 원문 · 번역본 · 요약 |
+| `5_위키문서(DOCX)/` | Word 문서 |
+| `5_위키문서(HWPX)/` | 한글 문서 |
+| `5_전자책(EPUB)/` | 전자책 |
 
-> **단계가 끝나면 팝업이 다음 작업을 묻습니다.** **[예, 바로 진행]** 을 누르면 방금 처리한 책만 다음 단계로 넘어가고, 여러 권을 한꺼번에 고르려면 **[직접 화면에서 선택]** 으로 대기 목록 화면을 쓰면 됩니다.
-
-> ⚠️ **EPUB은 요약이 아니라 원문 전체**를 담습니다 — 이용 권한이 있는 문서에 한해, 본인의 개인적 사용 범위에서만 쓰세요. ([9. 저작권 및 면책](#9-저작권-및-면책))
-
-📘 각 탭의 버튼·옵션 하나하나는 **[사용 설명서](docs/MANUAL.md)** 에 정리해 두었습니다.
+Obsidian 위키 노트는 설정에서 고른 **옵시디언 보관함(Vault)** 폴더에 저장됩니다. 문서출력 화면의 **[폴더 열기]** 버튼으로 바로 열 수 있습니다.
 
 ---
 
-## 5. 시작 · 중단 · 이어하기
+## 자주 묻는 질문 · 문제 해결
 
-챕터 분할·번역·문서요약·위키반영의 AI 작업은 **[▶ 시작]** 을 누르면 처리 화면만 남고 다른 기능·탭 이동이 **잠깁니다**(실수로 작업을 벗어나는 것 방지).
+**Q. «사용 가능한 AI가 없습니다» 라고 나와요.**
+[AI 연결하기](#ai-연결하기)를 다시 따라 해 주세요. 구독 계정이라면 **[다시 확인]** 을 눌러 보세요.
 
-- 처리 화면에는 진행률과 항목별 결과가 표시됩니다.
-- **[■ 중단]** 을 누르면 **현재 항목까지 마친 뒤** 멈추고 전체 화면이 돌아옵니다.
-- 남은 작업은 대기 목록에 그대로 남아 **[▶ 시작]** 을 다시 누르면 이어서 처리됩니다.
-- 대기 목록에서 **[🗑 삭제]** 로 잘못 넣은 작업을 뺄 수 있습니다.
+**Q. 앱 창이 하얗게 비어 있어요. (Windows)**
+앱 화면을 그리는 Microsoft WebView2 가 없는 경우입니다. 새 판(v1.5.0 이후)은 설치할 때 자동으로 넣어 주고, 그래도 없으면 **기본 브라우저로 앱을 엽니다.** 안내 창에 나온 주소로 [WebView2](https://go.microsoft.com/fwlink/p/?LinkId=2124703)를 설치하면 다음부터 앱 창으로 열립니다.
 
----
+**Q. 새 판으로 올리고 싶어요.**
+**⚙️ 설정 → 업데이트 확인** 을 누르면 됩니다. (아주 옛 판 v1.2.33 이전이라면 위 버튼으로 새 설치 파일을 받아 설치하세요.)
 
-## 6. 언어 설정과 번역
+**Q. 업데이트했는데 예전 화면이 보여요.**
+앱을 완전히 닫았다가 다시 여세요. 그래도 그대로면 시작 메뉴의 **«Stop My Bookshelf»** 를 누른 뒤 다시 여세요.
 
-`⚙️ 설정 → 언어`는 화면에 표시되는 언어(한국어/English)만 바꿉니다.
+**Q. 스캔한 PDF도 되나요?**
+됩니다. 글자가 이상하게 나오면 텍스트 변환 화면의 **«🔬 본문 품질 검사»** 를 눌러 AI로 다시 읽게 하세요(쪽수에 따라 몇 분~수십 분).
 
-- 번역 결과의 언어는 바로 아래의 `⚙️ 설정 → 🎯 번역 도착언어`에서 따로 고릅니다. 이 선택은 번역본·챕터 요약·위키 노트에 함께 적용됩니다.
-- 화면 언어를 English로 두어도 번역 단계는 그대로 쓸 수 있습니다. 두 설정은 서로 무관합니다.
-- 이미 만든 번역본·요약은 도착언어를 바꿔도 변환되지 않습니다. 필요한 결과 파일을 지운 뒤 다시 실행하세요.
-
----
-
-## 7. 데이터 위치
-
-기본 데이터 폴더(설치 언어에 따라 폴더명이 한글/영문):
-
+**Q. (맥) 앱 안에서 «업데이트 확인» 을 눌러도 판이 안 올라가요.**
+v1.2.74 이전 `.pkg` 로 설치한 경우입니다. 터미널에서 아래를 한 번만 실행하거나, 최신 `.pkg` 로 다시 설치하세요.
 ```
-0_업로드대기/            업로드·다운로드 대기 (처리 전)
-1_원본PDF/               원본 PDF 보관
-2_변환TXT/               변환된 TXT (완료/ = 분할 끝난 원본 보관)
-3_챕터/<책>/              챕터·번역(_ko 등 도착언어)·대역(_bilingual)·요약(_wiki.md)·전체요약이 함께 있는 작업장
-5_전자책(EPUB)/          EPUB으로 내보낸 전자책 (본문 전체)
-5_위키문서(DOCX)/        DOCX로 내보낸 문서 (‘DOCX 문서 생성’ 선택 시, 언어 설정과 무관하게 이 이름 고정)
-5_위키문서(HWPX)/        HWPX로 내보낸 문서 (‘HWPX 문서 생성’ 선택 시, 언어 설정과 무관하게 이 이름 고정)
-실패/, 로그/              실패 파일·로그
+sudo chown -R "$(whoami):staff" /Applications/MyBookshelf.app
 ```
 
-위키 노트는 별도 Obsidian 보관함(Vault)에 저장됩니다(`⚙️ 설정`에서 선택). EPUB·Word(.docx)·한글(.hwpx)은 각각 위 `5_전자책(EPUB)/`·`5_위키문서(DOCX)/`·`5_위키문서(HWPX)/`에 저장됩니다. 설정은 `~/.config/mybookshelf/config.json`(macOS/Linux)에 저장됩니다.
+**Q. 문제가 생겼을 때 어디를 보면 되나요?**
+- Windows: `C:\Users\<사용자>\AppData\Local\My Bookshelf` 폴더의 `install.log`(설치), `launch-error.log`(실행)
+- macOS: `~/Library/Application Support/MyBookshelf/` 폴더의 `install.log`, `app.log`
 
 ---
 
-## 8. 문제 해결
+## 꼭 알아 두실 점 (저작권·개인정보)
 
-- **"사용 가능한 AI가 없습니다"** — `⚙️ 설정`에서 API 키를 넣거나 CLI 구독(Claude/Codex)을 켜세요.
-- **업데이트했는데 옛 화면이 보임** — 앱을 완전히 종료 후 다시 여세요(실행 중인 서버가 남아 있을 수 있습니다).
-- **스캔 PDF** — 그대로 넣으시면 됩니다. 본문이 엉망으로 나오면 텍스트 변환 탭의 «🔬 본문 품질 검사»로 AI에 다시 읽히세요.
-- (macOS) **앱 안에서 «업데이트 확인»을 눌러도 판이 안 올라감** — v1.2.74 이전 `.pkg`로 설치했다면 앱이 관리자 소유로 깔려 있어 스스로 갈아끼우지 못합니다. 한 번만 아래를 실행하면 이후로는 자동으로 됩니다.
-  ```
-  sudo chown -R "$(whoami):staff" /Applications/MyBookshelf.app
-  ```
-  최신 `.pkg`를 받아 다시 설치해도 같은 처리가 자동으로 됩니다. 진행 기록은 `~/Library/Application Support/MyBookshelf/update.log`에 남습니다.
-- (Windows) 설치·실행 오류는 설치 폴더의 `install.log` / `launch-error.log`를 확인하세요.
+- 이 프로그램은 **내가 이용할 권리가 있는 문서**를 **개인적으로** 읽기 쉽게 바꾸는 도구입니다. 만든 번역본·요약·전자책을 **다른 사람에게 나누거나 배포할 권리가 생기지는 않습니다.**
+- **전자책(EPUB)에는 요약이 아니라 원문 전체**가 들어갑니다. 개인적인 용도로만 쓰세요.
+- AI를 쓰면 문서 내용이 **외부 AI 서비스로 전송**됩니다. 민감한 개인정보나 공개되지 않은 원고는 넣지 마세요.
+- AI가 만든 번역과 요약은 **틀릴 수 있습니다.** 인용하거나 제출하기 전에는 반드시 원문과 대조해 확인하세요.
 
----
-
-## 9. 저작권 및 면책
+<details>
+<summary><b>저작권 및 면책 전문</b></summary>
 
 **My Bookshelf** — © 2026 Brightinyou. 개인·비상업 연구 보조 용도로 제공됩니다.
 
@@ -382,30 +208,66 @@ claude
 - AI API 또는 CLI 도구를 활성화하면 문서의 일부 또는 전체가 외부 AI 서비스로 전송됩니다. 민감정보, 비공개 원고, 배포 권한이 불명확한 자료는 넣지 마세요.
 - 생성된 번역·요약·위키 노트의 정확성·완전성은 보장되지 않습니다. 출판·제출·인용·대외 배포 전에는 반드시 원문과 결과물을 직접 대조해 검토하세요.
 
+</details>
+
 ---
 
-## 개발자용
+## 고급 · 개발자용
+
+아래는 몰라도 앱을 쓰는 데 지장이 없습니다.
+
+<details>
+<summary><b>⚡ 명령 한 줄로 설치하기 (PowerShell·터미널이 익숙한 분)</b></summary>
+
+**Windows (PowerShell)**
+```powershell
+irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
+powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI codex -Launch
+```
+`-AI codex`(기본) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian` · `-TargetLang en` 을 쓸 수 있습니다.
+
+**macOS (터미널)**
+```bash
+curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
+bash install-mybookshelf.sh --ai codex --launch
+```
+`--ai codex`(기본) · `--ai claude` · `--ai both` · `--ai none` · `--obsidian` · `--target-lang en` 은 `bash install-mybookshelf.sh --help` 에서 볼 수 있습니다. 이 방법은 macOS 보안 경고를 만나지 않습니다.
+
+</details>
+
+<details>
+<summary><b>🌐 화면 언어와 번역 언어</b></summary>
+
+- `⚙️ 설정 → 언어` 는 **화면에 보이는 글자**의 언어(한국어/English)만 바꿉니다.
+- 번역 결과의 언어는 `⚙️ 설정 → 🎯 번역 도착언어` 에서 따로 고릅니다. 번역본·요약·위키 노트에 함께 적용됩니다.
+- 이미 만든 번역·요약은 도착언어를 바꿔도 자동으로 바뀌지 않습니다. 결과 파일을 지운 뒤 다시 실행하세요.
+
+</details>
+
+<details>
+<summary><b>📂 데이터 폴더 전체 구조</b></summary>
+
+설치 언어에 따라 폴더 이름이 한글/영문입니다.
 
 ```
-core/                앱 핵심 코드
-  pipeline_app.py    Streamlit UI (전 단계)
-  services/          처리 로직 (convert/translate/chapters/wiki/i18n …)
-  chapter_wiki.py    챕터 분할 + 요약 생성 (멀티 공급자 AI)
-  llm_providers.py   AI 공급자 추상화 (Gemini/OpenAI/Anthropic/Claude CLI/Codex CLI)
-  .streamlit/        config.toml (라이트 테마·개발자 툴바 비활성)
-dev/                 빌드 스크립트 (build_mac_app.sh, bump_version.py …)
+0_업로드대기/            업로드·다운로드 대기 (처리 전)
+1_원본PDF/               원본 PDF 보관
+2_변환TXT/               변환된 TXT (완료/ = 분할 끝난 원본 보관)
+3_챕터/<책>/              챕터·번역(_ko 등)·대역(_bilingual)·요약(_wiki.md)·전체요약
+5_전자책(EPUB)/          EPUB (본문 전체)
+5_위키문서(DOCX)/        Word 문서
+5_위키문서(HWPX)/        한글 문서
+실패/, 로그/              실패 파일·로그
 ```
 
-- macOS 빌드: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (Spotlight 검색 제외)
-- macOS 배포본: `dev/build_mac_pkg.sh` → `MyBookshelf-vX.Y.Z.pkg` + 고정 이름 `MyBookshelf.pkg` (.app이 없거나 버전이 다르면 알아서 먼저 빌드)
-- macOS 설치 자동화: `dev/installer/mac_postinstall.sh` (파이썬·venv) + `mac_setup_extras.sh` (AI CLI·옵시디언 순차 선택)
-- Windows 배포본: `.github/workflows/build-windows.yml` → 태그 푸시 때 `Setup.exe` + 버전명 ZIP을 빌드해 릴리스에 첨부
-- 무인 설치 스크립트: `install-mybookshelf.sh` (macOS) · `install-mybookshelf.ps1` (Windows)
-- 개발 실행(레포 코드): 각 플랫폼의 `start` 스크립트 또는 `streamlit run core/pipeline_app.py`
+설정은 `~/.config/mybookshelf/` 에 저장됩니다.
 
-### 용어집
+</details>
 
-요약 노트의 «한글(원어)» 표기를 보관함 안에서 통일합니다. 용어집은 보관함의 `_glossary.json` 에 저장되어, 보관함을 여러 기기에서 공유하면 정본도 함께 따라갑니다.
+<details>
+<summary><b>📖 용어집 — 요약 노트의 «한글(원어)» 표기 통일</b></summary>
+
+용어집은 보관함의 `_glossary.json` 에 저장되어, 보관함을 여러 기기에서 공유하면 함께 따라갑니다.
 
 ```
 Windows   glossary.bat            현황  /  --apply 수정  /  --check 사전 대조
@@ -414,5 +276,30 @@ macOS     cd core && python3 -m services.glossary          (--apply 로 수정)
 ```
 
 - `--apply` 는 보관함을 통째로 백업한 뒤 고칩니다. 손대는 범위는 **«## 핵심 키워드» 구획의 대소문자·공백 차이뿐**입니다.
-- 원어 자체가 다른 것(`책임` → responsibility / responsabilité / Verantwortung)은 원서 언어 차이인 경우가 많아 자동으로 손대지 않고 검토 목록으로만 보여 줍니다.
-- `termcheck` 가 못 찾은 용어는 «미확인»이지 «오류»가 아닙니다 — 책이 만든 조어는 사전에 없는 것이 정상입니다.
+- 원어 자체가 다른 것(`책임` → responsibility / responsabilité / Verantwortung)은 자동으로 손대지 않고 검토 목록으로만 보여 줍니다.
+- `termcheck` 가 못 찾은 용어는 «미확인»이지 «오류»가 아닙니다.
+
+</details>
+
+<details>
+<summary><b>🛠 개발자용 — 코드 구조와 빌드</b></summary>
+
+```
+core/                앱 핵심 코드
+  pipeline_app.py    Streamlit UI (전 단계)
+  desktop.py         앱 창(PyWebView) 실행기
+  services/          처리 로직 (convert/translate/chapters/wiki/i18n …)
+  chapter_wiki.py    챕터 분할 + 요약 생성
+  llm_providers.py   AI 공급자 (Gemini/OpenAI/Anthropic/Claude CLI/Codex CLI) · 구독 CLI 이어받기
+dev/                 빌드 스크립트 (build_mac_app.sh, bump_version.py …)
+dev/installer/       Windows 설치 스크립트(MyBookshelf.iss) · 런타임/WebView2 준비 스크립트
+```
+
+- Windows 배포본: `.github/workflows/build-windows.yml` — 파이썬 런타임(`fetch-runtime.ps1`)과 WebView2 부트스트래퍼(`fetch-webview2.ps1`)를 받아 `Setup.exe` 로 묶습니다. 태그 푸시 때 릴리스에 첨부됩니다.
+- macOS 빌드: `dev/build_mac_app.sh` → `.app`, `dev/build_mac_pkg.sh` → `MyBookshelf.pkg`
+- macOS 설치 자동화: `dev/installer/mac_postinstall.sh` (파이썬·venv)
+- 무인 설치 스크립트: `install-mybookshelf.sh` (macOS) · `install-mybookshelf.ps1` (Windows)
+- 개발 실행: `streamlit run core/pipeline_app.py`
+- 테스트: `PYTHONPATH=core python -m unittest discover -s core/tests`
+
+</details>

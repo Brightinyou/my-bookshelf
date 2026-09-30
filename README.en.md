@@ -1,137 +1,66 @@
 # My Bookshelf
 
-**A personal research tool that turns books, papers and manuscripts into readable summary notes and e-books.**
-Feed it PDF/DOCX/HWP/HWPX/TXT and it translates, summarises, and exports to **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki**.
+**Put in a book, paper or manuscript — it translates and summarizes it into easy-to-read notes and e-books.**
+
+Feed it PDF, Word (.docx), Hangul (.hwp/.hwpx) or text (.txt) files → get **summary notes (Obsidian wiki) · Word documents · Hangul documents · e-books (EPUB)**.
 
 [![Download for Windows](https://img.shields.io/badge/Windows-Setup.exe-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjJ2OC4ySDNWM3ptOS44IDBIMjF2OC4yaC04LjJWM3pNMyAxMi44aDguMlYyMUgzdi04LjJ6bTkuOCAwSDIxVjIxaC04LjJ2LTguMnoiLz48L3N2Zz4K)](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe)
 [![Download for macOS](https://img.shields.io/badge/macOS-.pkg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)
 
-> 🇰🇷 한국어 설명서: [README.md](README.md) · 📘 Every tab in detail: [User manual](docs/MANUAL.en.md)
-
-Runs on both Windows and macOS. The same core (`core/`) is shared and **only the installation differs** — in [2. Installation](#2-installation), read the part for your operating system.
+> 🇰🇷 한국어: [README.md](README.md) · 📘 Every screen in detail: [User manual](docs/MANUAL.en.md)
 
 ---
 
-## ⚡ Quick start
+## How it works (at a glance)
 
-| | What to do |
-|---|---|
-| **1. Install** | Grab <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> `Setup.exe` or <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> `MyBookshelf.pkg` from the badges above and run it. You clear a **security warning once**, and the installer spends a few minutes preparing the Python environment. → [details](#2-installation) |
-| **2. Connect an AI** | After a macOS PKG install, Terminal asks you to choose **Claude, Codex (ChatGPT), both, or later**. If you skip it, enable a CLI or enter an API key in `⚙️ Settings`. → [details](#3-first-time-setup--connect-an-ai) |
-| **3. Add documents** | Drop files onto the `📄 Text conversion` tab and press **[▶ Start]**. From there, **the popups walk you through** each following stage. |
-| **4. Collect results** | In the `📖 Output` tab, switch on EPUB, Word, Hangul, or Obsidian and press **[▶ Start]**. |
+```
+① Install  →  ② Connect an AI  →  ③ Add files  →  ④ Get the results
+```
+
+1. Use the buttons above to **download and install**. (See [Install](#install))
+2. The first time you open the app, follow the **«AI connection»** guide. (See [Connect an AI](#connect-an-ai))
+3. On the **Text** screen, drag your files in and press **[▶ Start]**.
+4. After each step the app **asks whether to go on to the next one.** Keep pressing **[Yes, proceed now]** and your result files are made at the end.
 
 ---
 
 ## Contents
 
-1. [What it does](#1-what-it-does)
-2. [Installation](#2-installation) — [<img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows](#windows) · [<img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS](#macos)
-3. [First-time setup — connect an AI](#3-first-time-setup--connect-an-ai)
-4. [The workflow](#4-the-workflow)
-5. [Start · Stop · Resume](#5-start--stop--resume)
-6. [Language and translation](#6-language-and-translation)
-7. [Data locations](#7-data-locations)
-8. [Troubleshooting](#8-troubleshooting)
-9. [Copyright and disclaimer](#9-copyright-and-disclaimer)
+1. [Install](#install) — [Windows](#windows) · [macOS](#macos)
+2. [Connect an AI](#connect-an-ai)
+3. [Use the app](#use-the-app)
+4. [Where are my results?](#where-are-my-results)
+5. [FAQ and troubleshooting](#faq-and-troubleshooting)
+6. [Please note (copyright and privacy)](#please-note-copyright-and-privacy)
+7. [Advanced and developers](#advanced-and-developers)
 
 ---
 
-## 1. What it does
-
-Feed in a book, paper, or manuscript as PDF/DOCX/HWP/HWPX/TXT, and it produces **readable summary Wiki notes** through these stages. (They can be saved into your Obsidian vault.)
-
-```
-PDF/DOCX/HWP/HWPX/TXT  →  Text conversion  →  Chapter split  →  Translation (when source differs from target)  →  Summaries  →  EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki
-```
-
-- **PDF** works directly when it has a text layer. **Scanned PDFs, and PDFs with poor OCR, also work** — the «🔬 Text quality check» in the Text conversion tab flags them and **re-reads them with AI** (a few minutes to tens of minutes, depending on page count). **DOCX, HWP, HWPX and TXT** are processed as-is.
-- Translation, summarization and Wiki generation use **AI**: enter an API key, or enable a Claude/ChatGPT subscription CLI.
-- Notes include the **author, a key summary, per-chapter overview, key quotes and key keywords** (with explanations); dense source texts are made readable by glossing terms in the original language and paraphrasing in plain language.
-
----
-
-## 2. Installation
-
-<div align="center">
-
-### ⬇️ Download
-
-| | File |
-|---|---|
-| <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **Windows** | [**Setup.exe** ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) |
-| <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> **macOS** | [**MyBookshelf.pkg** ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg) |
-
-The links above **download the latest build directly.** Older builds and other files live on the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest).
-
-⚡ Comfortable with a terminal or PowerShell? There is a **one-line install** too — Python, the app, and the AI connection in one go. [<img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows](#oneline-win) · [<img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS](#oneline-mac)
-
-</div>
-
----
+## Install
 
 <a id="windows"></a>
 
 ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows
 
-#### Step 1 — Download
+**1. Download**
+[**Download Setup.exe ⬇️**](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) (about 100 MB)
 
-- **[Download `Setup.exe` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe)** — recommended. Just run it.
-- If your browser blocks `.exe` downloads, grab `MyBookshelf-Setup-vX.Y.Z.zip` from the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest) under **Assets**. Unzipping gives the same `Setup.exe`.
+> If your browser blocks the download, open the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest), get `MyBookshelf-Setup-v….zip` under **Assets**, and unzip it. It contains the same `Setup.exe`.
 
-#### Step 2 — Run it (one-time security prompt ⚠️)
+**2. Run it — a security warning appears the first time ⚠️**
+When you double-click `Setup.exe`, a blue *"Windows protected your PC"* box may appear. It shows up because this is a program made by an individual; there is nothing to worry about.
 
-Double-clicking `Setup.exe` brings up a blue *"Windows protected your PC"* screen. This is the notice Windows shows for software that **has not been signed with a commercial code-signing certificate** — common for programs shared by an individual.
+- Click **[More info]** → **[Run anyway]**.
 
-1. Click **[More info]**.
-2. Click the **[Run anyway]** button that appears.
+**3. Install**
+- Choose a language (한국어/English) and keep clicking **[Next]**. It usually takes **1–2 minutes**.
+- You do not need to install Python or anything else — everything is inside the installer.
+- If your PC lacks **Microsoft WebView2**, which draws the app window, the installer downloads and installs it (about a minute, internet needed). A progress bar sliding back and forth during this step is normal.
 
-#### Step 3 — Choose the interface language
+**4. Open the app**
+Click **[Finish]** on the last screen and the app opens. Next time, click **«My Bookshelf»** on the desktop or in the Start menu.
 
-Korean or English. You can change it any time later in the **Settings** tab.
-
-#### Step 4 — Python (automatic)
-
-If Python 3.14 is missing, the installer offers to download and install it for you — click **[Yes]**. If you already have 3.10 or newer, this step is skipped.
-
-#### Step 5 — First-run preparation (automatic)
-
-At the end of the install you'll see *"Preparing Python environment"*, and it will appear to hang for a few minutes — **that is normal.** It is fetching packages (**5–20 min** depending on your network).
-
-- Install location: `C:\Users\<you>\AppData\Local\My Bookshelf`
-- Progress log: `install.log` in that folder
-- If it will not start: `launch-error.log` in the same folder
-
-#### Step 6 — Connect an AI
-
-After installation, a **My Bookshelf - Additional setup** PowerShell window opens. Choose **Claude, Codex (ChatGPT), both, or later**, then choose whether to install Obsidian. Setup installs the selected tools and immediately opens browser sign-in. Selecting **both** signs in to Claude first and then Codex, and enables the prepared CLIs and Obsidian in the app settings.
-
-To use an API instead, choose **later** and enter a Gemini, OpenAI, or Anthropic API key in `⚙️ Settings`.
-
-#### Step 7 — Launch
-
-Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open in seconds.
-
-> **Updates**: use **Settings → Check for updates** in the app.
-> If you were running a version older than v1.2.33, download this one manually just once — older builds point at the pre-merge repository.
-
-<a id="oneline-win"></a>
-
-> [!TIP]
-> ### <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> Windows — ⚡ One-line install
->
-> *Skips steps 1–7.*
->
-> If you're comfortable with PowerShell, **one script does Python, the app, an AI CLI, and default settings.**
->
-> ```powershell
-> irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
-> powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Launch
-> ```
->
-> Options: `-AI codex` (ChatGPT, default) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian` · `-TargetLang en`. Installing Node.js may pop up a **UAC admin-confirmation window** once, and on a very old Windows 10 without winget the Node.js (→ Codex CLI) install may not happen automatically — it will show up in the on-screen "do this manually" list instead.
->
-> The selected subscription CLI opens browser sign-in immediately — `-AI both` attempts both Claude and Codex sign-in, so you need an actual Claude Pro/Max and ChatGPT Plus/Pro subscription for that. If you don't, pick a single `-AI codex`/`-AI claude`, or use `-AI none` and enter an API key in the app instead. The install itself takes 5–20 minutes, so leave the window open.
+Now go to [Connect an AI](#connect-an-ai).
 
 ---
 
@@ -139,238 +68,135 @@ Use the **My Bookshelf** icon on your desktop or Start menu. Later launches open
 
 ### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS
 
-#### Step 1 — Download
+**1. Download**
+[**Download MyBookshelf.pkg ⬇️**](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)
 
-- **[Download `MyBookshelf.pkg` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/MyBookshelf.pkg)** — this is the only one you need. Double-click it and the installer places the app in **Applications** for you.
-- If you cannot use a Mac administrator password, grab `MyBookshelf-vX.Y.Z-mac.zip` from the [release page](https://github.com/Brightinyou/my-bookshelf/releases/latest) under **Assets**. Unzipping gives just the app file.
+> The file is only a few hundred KB — that is normal. What it needs is downloaded during installation.
 
-> The file is only a few hundred KB — **that is expected.** The `.pkg` fetches and prepares the Python environment during installation.
+**2. Run it — a security warning appears the first time ⚠️**
+- In your Downloads folder, **control-click (or right-click) `MyBookshelf.pkg` → Open → Open**.
+- If it is still blocked: **Apple menu → System Settings → Privacy & Security** → **[Open Anyway]**.
 
-#### Step 2 — Pass the one-time security warning ⚠️
+**3. Install**
+**[Continue] → [Install] → enter your Mac password**. If Python is missing it is downloaded from python.org and installed automatically, so this can take **a few minutes** depending on your connection. Do not close the installer.
 
-Because this independently distributed app has not gone through Apple signing and notarization, macOS may show an *"unidentified developer"* warning.
+**4. Open the app**
+The app opens by itself when installation finishes. Next time, open **My Bookshelf** from **Launchpad** or the **Applications** folder.
 
-- **`.pkg`**: in Downloads, **control-click (or right-click) `MyBookshelf.pkg` → Open → Open**.
-- **zip**: first move `MyBookshelf.app` into **Applications**, then **control-click its icon → Open → Open**. Running it directly from Downloads can place it in a temporary translocation path and make it appear to hang.
-- If it is still blocked, double-click once to trigger the warning, then use **Apple menu → System Settings → Privacy & Security → Open Anyway**.
-
-#### Step 3 — Install the app and Python environment
-
-In the `.pkg` installer, click **[Continue] → [Install]** and enter your Mac password. It automatically:
-
-1. Finds Python 3.10 or newer, preferring an installation that matches the Mac's architecture.
-2. If none is available, downloads Python 3.14.6 from python.org, verifies its SHA256, and installs it.
-3. Creates an app-specific virtual environment and installs the required Python packages.
-
-This can take a few minutes depending on the network; leave the installer open.
-
-> **The zip is different.** Python 3.10 or newer must already be installed. If it is missing, the first launch directs you to python.org; after installing Python, reopen the app to prepare its virtual environment and packages.
-
-#### Step 4 — Choose an AI in Terminal
-
-After Python preparation, a **My Bookshelf — Additional setup** Terminal window opens.
-
-| Choice | What it installs | Approx. additional space |
-|---|---|---:|
-| **1. Claude** | Claude Code CLI · Claude Pro/Max subscription | 293MB |
-| **2. Codex** | Codex CLI · ChatGPT Plus/Pro subscription | 363MB, including Node.js |
-| **3. Both** | Claude and Codex · Codex (ChatGPT) is the default working AI | 656MB |
-| **4. Later** | No CLI; enter an API key in the app later | 0MB |
-
-Enter a number and press Return. Pressing Enter without a number selects the default, **4. Later**. An existing CLI is not downloaded again and is shown as 0MB additional space.
-
-> If Homebrew is already installed, it is used for Node.js. The setup does not install Homebrew; without it, the official Node.js LTS build is installed directly in the user account.
-
-#### Step 5 — Choose whether to install Obsidian
-
-After the AI choice, setup asks whether to install Obsidian (about 515MB). The default is **No**.
-
-- **Yes**: uses Homebrew if available; otherwise downloads the latest official macOS DMG and installs it under `~/Applications`.
-- **No**: sets the default outputs to **EPUB + Word**. Installing Obsidian sets them to **EPUB + Obsidian Wiki**.
-- If Obsidian already exists in `/Applications` or `~/Applications`, the download is skipped.
-
-You can change output formats and the Obsidian vault later in `⚙️ Settings`.
-
-#### Step 6 — Sign in to the CLI and launch the app
-
-When you select a CLI, setup opens its browser sign-in immediately. Selecting **Both** signs in to Claude first, then Codex. It also registers the command paths, so `claude` and `codex` work from newly opened Terminal windows.
-
-You can cancel either sign-in and later enable it in `⚙️ Settings` or use an API key instead. The final Enter ends additional setup.
-
-Then launch **My Bookshelf** from Launchpad or Applications. The `.pkg` build opens immediately because its Python environment is already prepared.
-
-> Installer log: `~/Library/Application Support/MyBookshelf/install.log`<br>
-> App log: `~/Library/Application Support/MyBookshelf/app.log`
-
-<a id="oneline-mac"></a>
-
-> [!TIP]
-> ### <img src="docs/img/apple.svg" width="14" align="top" alt="macOS"> macOS — ⚡ One-line install
->
-> *Skips steps 1–6.*
->
-> If you're comfortable with a terminal, one script handles the download plus **Python, the app, the selected AI CLIs, and default settings**. The `.pkg` also installs Python and your selected AI CLIs, plus Obsidian when requested; this route simply supplies the choices up front for an unattended install.
->
-> ```bash
-> curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
-> bash install-mybookshelf.sh --ai codex --launch
-> ```
->
-> Options: `--ai codex` (ChatGPT, default) · `--ai claude` · `--ai both` · `--ai none`. Repeating `--ai claude --ai codex` also installs both. See `bash install-mybookshelf.sh --help` for `--obsidian`, `--target-lang en`, and the full list.
->
-> **This route never hits the security warning** — it installs with the `installer` command.
-> The selected CLI's browser sign-in opens during installation. Only API-key entry remains manual in the app settings.
-
-> <img src="docs/img/windows.svg" width="15" align="top" alt="Windows"> **On Windows?** → [Download `Setup.exe` ⬇️](https://github.com/Brightinyou/my-bookshelf/releases/latest/download/Setup.exe) and run it. macOS and Windows share a single repository.
+Now go to [Connect an AI](#connect-an-ai).
 
 ---
 
-## 3. First-time setup — connect an AI
+## Connect an AI
 
-In the app's `⚙️ Settings` tab, set up **one of these two**. **Pick the AI model once in Settings** and every stage uses it.
+Translation and summaries are done by an AI. The first time you open the app you see the **«AI connection»** guide. Pick **whichever suits you**:
 
-- **AI subscription (CLI)** — use your existing subscription, no API key (**recommended**). Takes priority over API keys.
-- **AI API key** — paste a Gemini / OpenAI / Anthropic key. Billed per use.
+| | Subscription | API key |
+|---|---|---|
+| **For you if** | you **already subscribe** to ChatGPT Plus/Pro or Claude Pro/Max | you have no subscription and want to **pay only for what you use** |
+| **Cost** | no extra charge (included in your plan) | billed by usage |
+| **Setup** | the app guides the tool install and sign-in | get a key and paste it |
 
----
+### Connect with a subscription (recommended)
 
-### New here? — Installing a CLI
+1. In the «AI connection» guide, keep **Subscription (Claude·ChatGPT)** selected and click **[Open setup window]**.
+2. In the new window, pick a number: **1** Claude · **2** Codex (ChatGPT) · **3** Both · **4** Later
+3. The needed tools are installed, then a **browser sign-in page** opens. Sign in with the account you already use.
+4. Back in the app, click **[Check again]** and you are connected.
 
-If you already pay for **ChatGPT Plus/Pro** or **Claude Pro/Max**, you can run this app on that subscription at **no extra cost**. You only need one of them.
+> **If the setup window does not open**, expand **«Install Claude yourself (copy commands)»** below the guide. Copy each command with the copy button and paste them one by one into PowerShell (Terminal on a Mac).
 
-#### Prerequisite — Node.js
+> **What about Obsidian?** The setup window asks whether to install Obsidian too. Obsidian is a **free note-taking app** that shows your summary notes linked to one another. You do not need it — you can get your results as Word documents instead, and you can turn Obsidian on in Settings any time.
 
-Both CLIs need Node.js. You only install it once.
+### Connect with an API key
 
-- [**Download Node.js**](https://nodejs.org/) — take the one marked **LTS**.
-- Check it: open a terminal (**PowerShell** on Windows, **Terminal** on macOS) and run
-  ```
-  node --version
-  ```
-  Something like `v20.x` means you're set.
+1. In the «AI connection» guide, choose **API keys**.
+2. Pick an AI service (Gemini · OpenAI · Anthropic) and the app shows **where to get a key**. Get one there.
+3. Paste the key and click **[Save]**. The key is stored only on this computer.
 
-#### ① If you use ChatGPT — Codex CLI
+### To change it later
 
-```
-npm install -g @openai/codex
-codex
-```
+Go to **⚙️ Settings → AI settings → «AI connection»** and pick the AI and model together in one box. **It applies as soon as you pick it.**
 
-The first run of `codex` opens a browser and asks you to sign in to ChatGPT. Once is enough.
-
-- Docs: [Codex CLI](https://developers.openai.com/codex/cli/)
-
-#### ② If you use Claude — Claude Code CLI
-
-```
-npm install -g @anthropic-ai/claude-code
-claude
-```
-
-The first run of `claude` opens a browser and asks you to sign in to Claude. Once is enough.
-
-- Docs: [Claude Code setup](https://docs.claude.com/en/docs/claude-code/setup)
-
-#### Last step — turn it on in the app
-
-Once installed and signed in, **restart My Bookshelf** and flip the matching toggle in `⚙️ Settings`. The app finds it on its own.
-
-> Not working? First check that typing `codex` or `claude` in a terminal actually runs.
-> If the command doesn't run there, the app won't find it either.
+> 💡 **Subscribed to both?** Turn on «When one subscription AI hits its usage limit, continue with the other». If one reaches its limit, the other carries on. The top of the screen then shows `first › second`.
 
 ---
 
-### Prefer an API key?
+## Use the app
 
-Paste it into the `⚙️ Settings` tab.
+Work through the menu at the top from left to right. Add files by **dragging them in or with the file picker**.
 
-- [Google AI Studio (Gemini)](https://aistudio.google.com/apikey)
-- [OpenAI Platform](https://platform.openai.com/api-keys)
-- [Anthropic Console](https://console.anthropic.com/settings/keys)
+| Step | Menu | What it does |
+|:---:|---|---|
+| 1 | 📄 **Text** | Pulls the text out of your files. Scanned PDFs work too. |
+| 2 | ✂️ **Chapter split** | Splits a book into chapters. |
+| 3 | 🌐 **Translation** | Translates foreign-language documents into your target language. Documents already in that language are skipped. |
+| 4 | 📝 **Summaries** | Writes a summary note for each chapter. |
+| 5 | 📖 **Export** | Exports to Word · Hangul · e-book (EPUB) · Obsidian wiki — whichever you turn on. |
 
-> If you have both a subscription (CLI) and an API key, **the subscription wins**.
+- Each step starts with **[▶ Start]**. **[■ Stop]** finishes the item in progress and then stops.
+- Press **[▶ Start]** again to **pick up where you left off** — it does not start over.
+- When a step finishes, the app asks about the next one. Just click **[Yes, proceed now]**.
+
+📘 Every button is explained in the [user manual](docs/MANUAL.en.md).
 
 ---
 
-Also open `⚙️ Settings → Obsidian vault` to check or change the folder where wiki notes are saved.
+## Where are my results?
 
----
+In the **My Bookshelf** folder inside your **Documents** folder.
 
-## 4. The workflow
-
-Switch stages from the top menu. Every upload area accepts **the file picker or drag & drop**.
-
-| Stage | What it does |
+| Folder | Contents |
 |---|---|
-| **① 📄 Text conversion** | Extracts the body text from PDF/DOCX/HWP/HWPX/TXT and saves it as TXT. You can also pull a paper straight in by URL, DOI, or arXiv number. |
-| **② ✂️ Chapter split** | Splits a book TXT into per-chapter files. If no split is needed, the whole document moves on as it is. |
-| **③ 🌐 Translation** | Detects the source language automatically and renders it into your chosen **target language**. A paragraph-by-paragraph bilingual file is optional. |
-| **④ 📝 Summaries** | Builds per-chapter notes — author, key summary, overview, key quotes, key keywords. Length is adjustable from 5–40 % of the source. |
-| **⑤ 📖 Output** | Exports to **EPUB · Word (.docx) · Hangul (.hwpx) · Obsidian Wiki** — any combination at once. |
+| `3_Chapters/<book>/` | chapters, translations and summaries |
+| `5_위키문서(DOCX)/` | Word documents |
+| `5_위키문서(HWPX)/` | Hangul documents |
+| `5_전자책(EPUB)/` | e-books |
 
-> **When a stage finishes, a popup asks about the next step.** **[Yes, proceed now]** advances only the book you just processed; use **[Choose on the screen]** to pick several at once from the queue.
+> The Word, Hangul and EPUB folders keep their Korean names even when the app is in English.
 
-> ⚠️ **EPUB carries the full text, not a summary.** Use it only on documents you already have the right to use, and only within your own personal use. ([9. Copyright and disclaimer](#9-copyright-and-disclaimer))
-
-📘 Every button and option is documented in the **[User manual](docs/MANUAL.en.md)**.
+Obsidian wiki notes go to the **Obsidian vault** folder chosen in Settings. The **[Open folder]** buttons on the Export screen open these folders directly.
 
 ---
 
-## 5. Start · Stop · Resume
+## FAQ and troubleshooting
 
-For the AI stages (Chapter split, Translation, Summaries, Wiki), pressing **[▶ Start]** switches to a processing view and **locks** other actions and tab navigation (so you can't accidentally leave a running job).
+**Q. It says «No AI available».**
+Go through [Connect an AI](#connect-an-ai) again. If you use a subscription, try **[Check again]**.
 
-- The processing view shows progress and per-item results.
-- **[■ Stop]** halts **after the current item finishes** and restores the full page.
-- Remaining work stays in the queue — press **[▶ Start]** again to resume.
-- Use **[🗑 Delete]** in the queue to drop wrongly added work.
+**Q. The app window is completely blank. (Windows)**
+Microsoft WebView2, which draws the app window, is missing. Recent versions (v1.5.0 and later) install it during setup, and if it is still missing the app **opens in your default browser** instead. Install [WebView2](https://go.microsoft.com/fwlink/p/?LinkId=2124703) from the address in the notice and the app window works from the next start.
 
----
+**Q. How do I update?**
+Click **⚙️ Settings → Check for updates**. (On a very old version, before v1.2.33, download the new installer with the button above instead.)
 
-## 6. Language and translation
+**Q. I updated but still see the old screen.**
+Close the app completely and open it again. If nothing changes, click **«Stop My Bookshelf»** in the Start menu and open the app again.
 
-`⚙️ Settings → Language` changes the interface language only.
+**Q. Do scanned PDFs work?**
+Yes. If the text comes out garbled, use **«🔬 Text quality check»** on the Text screen to have the AI re-read it (a few minutes to tens of minutes, depending on the page count).
 
-- Choose the language of translations, summaries, and Wiki notes separately in `⚙️ Settings → 🎯 Target language`.
-- The Translation stage works with the interface set to English too — the two settings are independent.
-- Changing the target language does not rewrite existing translations or summaries; delete the relevant output and run the stage again.
-
----
-
-## 7. Data locations
-
-Default data folders (folder names are Korean or English depending on the install language):
-
+**Q. (Mac) «Check for updates» does not update the app.**
+This happens if you installed with a `.pkg` older than v1.2.74. Run this once in Terminal, or reinstall with the latest `.pkg`:
 ```
-0_Inbox/            uploads/downloads waiting (pre-processing)
-1_PDF_Originals/    original PDFs
-2_Converted_TXT/    converted TXT (done/ = archived sources after split)
-3_Chapters/<book>/  workspace holding chapters, translations (_ko etc., by target language), bilingual output (_bilingual), summaries (_wiki.md), overview
-5_전자책(EPUB)/      exported full-text EPUB e-books
-5_위키문서(DOCX)/    exported DOCX documents (when "Create DOCX document" is on — this folder name stays in Korean regardless of the UI language)
-5_위키문서(HWPX)/    exported HWPX documents (when "Create HWPX document" is on — this folder name stays in Korean regardless of the UI language)
-Failed/, Logs/      failed files, logs
+sudo chown -R "$(whoami):staff" /Applications/MyBookshelf.app
 ```
 
-Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`). EPUB, Word (.docx), and Hangul (.hwpx) files are saved to the folders above. Settings live in `~/.config/mybookshelf/config.json` on macOS/Linux.
+**Q. Where can I look when something goes wrong?**
+- Windows: `install.log` (install) and `launch-error.log` (startup) in `C:\Users\<you>\AppData\Local\My Bookshelf`
+- macOS: `install.log` and `app.log` in `~/Library/Application Support/MyBookshelf/`
 
 ---
 
-## 8. Troubleshooting
+## Please note (copyright and privacy)
 
-- **"No AI available"** — enter an API key or enable a CLI subscription (Claude/Codex) in `⚙️ Settings`.
-- **Old screen after an update** — fully quit the app and reopen it (a server may still be running).
-- **Scanned PDFs** — feed them in as they are. If the text comes out badly, use «🔬 Text quality check» in the Text conversion tab to re-read them with AI.
-- (macOS) **"Check for updates" does nothing** — if you installed with a `.pkg` older than v1.2.74, the app is owned by root and cannot replace itself. Run this once and updates work from then on:
-  ```
-  sudo chown -R "$(whoami):staff" /Applications/MyBookshelf.app
-  ```
-  Reinstalling from the latest `.pkg` does the same thing automatically. See `~/Library/Application Support/MyBookshelf/update.log`.
-- (Windows) For install/launch errors, check `install.log` / `launch-error.log` in the install folder.
+- This program turns documents **you have the right to use** into easier reading **for your own use**. It gives you **no right to share or distribute** the translations, summaries or e-books it makes.
+- **An EPUB contains the full original text**, not a summary. Keep it for personal use.
+- When you use an AI, the document's content is **sent to an external AI service**. Do not put in sensitive personal data or unpublished manuscripts.
+- AI translations and summaries **can be wrong.** Check them against the original before quoting or submitting them.
 
----
-
-## 9. Copyright and disclaimer
+<details>
+<summary><b>Full copyright and disclaimer</b></summary>
 
 **My Bookshelf** — © 2026 Brightinyou. Provided for personal, non-commercial research use.
 
@@ -384,37 +210,98 @@ Wiki notes are saved to a separate Obsidian vault (chosen in `⚙️ Settings`).
 - Enabling an AI API or CLI tool sends part or all of your document to an external AI service. Do not input sensitive data, unpublished manuscripts, or material whose distribution rights are unclear.
 - Accuracy and completeness of generated translations, summaries and Wiki notes are not guaranteed. Always compare against the source before publishing, submitting, citing or distributing.
 
+</details>
+
 ---
 
-## For developers
+## Advanced and developers
+
+You do not need anything below to use the app.
+
+<details>
+<summary><b>⚡ Install with one command (for PowerShell / Terminal users)</b></summary>
+
+**Windows (PowerShell)**
+```powershell
+irm https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.ps1 -OutFile install-mybookshelf.ps1
+powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI codex -Launch
+```
+Options: `-AI codex` (default) · `-AI claude` · `-AI both` · `-AI none` · `-NoLogin` · `-Obsidian` · `-TargetLang en`.
+
+**macOS (Terminal)**
+```bash
+curl -fsSL https://github.com/Brightinyou/my-bookshelf/releases/latest/download/install-mybookshelf.sh -o install-mybookshelf.sh
+bash install-mybookshelf.sh --ai codex --launch
+```
+`--ai codex` (default) · `--ai claude` · `--ai both` · `--ai none` · `--obsidian` · `--target-lang en` — see `bash install-mybookshelf.sh --help`. This way skips the macOS security warning.
+
+</details>
+
+<details>
+<summary><b>🌐 Screen language and translation language</b></summary>
+
+- The language setting in `⚙️ Settings` changes only the **text on screen** (한국어/English).
+- The language translations are written in is chosen separately in `⚙️ Settings → 🎯 Target language`. It applies to translations, summaries and wiki notes.
+- Existing translations and summaries are not converted when you change the target language. Delete the result files and run again.
+
+</details>
+
+<details>
+<summary><b>📂 Full data folder layout</b></summary>
+
+Folder names are Korean or English depending on the install language (English shown).
+
+```
+0_Inbox/                 uploads and downloads waiting to be processed
+1_PDF_Originals/         original PDFs
+2_Converted_TXT/         converted TXT (Done/ = originals already split)
+3_Chapters/<book>/        chapters · translations (_ko etc.) · bilingual (_bilingual) · summaries (_wiki.md) · overview
+5_전자책(EPUB)/          EPUB (full text)
+5_위키문서(DOCX)/        Word documents
+5_위키문서(HWPX)/        Hangul documents
+Failed/, Logs/           failed files and logs
+```
+
+Settings are stored in `~/.config/mybookshelf/`.
+
+</details>
+
+<details>
+<summary><b>📖 Glossary — unify «Korean (original)» terms in summary notes</b></summary>
+
+The glossary is stored as `_glossary.json` in the vault, so it follows the vault if you share it across devices.
+
+```
+Windows   glossary.bat            status  /  --apply to fix  /  --check dictionary lookup
+macOS     cd core && python3 -m services.glossary          (--apply to fix)
+          cd core && python3 -m services.termcheck         (dictionary lookup)
+```
+
+- `--apply` backs up the whole vault first. It only touches **case and spacing differences in the «## 핵심 키워드» (key terms) section**.
+- Terms whose original differs (`책임` → responsibility / responsabilité / Verantwortung) are never changed automatically; they are only listed for review.
+- A term `termcheck` cannot find is «unconfirmed», not «wrong».
+
+</details>
+
+<details>
+<summary><b>🛠 For developers — code layout and builds</b></summary>
 
 ```
 core/                app core
   pipeline_app.py    Streamlit UI (all stages)
+  desktop.py         app window (PyWebView) launcher
   services/          processing logic (convert/translate/chapters/wiki/i18n …)
-  chapter_wiki.py    chapter split + summary generation (multi-provider AI)
-  llm_providers.py   AI provider abstraction (Gemini/OpenAI/Anthropic/Claude CLI/Codex CLI)
-  .streamlit/        config.toml (light theme, developer toolbar disabled)
+  chapter_wiki.py    chapter split + summary generation
+  llm_providers.py   AI providers (Gemini/OpenAI/Anthropic/Claude CLI/Codex CLI) · subscription CLI takeover
 dev/                 build scripts (build_mac_app.sh, bump_version.py …)
+dev/installer/       Windows installer (MyBookshelf.iss) · runtime / WebView2 fetch scripts
 ```
 
-- macOS build: `dev/build_mac_app.sh` → `dist/.mac-build.noindex/MyBookshelf.app` (excluded from Spotlight)
-- macOS distributable: `dev/build_mac_pkg.sh` → `MyBookshelf-vX.Y.Z.pkg` plus the fixed name `MyBookshelf.pkg`
-- macOS install automation: `dev/installer/mac_postinstall.sh` (Python and venv) + `mac_setup_extras.sh` (sequential AI CLI and Obsidian choices)
-- Windows distributable: `.github/workflows/build-windows.yml` builds `Setup.exe` and a versioned ZIP on tag pushes and attaches both to the release
-- Unattended installers: `install-mybookshelf.sh` (macOS) · `install-mybookshelf.ps1` (Windows)
-- Run from source: each platform's `start` script, or `streamlit run core/pipeline_app.py`
+- Windows build: `.github/workflows/build-windows.yml` — fetches the Python runtime (`fetch-runtime.ps1`) and the WebView2 bootstrapper (`fetch-webview2.ps1`) and packs them into `Setup.exe`, attached to the release on tag push.
+- macOS build: `dev/build_mac_app.sh` → `.app`, `dev/build_mac_pkg.sh` → `MyBookshelf.pkg`
+- macOS install automation: `dev/installer/mac_postinstall.sh` (Python · venv)
+- Unattended install scripts: `install-mybookshelf.sh` (macOS) · `install-mybookshelf.ps1` (Windows)
+- Run from source: `streamlit run core/pipeline_app.py`
+- Tests: `PYTHONPATH=core python -m unittest discover -s core/tests`
 
-### Glossary
-
-Unifies how each term's original-language form is written across your vault's notes. The glossary lives in the vault as `_glossary.json`, so sharing the vault across machines shares the canonical spellings too.
-
-```
-Windows   glossary.bat            report  /  --apply to fix  /  --check against authorities
-macOS     cd core && python3 -m services.glossary          (--apply to fix)
-          cd core && python3 -m services.termcheck         (authority check)
-```
-
-- `--apply` backs up the whole vault first. It only touches **case and spacing differences inside the `## 핵심 키워드` block**.
-- When the original term itself differs (`책임` → responsibility / responsabilité / Verantwortung) that is usually a source-language difference, so it is listed for review rather than changed.
-- Terms `termcheck` cannot find are reported as **unverified, not wrong** — a term a book coined will not be in any dictionary.
+</details>
