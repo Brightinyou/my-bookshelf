@@ -79,7 +79,7 @@ from services.papers import (
 )
 from services.wiki import (
     build_single_chapter_wiki, build_wiki_from_chapter_summaries,
-    check_wiki_orphans, ensure_obsidian_vault, list_obsidian_vaults,
+    auto_register_wiki_vault, check_wiki_orphans, ensure_obsidian_vault, list_obsidian_vaults,
     open_in_obsidian, open_wiki_vault, set_wiki_dir, wiki_generator_running,
 )
 from services.docx_export import build_docx_from_chapter_summaries, set_docx_dir
@@ -647,14 +647,15 @@ st.markdown(status_chip(f"{_status_name} · Wiki {_wiki_count}", _status_details
 def _render_ai_onboarding() -> None:
     """AI 없이 처음 뜬 앱의 «AI 연결» 안내 (2026-09-30).
 
-    설치 마지막의 Claude·Codex 설정 창을 없애고 여기로 옮겼다. 기본은 API 키 —
-    붙여 넣고 저장하면 끝난다. 구독(CLI)은 고른 사람에게만 설치 때 쓰던 설정 창을 연다."""
+    설치 마지막의 Claude·Codex 설정 창을 없애고 여기로 옮겼다. 구독 계정(CLI)을 앞에
+    두고(연구자 요청, 2026-09-30) 고른 사람에게만 설치 때 쓰던 설정 창을 연다.
+    API 키는 붙여 넣고 저장하면 끝난다."""
     with st.container(border=True):
         st.markdown("#### :material/link: " + t("AI 연결"))
         st.caption(t("번역·요약·목차 판독에는 AI가 필요합니다. 텍스트 변환은 AI 없이도 됩니다."))
         _way = st.radio(
-            t("연결 방법"), ["api", "cli"], horizontal=True, key="ai_onb_way",
-            format_func=lambda w: t("API 키 (권장)") if w == "api" else t("구독 계정 (Claude·ChatGPT)"),
+            t("연결 방법"), ["cli", "api"], horizontal=True, key="ai_onb_way",
+            format_func=lambda w: t("API 키") if w == "api" else t("구독 계정 (Claude·ChatGPT)"),
         )
         if _way == "api":
             _prov = st.selectbox(t("AI 서비스"), list(llm.API_PROVIDERS), key="ai_onb_prov",
@@ -1733,6 +1734,12 @@ def _current_wiki_dir() -> Path:
     except Exception:
         pass
     return WIKI_DIR
+
+
+# 옵시디언을 깔고 처음 열어도 우리 위키 폴더가 보이게 한다 — 세션마다 한 번 (2026-09-30).
+if not st.session_state.get("_vault_auto_checked"):
+    st.session_state["_vault_auto_checked"] = True
+    auto_register_wiki_vault(_current_wiki_dir())
 
 
 def _current_docx_dir() -> Path:

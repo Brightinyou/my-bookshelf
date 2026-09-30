@@ -45,9 +45,11 @@ def launch_setup_window() -> tuple[bool, str]:
         return False, "설정 스크립트를 찾지 못했습니다."
     try:
         if sys.platform == "win32":
+            # 앱에서 고른 언어로 설정 창을 띄운다 (2026-09-30 — 한국어 앱에 영어 메뉴가 떴다).
+            from services.i18n import get_lang
             subprocess.Popen(
                 ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                 "-File", str(script)],
+                 "-File", str(script), "-Lang", get_lang()],
                 cwd=str(script.parent),
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
             )

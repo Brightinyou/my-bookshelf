@@ -116,7 +116,6 @@ def tf(s: str, *args) -> str:
 _EN: dict[str, str] = {
     "번역·요약·목차 판독에는 AI가 필요합니다. 텍스트 변환은 AI 없이도 됩니다.": "Translation, summaries and table-of-contents reading need AI. Text conversion works without it.",
     "연결 방법": "How to connect",
-    "API 키 (권장)": "API key (recommended)",
     "구독 계정 (Claude·ChatGPT)": "Subscription (Claude·ChatGPT)",
     "AI 서비스": "AI service",
     "키 발급: %s": "Get a key: %s",
