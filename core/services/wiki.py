@@ -238,12 +238,51 @@ def obsidian_running() -> bool:
     try:
         if sys.platform == "darwin":
             return subprocess.run(["pgrep", "-x", "Obsidian"], capture_output=True).returncode == 0
-        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq Obsidian.exe", "/NH"],
-                             capture_output=True, text=True,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
-        return "obsidian.exe" in out.lower()
+        names = _windows_process_names()
+        return names is None or "obsidian.exe" in names
     except Exception:
         return True
+
+
+def _windows_process_names() -> set[str] | None:
+    """떠 있는 프로세스의 실행 파일 이름(소문자). 못 읽으면 None.
+
+    ★tasklist 를 쓰면 안 된다 (2026-09-30 Windows Sandbox 실측). 옵시디언이 떠
+    있는데도 «없음»으로 읽혀 켜진 채로 obsidian.json 을 고쳤다. tasklist·WMI 는
+    막힌 PC 가 있지만 Toolhelp 스냅숏은 권한 없이 읽힌다(Get-Process 와 같은 길)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", wintypes.WCHAR * 260)]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    k32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    k32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    TH32CS_SNAPPROCESS, INVALID = 0x2, wintypes.HANDLE(-1).value
+    snap = k32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if not snap or snap == INVALID:
+        return None
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        if not k32.Process32FirstW(snap, ctypes.byref(entry)):
+            return None
+        names = set()
+        while True:
+            names.add(entry.szExeFile.lower())
+            if not k32.Process32NextW(snap, ctypes.byref(entry)):
+                break
+        return names
+    finally:
+        k32.CloseHandle(snap)
 
 
 def _vault_registered(folder: Path) -> bool:
