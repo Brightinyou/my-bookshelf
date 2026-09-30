@@ -43,6 +43,8 @@ def cli_install_steps(cli: str, platform: str | None = None) -> list[tuple[str, 
         if win:
             return [("Node.js 설치 (이미 있으면 건너뛰기)",
                      "winget install -e --id OpenJS.NodeJS.LTS"),
+                    ("winget 명령이 없다고 나오면 — 아래 주소에서 LTS 설치 파일(.msi)을 받아 실행",
+                     "https://nodejs.org/"),
                     ("PowerShell 창을 닫고 새로 연 뒤 설치", "npm install -g @openai/codex"),
                     ("로그인", "codex login --device-auth")]
         return [("Node.js 설치 (이미 있으면 건너뛰기) — 아래 주소에서 LTS 설치 파일(.pkg)을 받아 실행",

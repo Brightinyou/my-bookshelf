@@ -114,6 +114,7 @@ def tf(s: str, *args) -> str:
 
 
 _EN: dict[str, str] = {
+    "winget 명령이 없다고 나오면 — 아래 주소에서 LTS 설치 파일(.msi)을 받아 실행": "If winget is not found — download and run the LTS installer (.msi) from the address below",
     "시작 메뉴에서 PowerShell을 열고 아래 명령을 한 줄씩 붙여 넣으세요.": "Open PowerShell from the Start menu and paste the commands below one line at a time.",
     "터미널(응용 프로그램 › 유틸리티)을 열고 아래 명령을 한 줄씩 붙여 넣으세요.": "Open Terminal (Applications › Utilities) and paste the commands below one line at a time.",
     "설치와 로그인을 마치면 앱으로 돌아와 [다시 확인]을 누르거나 설정에서 켜세요.": "After installing and signing in, come back and press [Check again] or turn it on in Settings.",
