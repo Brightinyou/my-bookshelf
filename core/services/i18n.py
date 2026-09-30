@@ -114,6 +114,20 @@ def tf(s: str, *args) -> str:
 
 
 _EN: dict[str, str] = {
+    "번역·요약·목차 판독에는 AI가 필요합니다. 텍스트 변환은 AI 없이도 됩니다.": "Translation, summaries and table-of-contents reading need AI. Text conversion works without it.",
+    "연결 방법": "How to connect",
+    "API 키 (권장)": "API key (recommended)",
+    "구독 계정 (Claude·ChatGPT)": "Subscription (Claude·ChatGPT)",
+    "AI 서비스": "AI service",
+    "키 발급: %s": "Get a key: %s",
+    "API는 쓴 만큼 요금이 나옵니다. 키는 이 컴퓨터에만 저장됩니다.": "API use is billed by usage. The key is stored only on this computer.",
+    "Claude Pro·Max 또는 ChatGPT Plus·Pro 구독이 있으면 추가 요금 없이 씁니다. 설정 창에서 번호를 고르면 설치와 로그인이 이어서 진행됩니다.": "With a Claude Pro/Max or ChatGPT Plus/Pro subscription there is no extra charge. Pick a number in the setup window and installation and sign-in follow.",
+    "설치된 %s 사용": "Use installed %s",
+    "설정 창 열기": "Open setup window",
+    "다시 확인": "Check again",
+    "설정 창을 열지 못했습니다: %s": "Could not open the setup window: %s",
+    "설정 스크립트를 찾지 못했습니다.": "The setup script was not found.",
+    "설정 창에서 설치와 로그인을 마친 뒤 [다시 확인]을 누르세요.": "Finish installation and sign-in in the setup window, then press [Check again].",
     "삭제 확정": "Confirm delete",
     "선택한 %d개를 삭제할까요?": "Delete %d selected?",
     "취소": "Cancel",

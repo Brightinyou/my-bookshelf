@@ -94,12 +94,8 @@ Filename: "{app}\.venv\Scripts\pythonw.exe"; \
     StatusMsg: "Preparing the application shortcut."; \
     Flags: waituntilterminated runhidden
 
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\windows_setup_extras.ps1"""; \
-    WorkingDir: "{app}"; \
-    Flags: waituntilterminated postinstall skipifsilent; \
-    Description: "Set up Claude or Codex"
-
+; AI(Claude·Codex) 설정은 설치에서 뺐다 — 앱이 AI 없이 처음 뜨면 «AI 연결» 안내를
+; 보이고, 구독을 고른 사람에게만 windows_setup_extras.ps1 창을 연다 (2026-09-30).
 Filename: "{sys}\wscript.exe"; \
     Parameters: """{app}\start-app.vbs"""; \
     WorkingDir: "{app}"; \

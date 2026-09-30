@@ -31,6 +31,7 @@ from version import APP_VERSION
 # ── 처리 로직 서비스 (2026-07-03 pipeline_app.py에서 분리) ──
 # UI 코드가 기존 이름 그대로 쓰도록 명시적으로 재노출한다.
 from services import ai_ocr
+from services import ai_setup
 from services import jobs
 from services.ui_layout import navigation_html, status_chip, font_scale, COMPACT_CSS
 from services import chapter_map as cmap
@@ -532,8 +533,11 @@ if st.query_params.get("view") == "chapter_editor":
 # 5단계(출력) 선택: 옵시디언 위키 / Word DOCX / 한글 HWPX / EPUB (독립 토글,
 # 2026-07-24, HWPX 2026-08-09, EPUB 2026-08-11 — EPUB만 요약이 아니라 챕터 원문·번역본
 # 전체를 담는다는 점에서 나머지 셋과 소스가 다름).
-_use_ob = bool(llm.get_pref("use_obsidian", True))
-_use_dx = bool(llm.get_pref("use_docx", False))
+# 한 번도 고른 적 없으면(설치 때 묻던 창을 없앴다, 2026-09-30) 옵시디언이 이 컴퓨터에
+# 있을 때만 위키로, 없으면 Word 문서로 시작한다 — 설치 창이 하던 기본값과 같다.
+_ob_found = llm.get_pref("use_obsidian") is None and bool(list_obsidian_vaults())
+_use_ob = bool(llm.get_pref("use_obsidian", _ob_found))
+_use_dx = bool(llm.get_pref("use_docx", llm.get_pref("use_obsidian") is None and not _ob_found))
 _use_hx = bool(llm.get_pref("use_hwpx", False))
 _use_ep = bool(llm.get_pref("use_epub", False))
 def _out_short() -> str:
@@ -640,9 +644,67 @@ _status_details = (t("설정된 AI (연결 상태 아님)") + f": {llm.PROVIDERS
                    + t("AI API 키") + f": {len(_avail_api_providers)}\n"
                    + t("위키 생성기") + ": " + t("생성 중" if wg_ok else "대기"))
 st.markdown(status_chip(f"{_status_name} · Wiki {_wiki_count}", _status_details), unsafe_allow_html=True)
+def _render_ai_onboarding() -> None:
+    """AI 없이 처음 뜬 앱의 «AI 연결» 안내 (2026-09-30).
+
+    설치 마지막의 Claude·Codex 설정 창을 없애고 여기로 옮겼다. 기본은 API 키 —
+    붙여 넣고 저장하면 끝난다. 구독(CLI)은 고른 사람에게만 설치 때 쓰던 설정 창을 연다."""
+    with st.container(border=True):
+        st.markdown("#### :material/link: " + t("AI 연결"))
+        st.caption(t("번역·요약·목차 판독에는 AI가 필요합니다. 텍스트 변환은 AI 없이도 됩니다."))
+        _way = st.radio(
+            t("연결 방법"), ["api", "cli"], horizontal=True, key="ai_onb_way",
+            format_func=lambda w: t("API 키 (권장)") if w == "api" else t("구독 계정 (Claude·ChatGPT)"),
+        )
+        if _way == "api":
+            _prov = st.selectbox(t("AI 서비스"), list(llm.API_PROVIDERS), key="ai_onb_prov",
+                                 format_func=lambda p: llm.PROVIDERS[p]["label"])
+            st.caption(tf("키 발급: %s", ai_setup.API_KEY_PAGES.get(_prov, "")) + "  \n"
+                       + t("API는 쓴 만큼 요금이 나옵니다. 키는 이 컴퓨터에만 저장됩니다."))
+            with st.form("ai_onb_keyform", clear_on_submit=True):
+                _k = st.text_input(t("API 키"), type="password",
+                                   placeholder=llm.PROVIDERS[_prov]["hint"])
+                if st.form_submit_button(t("저장"), icon=":material/save:"):
+                    if _k.strip():
+                        llm.save_key(_prov, _k.strip())
+                        st.toast(t("저장됨"))
+                        st.rerun()
+                    else:
+                        st.warning(t("키를 입력하세요."))
+        else:
+            st.caption(t("Claude Pro·Max 또는 ChatGPT Plus·Pro 구독이 있으면 추가 요금 없이 씁니다. "
+                         "설정 창에서 번호를 고르면 설치와 로그인이 이어서 진행됩니다."))
+            # 이미 설치돼 있는데 꺼져 있을 뿐이면 창을 열 필요 없이 켜기만 한다.
+            _ready = [(p, n) for p, n, ok in (("claude_cli", "Claude CLI", llm.claude_cli_installed()),
+                                              ("codex_cli", "Codex CLI", llm.codex_cli_installed())) if ok]
+            for _p, _n in _ready:
+                if st.button(tf("설치된 %s 사용", _n), icon=":material/toggle_on:", key=f"ai_onb_on_{_p}"):
+                    (llm.set_claude_cli_enabled if _p == "claude_cli" else llm.set_codex_cli_enabled)(True)
+                    st.rerun()
+            _c1, _c2 = st.columns(2)
+            if _c1.button(t("설정 창 열기"), icon=":material/open_in_new:", key="ai_onb_launch",
+                          width="stretch"):
+                _ok, _why = ai_setup.launch_setup_window()
+                if _ok:
+                    st.session_state["_ai_onb_launched"] = True
+                else:
+                    st.error(tf("설정 창을 열지 못했습니다: %s", t(_why)))
+            if _c2.button(t("다시 확인"), icon=":material/refresh:", key="ai_onb_recheck",
+                          width="stretch"):
+                st.rerun()
+            if st.session_state.get("_ai_onb_launched"):
+                st.info(t("설정 창에서 설치와 로그인을 마친 뒤 [다시 확인]을 누르세요."))
+        if st.button(t("나중에"), key="ai_onb_later", type="tertiary"):
+            llm.set_pref("ai_onboarding_dismissed", True)
+            st.rerun()
+
+
 if not _avail_ai_providers:
-    st.error(t("사용 가능한 AI가 없습니다 — :material/settings: 설정 탭에서 API 키를 입력하거나 CLI 구독 도구를 활성화하세요."),
-             icon=":material/warning:")
+    if not st.session_state.get("active_view") and not llm.get_pref("ai_onboarding_dismissed", False):
+        _render_ai_onboarding()
+    else:
+        st.info(t("사용 가능한 AI가 없습니다 — :material/settings: 설정 탭에서 API 키를 입력하거나 CLI 구독 도구를 활성화하세요."),
+                icon=":material/info:")
 elif not llm.has_key(_status_p):
     st.error(t("선택한 AI 연결을 사용할 수 없습니다. 설정을 확인하세요."))
 if st.session_state.get("_job_halt"):

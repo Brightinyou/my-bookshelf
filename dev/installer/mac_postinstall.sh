@@ -69,17 +69,10 @@ launch_extras() {
     # 무인 설치 스크립트는 AI·옵시디언 설정을 스스로 처리한다.
     if [ -f "$UNATTENDED_MARK" ]; then
         log "무인 설치 — 추가 설정 창을 띄우지 않는다"
-    elif [ -x "$RESOURCES/setup-extras.command" ]; then
-        # 추가 설정 창(setup-extras.command)이 끝나면 그 창이 앱을 연다.
-        if asuser /usr/bin/open -a Terminal "$RESOURCES/setup-extras.command" >/dev/null 2>&1; then
-            log "추가 설정 창을 띄웠다"
-        else
-            log "추가 설정 창을 띄우지 못했다 (앱 설정 탭에서 직접 고르면 된다) — 앱을 바로 연다"
-            asuser /usr/bin/open "$APP" >/dev/null 2>&1 && log "앱 실행"
-        fi
     else
-        # 설치가 끝났는데 아무것도 안 뜨면 불편하다 — 앱이라도 연다 (2026-09-18).
-        log "setup-extras.command 없음 — 앱을 바로 연다"
+        # AI·옵시디언 설정 창은 더 띄우지 않는다 — 앱이 AI 없이 처음 뜨면 «AI 연결»
+        # 안내를 보이고, 구독을 고른 사람에게만 setup-extras.command 를 연다 (2026-09-30).
+        log "앱을 바로 연다 (AI 연결은 앱 첫 화면에서)"
         asuser /usr/bin/open "$APP" >/dev/null 2>&1 && log "앱 실행"
     fi
 }
