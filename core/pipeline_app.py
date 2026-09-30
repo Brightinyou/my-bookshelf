@@ -644,6 +644,22 @@ _status_details = (t("설정된 AI (연결 상태 아님)") + f": {llm.PROVIDERS
                    + t("AI API 키") + f": {len(_avail_api_providers)}\n"
                    + t("위키 생성기") + ": " + t("생성 중" if wg_ok else "대기"))
 st.markdown(status_chip(f"{_status_name} · Wiki {_wiki_count}", _status_details), unsafe_allow_html=True)
+def _render_cli_install_guide(cli: str) -> None:
+    """CLI를 직접 설치하는 명령을 복사 단추가 붙은 칸으로 보여 준다 (2026-09-30).
+
+    «설정 창 열기»가 실패할 때의 대비책 — 예전엔 문장 속 `npm i -g …` 한 줄뿐이라
+    복사가 불편했고, Node.js 가 먼저 있어야 한다는 것과 로그인 명령이 빠져 있었다."""
+    _win = sys.platform == "win32"
+    st.caption(t("시작 메뉴에서 PowerShell을 열고 아래 명령을 한 줄씩 붙여 넣으세요.") if _win
+               else t("터미널(응용 프로그램 › 유틸리티)을 열고 아래 명령을 한 줄씩 붙여 넣으세요."))
+    for _i, (_label, _cmd) in enumerate(ai_setup.cli_install_steps(cli), 1):
+        st.markdown(f"{_i}. {t(_label)}")
+        if _cmd:
+            st.code(_cmd, language=None if _cmd.startswith("http") else ("powershell" if _win else "bash"),
+                    wrap_lines=True)
+    st.caption(t("설치와 로그인을 마치면 앱으로 돌아와 [다시 확인]을 누르거나 설정에서 켜세요."))
+
+
 def _render_ai_onboarding() -> None:
     """AI 없이 처음 뜬 앱의 «AI 연결» 안내 (2026-09-30).
 
@@ -694,6 +710,10 @@ def _render_ai_onboarding() -> None:
                 st.rerun()
             if st.session_state.get("_ai_onb_launched"):
                 st.info(t("설정 창에서 설치와 로그인을 마친 뒤 [다시 확인]을 누르세요."))
+            # 설정 창이 안 되면 직접 붙여 넣는다 (2026-09-30)
+            for _cli, _nm in (("claude", "Claude"), ("codex", "Codex")):
+                with st.expander(tf("%s 직접 설치 (명령 복사)", _nm)):
+                    _render_cli_install_guide(_cli)
         if st.button(t("나중에"), key="ai_onb_later", type="tertiary"):
             llm.set_pref("ai_onboarding_dismissed", True)
             st.rerun()
@@ -4209,7 +4229,9 @@ if _active_view == "settings":
                     llm.set_claude_cli_enabled(_new_claude)
                     st.rerun()
             else:
-                st.caption(t("미설치") + " · `npm i -g @anthropic-ai/claude-code`")
+                st.caption(t("미설치"))
+                with st.expander(t("설치 방법 (명령 복사)")):
+                    _render_cli_install_guide("claude")
         with _cc2:
             _codex_installed = llm.codex_cli_installed()
             _codex_enabled = bool(llm.get_pref("use_codex_cli", False))
@@ -4223,7 +4245,9 @@ if _active_view == "settings":
                     llm.set_codex_cli_enabled(_new_codex)
                     st.rerun()
             else:
-                st.caption(t("미설치") + " · `npm i -g @openai/codex`")
+                st.caption(t("미설치"))
+                with st.expander(t("설치 방법 (명령 복사)")):
+                    _render_cli_install_guide("codex")
 
         _render_wiki_length_slider("compact_home_wiki_length")
 

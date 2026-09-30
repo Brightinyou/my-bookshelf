@@ -48,5 +48,34 @@ class MacPostinstallTest(unittest.TestCase):
         self.assertIn('asuser /usr/bin/open "$APP"', script)
 
 
+class CliInstallStepsTest(unittest.TestCase):
+    """붙여 넣는 명령이 설치 스크립트가 실제로 쓰는 것과 어긋나지 않게 한다."""
+
+    SCRIPTS = {"win32": ROOT / "dev" / "installer" / "windows_setup_extras.ps1",
+               "darwin": ROOT / "dev" / "installer" / "mac_setup_extras.sh"}
+
+    def test_commands_match_setup_scripts(self):
+        for plat, path in self.SCRIPTS.items():
+            script = path.read_text(encoding="utf-8")
+            joined = " ".join(c for cli in ("claude", "codex")
+                              for _, c in ai_setup.cli_install_steps(cli, plat) if c)
+            for needle in ("https://claude.ai/install." + ("ps1" if plat == "win32" else "sh"),
+                           "@openai/codex", "claude auth login", "codex login --device-auth"):
+                self.assertIn(needle, joined, (plat, needle))
+                self.assertIn(needle.split(" ")[0] if needle.startswith("http") else needle, script, (plat, needle))
+
+    def test_mac_codex_installs_to_user_folder_like_the_script(self):
+        steps = dict(ai_setup.cli_install_steps("codex", "darwin"))
+        self.assertIn('--prefix "$HOME/.local"', steps["설치"])
+        self.assertIn('--prefix "$HOME/.local"', self.SCRIPTS["darwin"].read_text(encoding="utf-8"))
+
+    def test_every_step_label_is_translated(self):
+        from services import i18n
+        for plat in self.SCRIPTS:
+            for cli in ("claude", "codex"):
+                for label, _ in ai_setup.cli_install_steps(cli, plat):
+                    self.assertIn(label, i18n._EN, label)
+
+
 if __name__ == "__main__":
     unittest.main()
