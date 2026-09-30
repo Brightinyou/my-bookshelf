@@ -76,6 +76,21 @@ jobs:
           if ($LASTEXITCODE) { throw "bundled runtime imports failed" }
           if (-not (Test-Path "$dir\.venv\Scripts\MyBookshelf.exe")) { throw "MyBookshelf.exe was not prepared" }
 
+          # ★바로가기가 실제로 여는 MyBookshelf.exe 로도 띄운다 (2026-09-30 PC 실측).
+          #   python.exe(venv 중계)는 동봉 runtime 의 DLL 을 찾아가지만, Scripts 로 복사한
+          #   MyBookshelf.exe 는 옆에 python3xx.dll 이 없으면 PATH 의 다른 파이썬 DLL 을
+          #   불러와 «No module named 'webview'» 로 멈췄다. PATH 에서 파이썬을 모두 빼고,
+          #   pythonw 복사본이라 표준출력이 없으므로 결과는 파일로 받는다.
+          $probe = "$env:RUNNER_TEMP\own-exe.txt"
+          $savedPath = $env:Path
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          $own = Start-Process "$dir\.venv\Scripts\MyBookshelf.exe" -Wait -PassThru -ArgumentList @(
+            "-c", "`"import sys, webview, streamlit; open(r'$probe','w').write(sys.base_prefix)`"")
+          $env:Path = $savedPath
+          $base = Get-Content $probe -ErrorAction SilentlyContinue
+          Write-Host "MyBookshelf.exe exit=$($own.ExitCode) base_prefix=$base"
+          if ($own.ExitCode -ne 0 -or -not "$base".ToLower().EndsWith("runtime")) { throw "MyBookshelf.exe did not start on the bundled runtime" }
+
           $srv = Start-Process $py -PassThru -WindowStyle Hidden -WorkingDirectory $dir `
             -RedirectStandardOutput "$env:RUNNER_TEMP\st.out" -RedirectStandardError "$env:RUNNER_TEMP\st.err" -ArgumentList @(
             "-m", "streamlit", "run", "`"$dir\core\pipeline_app.py`"",
