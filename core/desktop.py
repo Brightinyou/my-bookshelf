@@ -246,6 +246,121 @@ def _port_in_use(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+# ─── WMI 없이 우리 프로세스 찾기 (2026-09-30) ─────────────────────────────
+# Get-CimInstance Win32_Process 가 «액세스가 거부되었습니다»로 막힌 PC 가 있다(Windows
+# Sandbox 실측). 그러면 옛 서버·옛 창 정리가 조용히 실패해 서버가 쌓이거나 포트가
+# 부딪친다. 명령줄은 WMI 로만 읽히지만 **실행 파일 경로**는 권한 없이 읽힌다. 앱의
+# 파이썬은 모두 {app}\.venv\Scripts(껍데기·MyBookshelf.exe) 와 {app}\runtime(껍데기가
+# 띄우는 실제 인터프리터) 에서 뜨므로, 경로로 우리 것만 고를 수 있다.
+_CIM_BLOCKED = 3          # 아래 PowerShell 이 WMI 를 못 읽으면 돌려주는 종료 코드
+
+
+def _app_exe_dirs(root: Path | None = None) -> list[Path]:
+    root = root or APP_ROOT
+    return [root / ".venv" / "Scripts", root / "runtime"]
+
+
+def _is_app_exe(exe: str, dirs: list[Path]) -> bool:
+    """exe 가 dirs 중 한 곳 **바로 아래**의 파이썬·MyBookshelf.exe 인가."""
+    p = Path(exe)
+    if p.name.lower() not in ("python.exe", "pythonw.exe", OWN_EXE_NAME.lower()):
+        return False
+    parent = os.path.normcase(str(p.parent))
+    return any(parent == os.path.normcase(str(d)) for d in dirs)
+
+
+def _process_image_paths() -> dict[int, str]:
+    """떠 있는 프로세스 {PID: 실행 파일 전체 경로}. Toolhelp 스냅숏 +
+    QueryFullProcessImageNameW — 둘 다 WMI 없이, 관리자 권한 없이 된다."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", wintypes.WCHAR * 260)]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    k32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    k32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                               wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    snap = k32.CreateToolhelp32Snapshot(0x2, 0)
+    if not snap or snap == wintypes.HANDLE(-1).value:
+        return {}
+    pids: list[int] = []
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        ok = k32.Process32FirstW(snap, ctypes.byref(entry))
+        while ok:
+            pids.append(int(entry.th32ProcessID))
+            ok = k32.Process32NextW(snap, ctypes.byref(entry))
+    finally:
+        k32.CloseHandle(snap)
+    paths: dict[int, str] = {}
+    buf = ctypes.create_unicode_buffer(32768)
+    for pid in pids:
+        h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not h:
+            continue                      # 남의 권한·시스템 프로세스 — 우리 것이 아니다
+        try:
+            size = wintypes.DWORD(len(buf))
+            if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                paths[pid] = buf.value
+        finally:
+            k32.CloseHandle(h)
+    return paths
+
+
+def _kill_app_processes_by_path(skip: set[int], dirs: list[Path] | None = None) -> list[int]:
+    """WMI 가 막혔을 때의 대안 — 앱 폴더에서 뜬 파이썬을 skip 빼고 모두 끈다.
+    명령줄이 없어 서버·창을 가를 수 없지만, 부르는 곳(앱 시작·창 닫기)에서는 어차피
+    둘 다 끄려는 것이다. Returns: 끈 PID."""
+    dirs = dirs or _app_exe_dirs()
+    killed = []
+    for pid, exe in _process_image_paths().items():
+        if pid in skip or not _is_app_exe(exe, dirs):
+            continue
+        try:
+            os.kill(pid, 9)                   # Windows 에서는 TerminateProcess
+            killed.append(pid)
+        except (OSError, SystemError):
+            pass
+    return killed
+
+
+def _self_and_parent() -> set[int]:
+    skip = {os.getpid()}
+    try:
+        skip.add(os.getppid())
+    except (OSError, AttributeError):
+        pass
+    return skip
+
+
+def _run_cim_kill(filter_expr: str) -> bool:
+    """WMI 로 골라 끈다. WMI 를 못 읽었으면 False(→ 경로 대안)."""
+    r = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "try { $ps = Get-CimInstance Win32_Process -ErrorAction Stop } "
+         f"catch {{ exit {_CIM_BLOCKED} }}; "
+         f"$ps | Where-Object {{ {filter_expr} }} | "
+         "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
+        capture_output=True,
+        creationflags=0x08000000,
+    )
+    return r.returncode != _CIM_BLOCKED
+
+
 def _kill_all_streamlit_procs() -> None:
     """실행 중인 My Bookshelf 서버(streamlit pipeline_app.py)를 전부 종료한다.
 
@@ -255,19 +370,14 @@ def _kill_all_streamlit_procs() -> None:
     """
     try:
         if sys.platform == "win32":
-            subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 # ★Name 조건이 반드시 있어야 한다 (2026-08-27 실측). 이 필터를
-                 #   실행하는 powershell 자신의 **명령줄에 그 패턴이 그대로 들어
-                 #   있어서**, 진짜 서버를 죽이기 전에 자기를 먼저 죽이고 끝났다.
-                 #   그래서 «옛 서버를 정리한다»는 말과 달리 서버가 쌓여 갔다.
-                 "Get-CimInstance Win32_Process | Where-Object { "
-                 "$_.Name -in @('python.exe','pythonw.exe','MyBookshelf.exe') -and "
-                 "$_.CommandLine -like '*streamlit*pipeline_app.py*' } | "
-                 "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
-                capture_output=True,
-                creationflags=0x08000000,
-            )
+            # ★Name 조건이 반드시 있어야 한다 (2026-08-27 실측). 이 필터를
+            #   실행하는 powershell 자신의 **명령줄에 그 패턴이 그대로 들어
+            #   있어서**, 진짜 서버를 죽이기 전에 자기를 먼저 죽이고 끝났다.
+            #   그래서 «옛 서버를 정리한다»는 말과 달리 서버가 쌓여 갔다.
+            if not _run_cim_kill(
+                    "$_.Name -in @('python.exe','pythonw.exe','MyBookshelf.exe') -and "
+                    "$_.CommandLine -like '*streamlit*pipeline_app.py*'"):
+                _kill_app_processes_by_path(_self_and_parent())
         else:
             subprocess.run(["pkill", "-f", "streamlit run.*pipeline_app.py"],
                            capture_output=True)
@@ -297,11 +407,7 @@ def _kill_stale_windows() -> None:
     #   **명령줄이 완전히 같은** 실제 인터프리터가 자식으로 붙는다. 그래서 자기
     #   PID만 빼면 껍데기 부모가 목록에 남고, 그것을 죽이는 순간 자식인 나까지
     #   함께 죽었다. 증상은 «앱이 아무 소리 없이 안 뜬다»였고 오류 기록도 없었다.
-    _skip = {os.getpid()}
-    try:
-        _skip.add(os.getppid())
-    except (OSError, AttributeError):
-        pass
+    _skip = _self_and_parent()
     _self_list = ",".join(str(_p) for _p in sorted(_skip))
     try:
         if sys.platform == "win32":
@@ -310,16 +416,12 @@ def _kill_stale_windows() -> None:
             # 까닭은 pythonw.exe로 뜬 옛 창과 MyBookshelf.exe로 뜬 새 창을 함께
             # 잡아야 하기 때문이다 (2026-08-27).
             _exe = str(Path(sys.executable).parent).replace("'", "''")
-            subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 "Get-CimInstance Win32_Process | Where-Object { "
-                 "$_.Name -in @('python.exe','pythonw.exe','MyBookshelf.exe') -and "
-                 f"$_.CommandLine -like '*desktop.py*' -and $_.CommandLine -like '*{_exe}*' "
-                 f"-and $_.ProcessId -notin @({_self_list}) "
-                 "} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
-                capture_output=True,
-                creationflags=0x08000000,
-            )
+            if not _run_cim_kill(
+                    "$_.Name -in @('python.exe','pythonw.exe','MyBookshelf.exe') -and "
+                    f"$_.CommandLine -like '*desktop.py*' -and $_.CommandLine -like '*{_exe}*' "
+                    f"-and $_.ProcessId -notin @({_self_list})"):
+                # WMI 가 막혔다 — 앱 폴더에서 뜬 것을 나와 부모만 빼고 끈다 (2026-09-30).
+                _kill_app_processes_by_path(_skip)
         else:
             _out = subprocess.run(["ps", "-eo", "pid=,command="],
                                   capture_output=True, text=True,

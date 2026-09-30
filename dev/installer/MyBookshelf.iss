@@ -118,9 +118,11 @@ Type: filesandordirs; Name: "{app}\webview2-install.log"
 Type: dirifempty; Name: "{app}"
 
 [UninstallRun]
-Filename: "cmd.exe"; \
-    Parameters: "/c taskkill /f /im pythonw.exe >nul 2>nul & taskkill /f /im python.exe >nul 2>nul"; \
-    Flags: runhidden; RunOnceId: "KillPython"
+; ★2026-09-30: taskkill /im python.exe 는 **이 PC의 모든 파이썬**을 끄면서 정작 앱 창
+;   (MyBookshelf.exe)은 못 껐다. PrepareToInstall 과 같이 설치 폴더에서 뜬 것만 끈다.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
+    Parameters: "-NoProfile -Command ""$r = '{app}'; $dirs = @((Join-Path $r '.venv\Scripts'), (Join-Path $r 'runtime')) | ForEach-Object {{ $_.ToLower() }; Get-Process | Where-Object {{ $_.Path -and $_.ProcessName -match '^(python|pythonw|MyBookshelf)$' -and ($dirs -contains (Split-Path $_.Path -Parent).ToLower()) } | ForEach-Object {{ Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }"""; \
+    Flags: runhidden waituntilterminated; RunOnceId: "KillApp"
 
 [Code]
 { 설치 전에 실행 중인 앱을 먼저 끈다.
@@ -131,15 +133,23 @@ Filename: "cmd.exe"; \
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  AppDir: String;
 begin
   Result := '';
 
+  { ★2026-09-30: 명령줄(Get-CimInstance) 대신 실행 파일 경로(Get-Process Path)로 찾는다.
+    WMI 가 «액세스가 거부되었습니다»로 막힌 PC(Windows Sandbox 실측)에서는 아무것도 못 꺼서,
+    업데이트 때 앱이 켜진 채로 파일이 덮여 쓰였다(2026-08-27 증상). 설치 폴더의
+    .venv\Scripts·runtime 에서 뜬 파이썬·MyBookshelf.exe 는 모두 이 앱의 것이다. }
+  AppDir := ExpandConstant('{app}');
+  StringChangeEx(AppDir, '''', '''''', True);
   Exec(
-    ExpandConstant('{cmd}'),
-    '/c powershell -NoProfile -Command "Get-CimInstance Win32_Process | ' +
-    'Where-Object { $_.Name -in @(''python.exe'',''pythonw.exe'',''MyBookshelf.exe'') -and ' +
-    '($_.CommandLine -like ''*pipeline_app.py*'' -or $_.CommandLine -like ''*desktop.py*'') } | ' +
-    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"',
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -Command "$r = ''' + AppDir + '''; ' +
+    '$dirs = @((Join-Path $r ''.venv\Scripts''), (Join-Path $r ''runtime'')) | ForEach-Object { $_.ToLower() }; ' +
+    'Get-Process | Where-Object { $_.Path -and $_.ProcessName -match ''^(python|pythonw|MyBookshelf)$'' -and ' +
+    '($dirs -contains (Split-Path $_.Path -Parent).ToLower()) } | ' +
+    'ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode
   );
   { ★MyBookshelf.exe 도 끈다(2026-09-29). 앱은 .venv\Scripts\MyBookshelf.exe 로 도는데
