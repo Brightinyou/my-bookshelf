@@ -47,16 +47,29 @@ class WebView2VersionTest(unittest.TestCase):
 
 
 class BrowserFallbackTest(unittest.TestCase):
-    def test_only_windows_without_webview2(self):
-        with mock.patch.object(desktop.sys, "platform", "win32"), \
-             mock.patch.object(desktop, "webview2_version", return_value=""):
-            self.assertTrue(desktop._needs_browser_fallback())
-        with mock.patch.object(desktop.sys, "platform", "win32"), \
-             mock.patch.object(desktop, "webview2_version", return_value="140.0"):
-            self.assertFalse(desktop._needs_browser_fallback())
-        with mock.patch.object(desktop.sys, "platform", "darwin"), \
-             mock.patch.object(desktop, "webview2_version", return_value=""):
-            self.assertFalse(desktop._needs_browser_fallback())
+    def _needs(self, platform="win32", renderer=None, version=""):
+        with mock.patch.object(desktop.sys, "platform", platform), \
+             mock.patch.object(desktop, "_pywebview_renderer", return_value=renderer), \
+             mock.patch.object(desktop, "webview2_version", return_value=version):
+            return desktop._needs_browser_fallback()
+
+    def test_follows_pywebview_renderer_first(self):
+        """판정이 어긋나 WebView2 로 잘 그려질 PC 가 브라우저로 떨어지면 안 된다."""
+        self.assertTrue(self._needs(renderer="mshtml", version="140.0"))
+        self.assertFalse(self._needs(renderer="edgechromium", version=""))   # 예: Beta 채널만
+
+    def test_registry_only_when_pywebview_cannot_tell(self):
+        self.assertTrue(self._needs(renderer=None, version=""))
+        self.assertFalse(self._needs(renderer=None, version="140.0"))
+
+    def test_never_outside_windows(self):
+        self.assertFalse(self._needs(platform="darwin", renderer="mshtml", version=""))
+
+    @unittest.skipUnless(desktop.sys.platform == "win32" and desktop.webview2_version(),
+                         "WebView2 가 있는 Windows 에서만")
+    def test_real_pc_with_webview2_is_not_sent_to_browser(self):
+        self.assertEqual(desktop._pywebview_renderer(), "edgechromium")
+        self.assertFalse(desktop._needs_browser_fallback())
 
     def test_opens_browser_and_stops_server_after_notice(self):
         proc = mock.Mock()

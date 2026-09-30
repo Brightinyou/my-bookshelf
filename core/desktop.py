@@ -449,11 +449,16 @@ WEBVIEW2_DOWNLOAD = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 def _read_reg_pv(hive: str, path: str) -> str:
     import winreg
     root = {"HKLM": winreg.HKEY_LOCAL_MACHINE, "HKCU": winreg.HKEY_CURRENT_USER}[hive]
-    try:
-        with winreg.OpenKey(root, path, 0, winreg.KEY_READ | winreg.KEY_WOW64_32KEY) as k:
-            return str(winreg.QueryValueEx(k, "pv")[0] or "")
-    except OSError:
-        return ""
+    # 32·64비트 보기를 모두 본다 — 설치 스크립트(HKLM32·HKLM64)와 맞춘다.
+    for view in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+        try:
+            with winreg.OpenKey(root, path, 0, winreg.KEY_READ | view) as k:
+                pv = str(winreg.QueryValueEx(k, "pv")[0] or "")
+                if pv:
+                    return pv
+        except OSError:
+            continue
+    return ""
 
 
 def webview2_version(read_pv=None) -> str:
@@ -500,8 +505,28 @@ def _open_in_browser(url: str) -> bool:
         return False
 
 
+def _pywebview_renderer() -> str | None:
+    """pywebview 가 실제로 고를 엔진("edgechromium"|"mshtml"|"cef"). 못 알면 None.
+
+    ★레지스트리만 보면 안 된다 (2026-09-30 맥 세션 검토). pywebview 는 .NET 4.6.2
+    이상인지, WebView2 Beta·Dev·Canary 채널까지 보고 고른다. 우리 판정이 어긋나면
+    WebView2 로 잘 그려질 PC 까지 브라우저로 떨어진다 — 지금보다 나빠지는 쪽이다.
+    그래서 빈 창의 직접 원인인 «mshtml 로 떨어짐»을 pywebview 에게 그대로 묻는다."""
+    try:
+        from webview.platforms import winforms
+        return str(winforms.renderer)
+    except Exception:
+        return None
+
+
 def _needs_browser_fallback() -> bool:
-    return sys.platform == "win32" and not webview2_version()
+    if sys.platform != "win32":
+        return False
+    renderer = _pywebview_renderer()
+    if renderer is not None:
+        return renderer == "mshtml"
+    # pywebview 를 못 불러오면 창은 어차피 못 뜬다 — WebView2 도 없으면 브라우저로.
+    return not webview2_version()
 
 
 def run_popup(url: str, title: str) -> int:
