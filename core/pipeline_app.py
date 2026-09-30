@@ -512,6 +512,14 @@ with st.container(key="app_brand"):
         unsafe_allow_html=True,
     )
 # ── 별창: 장 구분 편집 작업창 (2026-09-21) ──────────────────────────
+# 옵시디언을 깔고 처음 열어도 우리 위키 폴더가 보이게 한다 — 세션마다 한 번 (2026-09-30).
+# ★첫 화면(작업 메뉴)은 아래에서 st.stop() 으로 끝나므로 그보다 **앞**에 둔다. 처음엔
+#   뒤에 두어 작업 화면에 들어가야만 등록됐다(Sandbox 실측). 이 시점의 위키 폴더는
+#   설정(config.json dirs.wiki)을 읽은 WIKI_DIR 이다.
+if not st.session_state.get("_vault_auto_checked"):
+    st.session_state["_vault_auto_checked"] = True
+    auto_register_wiki_vault(WIKI_DIR)
+
 # desktop.py --popup 이 «?view=chapter_editor&book=…» 으로 연다. 내비게이션·메뉴 없이
 # 이 화면만 그리고 멈춘다 — 본창과 같은 서버라 파일 상태는 늘 같다.
 if st.query_params.get("view") == "chapter_editor":
@@ -1734,12 +1742,6 @@ def _current_wiki_dir() -> Path:
     except Exception:
         pass
     return WIKI_DIR
-
-
-# 옵시디언을 깔고 처음 열어도 우리 위키 폴더가 보이게 한다 — 세션마다 한 번 (2026-09-30).
-if not st.session_state.get("_vault_auto_checked"):
-    st.session_state["_vault_auto_checked"] = True
-    auto_register_wiki_vault(_current_wiki_dir())
 
 
 def _current_docx_dir() -> Path:
