@@ -64,6 +64,9 @@ Source: "..\..\vendor\poppler\*";        DestDir: "{app}\poppler"; Flags: ignore
 ;   패키지까지 미리 깔린 채로 들어가므로 받는 PC는 python.org·pip·인터넷이 필요 없다.
 ;   setup.bat 이 이것을 base 로 .venv 를 몇 초 만에 잇는다(오프라인).
 Source: "..\..\vendor\runtime\*";       DestDir: "{app}\runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
+; ★WebView2 부트스트래퍼(2026-09-30) — dev\installer\fetch-webview2.ps1 이 빌드 때 받는다.
+;   받는 PC 에 WebView2 가 없을 때만 [Code] 가 풀어서 돌린다(없으면 앱 창이 빈 창).
+Source: "..\..\vendor\webview2\MicrosoftEdgeWebview2Setup.exe"; Flags: dontcopy
 
 [Icons]
 ; ★{app}\MyBookshelf.exe(PyInstaller 통짜 실행 파일)를 더 이상 거치지 않는다
@@ -111,6 +114,7 @@ Type: filesandordirs; Name: "{app}\.venv"
 Type: filesandordirs; Name: "{app}\runtime"
 Type: filesandordirs; Name: "{app}\__pycache__"
 Type: filesandordirs; Name: "{app}\install.log"
+Type: filesandordirs; Name: "{app}\webview2-install.log"
 Type: dirifempty; Name: "{app}"
 
 [UninstallRun]
@@ -144,11 +148,60 @@ begin
   Sleep(1500);
 end;
 
+// WebView2 런타임이 있는가 — MS 공식 판정: EdgeUpdate\Clients 아래 WebView2 GUID 의 pv 가
+// 비었거나 0.0.0.0 이면 미설치. 기계 단위(32·64비트 보기)와 사용자 단위를 모두 본다.
+function WebView2PvOk(RootKey: Integer): Boolean;
+var
+  Pv: String;
+begin
+  Result := RegQueryStringValue(RootKey,
+    'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Pv)
+    and (Pv <> '') and (Pv <> '0.0.0.0');
+end;
+
+function WebView2Installed(): Boolean;
+begin
+  Result := WebView2PvOk(HKLM32) or WebView2PvOk(HKCU);
+  if (not Result) and IsWin64 then
+    Result := WebView2PvOk(HKLM64);
+end;
+
+{ ★2026-09-30 Windows Sandbox 실측 — WebView2 가 없으면 pywebview 가 옛 IE 엔진으로
+  떨어져 앱 창이 아무 안내 없는 빈 창이 됐다. 없을 때만 부트스트래퍼를 조용히 돌린다.
+  관리자 권한 없이 돌면 사용자 단위로 깔린다. 실패(오프라인 등)해도 앱 설치는 막지
+  않고 기록만 남긴다 — 그때는 앱이 기본 브라우저로 대신 연다(desktop.py). }
+procedure EnsureWebView2();
+var
+  ResultCode: Integer;
+  Msg: String;
+begin
+  if WebView2Installed() then
+    exit;
+  WizardForm.StatusLabel.Caption := 'Installing Microsoft WebView2 runtime...';
+  try
+    ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');
+    if Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'), '/silent /install', '',
+            SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      Msg := 'exit code ' + IntToStr(ResultCode)
+    else
+      Msg := 'could not start: ' + SysErrorMessage(ResultCode);
+  except
+    Msg := 'error: ' + GetExceptionMessage;
+  end;
+  if WebView2Installed() then
+    Msg := Msg + ', installed'
+  else
+    Msg := Msg + ', still missing (the app will open in the default browser)';
+  SaveStringToFile(ExpandConstant('{app}\webview2-install.log'),
+    GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '  WebView2 bootstrapper: ' + Msg + #13#10, True);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Lang: String;
 begin
   if CurStep = ssPostInstall then begin
+    EnsureWebView2();
     if ActiveLanguage = 'english' then
       Lang := 'en'
     else

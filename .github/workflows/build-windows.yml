@@ -52,6 +52,12 @@ jobs:
         run: ./dev/installer/fetch-runtime.ps1
         shell: pwsh
 
+      # WebView2 부트스트래퍼 — 없는 PC 에서 앱 창이 빈 창이 되지 않게 (2026-09-30).
+      #   해시를 고정할 수 없는 파일이라 Microsoft 서명으로 확인한다.
+      - name: Fetch WebView2 bootstrapper
+        run: ./dev/installer/fetch-webview2.ps1
+        shell: pwsh
+
       - name: Build installer
         run: iscc "dev\installer\MyBookshelf.iss"
         shell: cmd
