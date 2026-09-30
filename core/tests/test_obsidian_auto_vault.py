@@ -75,5 +75,15 @@ class AutoRegisterWikiVaultTest(unittest.TestCase):
         self.assertFalse(self.cfgf.exists())
 
 
+class AppStartupHookTest(unittest.TestCase):
+    def test_hook_runs_before_the_first_st_stop(self):
+        """첫 화면(작업 메뉴)이 st.stop() 으로 끝나 뒤에 둔 등록이 안 불렸다(Sandbox 실측)."""
+        src = (Path(__file__).resolve().parents[1] / "pipeline_app.py").read_text(encoding="utf-8")
+        import re
+        hook = src.index("auto_register_wiki_vault(WIKI_DIR)")
+        first_stop = re.search(r"^\s+st\.stop\(\)", src, re.M).start()   # 주석 속 글자는 빼고
+        self.assertLess(hook, first_stop)
+
+
 if __name__ == "__main__":
     unittest.main()
