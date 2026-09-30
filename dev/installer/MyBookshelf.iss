@@ -23,6 +23,10 @@ SetupIconFile=..\..\MyBookshelf.ico
 Name: "korean";  MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+korean.InstallingWebView2=앱 창에 필요한 Microsoft WebView2 를 설치하는 중입니다 (1분 안팎)...
+english.InstallingWebView2=Installing Microsoft WebView2 for the app window (about a minute)...
+
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional options:"
 Name: "uninstallicon"; Description: "Create an uninstall shortcut on the desktop"; GroupDescription: "Additional options:"
@@ -50,6 +54,7 @@ Source: "..\..\MyBookshelf.iconset\*";   DestDir: "{app}\MyBookshelf.iconset"; F
 Source: "..\..\start-app.vbs";           DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\start.bat";               DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\stop-app.bat";            DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\stop-app.ps1";            DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\setup.bat";               DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\install-obsidian.bat";    DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\glossary.bat";            DestDir: "{app}"; Flags: ignoreversion
@@ -118,9 +123,11 @@ Type: filesandordirs; Name: "{app}\webview2-install.log"
 Type: dirifempty; Name: "{app}"
 
 [UninstallRun]
-Filename: "cmd.exe"; \
-    Parameters: "/c taskkill /f /im pythonw.exe >nul 2>nul & taskkill /f /im python.exe >nul 2>nul"; \
-    Flags: runhidden; RunOnceId: "KillPython"
+; ★2026-09-30: taskkill /im python.exe 는 **이 PC의 모든 파이썬**을 끄면서 정작 앱 창
+;   (MyBookshelf.exe)은 못 껐다. PrepareToInstall·«Stop My Bookshelf» 와 같은 stop-app.ps1.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\stop-app.ps1"" -Root ""{app}"""; \
+    Flags: runhidden waituntilterminated; RunOnceId: "KillApp"
 
 [Code]
 { 설치 전에 실행 중인 앱을 먼저 끈다.
@@ -131,17 +138,26 @@ Filename: "cmd.exe"; \
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  AppDir: String;
 begin
   Result := '';
 
-  Exec(
-    ExpandConstant('{cmd}'),
-    '/c powershell -NoProfile -Command "Get-CimInstance Win32_Process | ' +
-    'Where-Object { $_.Name -in @(''python.exe'',''pythonw.exe'',''MyBookshelf.exe'') -and ' +
-    '($_.CommandLine -like ''*pipeline_app.py*'' -or $_.CommandLine -like ''*desktop.py*'') } | ' +
-    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode
-  );
+  { ★2026-09-30: stop-app.ps1(실행 파일 경로 + 명령줄의 합집합)로 끈다. 예전에는 명령줄
+    (Get-CimInstance)만 봐서 WMI 가 «액세스가 거부되었습니다»로 막힌 PC(Windows Sandbox 실측)
+    에서는 아무것도 못 꺼, 업데이트 때 앱이 켜진 채로 파일이 덮여 쓰였다(2026-08-27 증상).
+    업데이트 대상인 옛 설치본은 설치 폴더에 stop-app.ps1 이 없으므로 설치 파일에서 임시로 푼다. }
+  AppDir := ExpandConstant('{app}');
+  try
+    ExtractTemporaryFile('stop-app.ps1');
+    Exec(
+      ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\stop-app.ps1') +
+      '" -Root "' + AppDir + '"',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode
+    );
+  except
+    { 끄지 못해도 설치는 계속한다 — 예전과 같다. }
+  end;
   { ★MyBookshelf.exe 도 끈다(2026-09-29). 앱은 .venv\Scripts\MyBookshelf.exe 로 도는데
     setup.bat 이 동봉 런타임에 .venv 를 다시 이을 때(--clear) 그 파일이 잠겨 있으면 실패한다. }
   { 포트와 파일 잠금이 풀릴 틈을 준다 }
@@ -177,16 +193,24 @@ var
 begin
   if WebView2Installed() then
     exit;
-  WizardForm.StatusLabel.Caption := 'Installing Microsoft WebView2 runtime...';
+  WizardForm.StatusLabel.Caption := CustomMessage('InstallingWebView2');
+  // 인터넷으로 받아 까는 데 40초 남짓(오프라인이면 20초 뒤 실패) — 진행 막대가 멈춰 있으면
+  // 설치가 멈춘 것처럼 보인다(연구자 지적, 2026-09-30). 그동안 흐르는 막대로 바꾼다.
+  // Exec 가 기다리는 동안에도 설치 창은 메시지를 처리하므로 막대가 계속 움직인다.
+  WizardForm.ProgressGauge.Style := npbstMarquee;
   try
-    ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');
-    if Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'), '/silent /install', '',
-            SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-      Msg := 'exit code ' + IntToStr(ResultCode)
-    else
-      Msg := 'could not start: ' + SysErrorMessage(ResultCode);
-  except
-    Msg := 'error: ' + GetExceptionMessage;
+    try
+      ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');
+      if Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'), '/silent /install', '',
+              SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+        Msg := 'exit code ' + IntToStr(ResultCode)
+      else
+        Msg := 'could not start: ' + SysErrorMessage(ResultCode);
+    except
+      Msg := 'error: ' + GetExceptionMessage;
+    end;
+  finally
+    WizardForm.ProgressGauge.Style := npbstNormal;
   end;
   if WebView2Installed() then
     Msg := Msg + ', installed'

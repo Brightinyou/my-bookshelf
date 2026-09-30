@@ -173,15 +173,19 @@ function AppProcs {
   # ★'mybookshelf'도 봐야 한다 (2026-08-27). 앱은 이제 venv 안의 MyBookshelf.exe로
   #   도는데, 'python'만 찾으면 **앱이 떠 있는데도 없는 줄 알고** 파일 잠금이
   #   풀리기 전에 설치를 시작하고, 나중엔 «안 떴다»며 하나를 더 띄운다.
-  Get-CimInstance Win32_Process | Where-Object {
-    $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($Root.ToLower()) -and $_.Name -match 'python|mybookshelf'
+  # ★Get-CimInstance 를 쓰면 안 된다 (2026-09-30 Windows Sandbox 실측). WMI 가
+  #   «액세스가 거부되었습니다»로 막힌 PC 에서는 아무것도 못 찾아, 앱이 떠 있는데
+  #   설치를 시작하고 설치 뒤엔 «안 떴다»며 하나를 더 띄운다. Get-Process 의 Path
+  #   (실행 파일 경로)는 WMI 없이 읽힌다.
+  Get-Process | Where-Object {
+    $_.Path -and $_.Path.ToLower().StartsWith($Root.ToLower()) -and $_.ProcessName -match 'python|mybookshelf'
   }
 }
 # 1) 앱(설치 폴더의 python) 종료 대기 — 파일 잠금 해제 목적 (짧게)
 $deadline = (Get-Date).AddSeconds(10)
 while ((Get-Date) -lt $deadline -and (AppProcs)) { Start-Sleep -Milliseconds 300 }
 # 2) 백업: 남아 있으면 강제 종료
-foreach ($p in AppProcs) { try { Log "force-kill $($p.ProcessId)"; Stop-Process -Id $p.ProcessId -Force } catch {} }
+foreach ($p in AppProcs) { try { Log "force-kill $($p.Id)"; Stop-Process -Id $p.Id -Force } catch {} }
 Start-Sleep -Seconds 2
 # 3) 설치 (per-user, UAC 없음; /SILENT = 진행바 표시, 클릭 불필요)
 Log "install start: $Setup"

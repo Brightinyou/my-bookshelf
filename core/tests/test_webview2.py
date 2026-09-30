@@ -129,6 +129,16 @@ class InstallerWebView2Test(unittest.TestCase):
         self.assertIn("webview2-install.log", code)
         self.assertIn("EnsureWebView2();", self.iss[self.iss.index("procedure CurStepChanged"):])
 
+    def test_progress_bar_moves_while_bootstrapper_runs(self):
+        """40초 남짓 멈춘 막대는 설치가 멈춘 것처럼 보인다(연구자 지적)."""
+        code = self.iss[self.iss.index("procedure EnsureWebView2"):]
+        code = code[:code.index("\nend;")]
+        self.assertLess(code.index("npbstMarquee"), code.index("Exec("))
+        self.assertIn("WizardForm.ProgressGauge.Style := npbstNormal", code[code.index("finally"):])
+        self.assertIn("CustomMessage('InstallingWebView2')", code)
+        self.assertIn("korean.InstallingWebView2=", self.iss)
+        self.assertIn("english.InstallingWebView2=", self.iss)
+
     def test_checks_machine_and_user_keys(self):
         self.assertIn(GUID, self.iss)
         for root in ("HKLM32", "HKLM64", "HKCU"):
