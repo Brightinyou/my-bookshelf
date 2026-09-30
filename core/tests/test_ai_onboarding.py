@@ -113,9 +113,16 @@ class CliInstallStepsTest(unittest.TestCase):
             joined = " ".join(c for cli in ("claude", "codex")
                               for _, c in ai_setup.cli_install_steps(cli, plat) if c)
             for needle in ("https://claude.ai/install." + ("ps1" if plat == "win32" else "sh"),
-                           "@openai/codex", "claude auth login", "codex login --device-auth"):
+                           "@openai/codex", "auth login", "codex login --device-auth"):
                 self.assertIn(needle, joined, (plat, needle))
                 self.assertIn(needle.split(" ")[0] if needle.startswith("http") else needle, script, (plat, needle))
+
+    def test_claude_login_uses_full_path(self):
+        # 공식 설치가 ~/.local/bin 을 PATH 에 넣지 않는다 (2026-09-30 Sandbox 실측)
+        for plat, where in (("win32", r"\.local\bin\claude.exe"), ("darwin", "~/.local/bin/claude")):
+            login = ai_setup.cli_install_steps("claude", plat)[-1][1]
+            self.assertIn(where, login)
+            self.assertTrue(login.endswith("auth login"))
 
     def test_mac_codex_installs_to_user_folder_like_the_script(self):
         steps = dict(ai_setup.cli_install_steps("codex", "darwin"))

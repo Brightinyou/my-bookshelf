@@ -36,7 +36,10 @@ def cli_install_steps(cli: str, platform: str | None = None) -> list[tuple[str, 
     if cli == "claude":
         if win:
             return [("설치", "irm https://claude.ai/install.ps1 | iex"),
-                    ("PowerShell 창을 닫고 새로 연 뒤 로그인", "claude auth login")]
+                    # 공식 설치는 claude.exe 를 ~\.local\bin 에 두지만 PATH 에 넣지 않는다
+                    # (2026-09-30 Sandbox 실측 — 새 창에서도 «'claude' is not recognized»).
+                    # 맥처럼 전체 경로로 부른다.
+                    ("로그인", '& "$env:USERPROFILE\\.local\\bin\\claude.exe" auth login')]
         return [("설치", "curl -fsSL https://claude.ai/install.sh | bash"),
                 ("로그인", "~/.local/bin/claude auth login")]
     if cli == "codex":

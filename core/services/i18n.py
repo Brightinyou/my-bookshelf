@@ -122,7 +122,6 @@ _EN: dict[str, str] = {
     "설치 방법 (명령 복사)": "How to install (copy commands)",
     "설치": "Install",
     "로그인": "Sign in",
-    "PowerShell 창을 닫고 새로 연 뒤 로그인": "Close and reopen PowerShell, then sign in",
     "Node.js 설치 (이미 있으면 건너뛰기)": "Install Node.js (skip if already installed)",
     "PowerShell 창을 닫고 새로 연 뒤 설치": "Close and reopen PowerShell, then install",
     "Node.js 설치 (이미 있으면 건너뛰기) — 아래 주소에서 LTS 설치 파일(.pkg)을 받아 실행": "Install Node.js (skip if already installed) — download and run the LTS installer (.pkg) from the address below",
