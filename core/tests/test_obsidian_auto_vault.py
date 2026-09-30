@@ -75,6 +75,31 @@ class AutoRegisterWikiVaultTest(unittest.TestCase):
         self.assertFalse(self.cfgf.exists())
 
 
+class ObsidianRunningTest(unittest.TestCase):
+    """tasklist 는 Sandbox 에서 떠 있는 옵시디언을 «없음»으로 읽었다 (2026-09-30)."""
+
+    def test_unreadable_process_list_counts_as_running(self):
+        with mock.patch.object(wiki.sys, "platform", "win32"), \
+             mock.patch.object(wiki, "_windows_process_names", return_value=None):
+            self.assertTrue(wiki.obsidian_running())
+
+    def test_reads_names_from_the_process_list(self):
+        with mock.patch.object(wiki.sys, "platform", "win32"):
+            with mock.patch.object(wiki, "_windows_process_names", return_value={"explorer.exe"}):
+                self.assertFalse(wiki.obsidian_running())
+            with mock.patch.object(wiki, "_windows_process_names",
+                                   return_value={"explorer.exe", "obsidian.exe"}):
+                self.assertTrue(wiki.obsidian_running())
+
+    @unittest.skipUnless(wiki.sys.platform == "win32", "Windows 전용")
+    def test_real_snapshot_sees_this_process(self):
+        import os
+        import sys
+        names = wiki._windows_process_names()
+        self.assertIsNotNone(names)
+        self.assertIn(os.path.basename(sys.executable).lower(), names)
+
+
 class AppStartupHookTest(unittest.TestCase):
     def test_hook_runs_before_the_first_st_stop(self):
         """첫 화면(작업 메뉴)이 st.stop() 으로 끝나 뒤에 둔 등록이 안 불렸다(Sandbox 실측)."""
