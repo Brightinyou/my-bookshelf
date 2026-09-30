@@ -865,6 +865,22 @@ def skip_reason(paragraph: str) -> str | None:
             or _re.search(r"\b(?:argues?|suggests?|explains?|means?|claims?|discusses?|shows?|see also|see above|see below)\b", p, _re.I)
             or _re.search(r"(?:한다|이다|있다|없다|된다|했다|입니다|합니다|때문|그러나|따라서)", p)):
         return None
+    # PDF 줄바꿈에 잘려 따로 떨어진 짧은 서지 조각 (2026-09-30 실측, Butlin 외 2026 참고문헌):
+    #   «0020174X.2024.2434860»(DOI 뒷부분) «arXiv.2411.00986» «pp. 327–336, Blackwell»
+    #   «Neurosci. Conscious. 2024, niae013». 번역할 말이 없어 AI 가 그대로 돌려주면
+    #   «실패»로 세고 두세 번씩 다시 물어 사용량을 버렸다. 위의 문장 걸러내기를 지난 80자
+    #   이하만 본다.
+    if len(p) <= 80:
+        if _re.fullmatch(r"arXiv[:.\s]*\d{4}\.\d{4,5}(?:v\d+)?\.?", p, _re.I):
+            return "서지정보 보존"
+        if (" " not in p and _re.fullmatch(r"[\w./\-()]+", p)
+                and sum(c.isdigit() for c in p) >= max(6, len(p) * 0.5)):
+            return "URL·DOI"
+        if _re.match(r"pp?\.\s*\d+\s*[–—-]\s*\d+\b", p, _re.I):
+            return "서지정보 보존"
+        if (_re.search(r"\b(?:1[5-9]|20)\d{2}\b", p) and len(words) <= 8
+                and len(_re.findall(r"\b[A-Z][a-z]{1,12}\.(?=\s|,|$)", p)) >= 2):
+            return "서지정보 보존"
     # A standalone journal locator has no explanatory prose to translate.
     if (_re.search(r"\bjournal\b", p, _re.I)
             and _re.search(r",\s*no\.\s*\d+,\s*\d+\s*[–—-]\s*\d+\.", p, _re.I)
@@ -1087,6 +1103,27 @@ def clean_chapter_ko(ch_path: Path, engine: str, progress_cb=None) -> tuple[bool
         return False, str(e)[:200]
 
 
+# ─── 참고문헌 장 건너뛰기 (2026-09-30 연구자 요청) ───────────────────────────
+# 참고문헌은 번역해도 쓸모가 거의 없고, 줄바꿈에 잘린 서지 조각 때문에 «실패»만 늘고 AI
+# 사용량을 버린다. 장 제목이 참고문헌류와 **정확히** 같을 때만 — «부록»«주»(Notes)는
+# 설명문이 들어 있을 수 있어 건드리지 않는다. 번역하지 않고 원문을 번역본 자리에 둬서
+# 요약·EPUB 같은 다음 단계는 그대로 이어진다. 설정에서 끌 수 있다(기본 켜짐).
+_REFERENCE_TITLES = _re.compile(
+    r"(?:references?|bibliography|select(?:ed)? bibliography|works cited|literature cited|"
+    r"reference list|sources cited|참고\s*문헌|인용\s*문헌|참고\s*자료\s*목록|문헌\s*목록|"
+    r"literaturverzeichnis|bibliographie|références(?: bibliographiques)?|referencias|"
+    r"bibliograf[ií]a|riferimenti bibliografici)", _re.I)
+
+
+def skip_reference_chapters() -> bool:
+    return bool(llm.get_pref("skip_reference_chapters", True))
+
+
+def is_reference_chapter(ch_path: Path) -> bool:
+    title = _re.sub(r"^\d+_", "", Path(ch_path).stem).strip(" ._-")
+    return bool(_REFERENCE_TITLES.fullmatch(title))
+
+
 def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                            want_plain: bool = True, want_bilingual: bool = False) -> tuple[bool, str]:
     """단일 챕터 TXT 번역. want_plain이면 번역본(도착언어 접미사), want_bilingual이면 원문·번역을
@@ -1116,6 +1153,22 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             previous_status = {}
         _save_json_atomic(status_path, {"state": "running", "engine": engine,
                                       "target": target_language(), "cache_version": planner.VERSION})
+        if skip_reference_chapters() and is_reference_chapter(ch_path):
+            if want_plain:
+                ko_path.write_text(text.replace(_PAGE_TOKEN, "\f"), encoding="utf-8")
+            if want_bilingual:
+                # 대역본만 켠 경우에도 그 장이 빠지지 않게 — 규칙대로 보존한 단락과 같은
+                # 모양(원문 | 원문)으로 쓴다 (2026-09-30 맥 세션 검토).
+                _ref_paras = [b.strip() for b in _re.split(r"\n\s*\n", text) if b.strip()]
+                _save_bilingual_atomic(
+                    bilingual_path,
+                    [(b + "\n\n" + b).replace(_PAGE_TOKEN, "\f") for b in _ref_paras])
+            partial_path.unlink(missing_ok=True)
+            progress_path.unlink(missing_ok=True)
+            _save_json_atomic(status_path, {"state": "complete", "engine": engine, "failed": 0,
+                                            "target": target_language(), "skipped": "references"})
+            append_log(f"참고문헌 장 — 번역하지 않고 원문 그대로 둠: {ch_path.name}")
+            return True, "참고문헌 장 — 번역하지 않고 원문 그대로 둠 (설정에서 바꿀 수 있음)"
         if not needs_translation(ch_path):
             if want_plain:
                 ko_path.write_text(text.replace(_PAGE_TOKEN, "\f"), encoding="utf-8")
