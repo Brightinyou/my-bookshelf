@@ -84,9 +84,14 @@ jobs:
           $probe = "$env:RUNNER_TEMP\own-exe.txt"
           $savedPath = $env:Path
           $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
-          $own = Start-Process "$dir\.venv\Scripts\MyBookshelf.exe" -Wait -PassThru -ArgumentList @(
+          $own = Start-Process "$dir\.venv\Scripts\MyBookshelf.exe" -PassThru -ArgumentList @(
             "-c", "`"import sys, webview, streamlit; open(r'$probe','w').write(sys.base_prefix)`"")
           $env:Path = $savedPath
+          # DLL 을 못 찾으면 윈도우가 오류 창을 띄워 놓고 기다린다 — 끝없이 기다리지 않는다.
+          if (-not $own.WaitForExit(60000)) {
+            Stop-Process -Id $own.Id -Force -ErrorAction SilentlyContinue
+            throw "MyBookshelf.exe hung (missing python DLL dialog?)"
+          }
           $base = Get-Content $probe -ErrorAction SilentlyContinue
           Write-Host "MyBookshelf.exe exit=$($own.ExitCode) base_prefix=$base"
           if ($own.ExitCode -ne 0 -or -not "$base".ToLower().EndsWith("runtime")) { throw "MyBookshelf.exe did not start on the bundled runtime" }
