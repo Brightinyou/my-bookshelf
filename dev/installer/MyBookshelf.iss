@@ -23,6 +23,10 @@ SetupIconFile=..\..\MyBookshelf.ico
 Name: "korean";  MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+korean.InstallingWebView2=앱 창에 필요한 Microsoft WebView2 를 설치하는 중입니다 (1분 안팎)...
+english.InstallingWebView2=Installing Microsoft WebView2 for the app window (about a minute)...
+
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional options:"
 Name: "uninstallicon"; Description: "Create an uninstall shortcut on the desktop"; GroupDescription: "Additional options:"
@@ -189,16 +193,24 @@ var
 begin
   if WebView2Installed() then
     exit;
-  WizardForm.StatusLabel.Caption := 'Installing Microsoft WebView2 runtime...';
+  WizardForm.StatusLabel.Caption := CustomMessage('InstallingWebView2');
+  // 인터넷으로 받아 까는 데 40초 남짓(오프라인이면 20초 뒤 실패) — 진행 막대가 멈춰 있으면
+  // 설치가 멈춘 것처럼 보인다(연구자 지적, 2026-09-30). 그동안 흐르는 막대로 바꾼다.
+  // Exec 가 기다리는 동안에도 설치 창은 메시지를 처리하므로 막대가 계속 움직인다.
+  WizardForm.ProgressGauge.Style := npbstMarquee;
   try
-    ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');
-    if Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'), '/silent /install', '',
-            SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-      Msg := 'exit code ' + IntToStr(ResultCode)
-    else
-      Msg := 'could not start: ' + SysErrorMessage(ResultCode);
-  except
-    Msg := 'error: ' + GetExceptionMessage;
+    try
+      ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');
+      if Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'), '/silent /install', '',
+              SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+        Msg := 'exit code ' + IntToStr(ResultCode)
+      else
+        Msg := 'could not start: ' + SysErrorMessage(ResultCode);
+    except
+      Msg := 'error: ' + GetExceptionMessage;
+    end;
+  finally
+    WizardForm.ProgressGauge.Style := npbstNormal;
   end;
   if WebView2Installed() then
     Msg := Msg + ', installed'
