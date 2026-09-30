@@ -36,7 +36,7 @@ jobs:
             "dist/.mac-build.noindex/MyBookshelf-v${{ steps.ver.outputs.version }}-mac.zip"
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MyBookshelf-macOS-v${{ steps.ver.outputs.version }}
           path: |
