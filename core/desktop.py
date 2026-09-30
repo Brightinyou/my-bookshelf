@@ -480,7 +480,9 @@ def webview2_version(read_pv=None) -> str:
     return ""
 
 
-def _no_webview2_message() -> str:
+def _no_webview2_message(url: str) -> str:
+    # 주소도 적는다 — 브라우저가 아예 없는 PC 에서는 «열었습니다»가 거짓이 된다
+    # (2026-09-30 오프라인 Sandbox 실측: Windows 가 «'http' 링크를 열 수 없습니다»를 띄움).
     try:
         from services.i18n import get_lang
         ko = get_lang() == "ko"
@@ -488,11 +490,13 @@ def _no_webview2_message() -> str:
         ko = True
     if ko:
         return ("이 컴퓨터에는 앱 창을 그리는 Microsoft WebView2 가 없어서 "
-                "My Bookshelf 를 기본 브라우저에서 열었습니다.\n\n"
+                "My Bookshelf 를 기본 브라우저에서 열었습니다.\n"
+                f"열리지 않았으면 브라우저 주소창에 다음 주소를 입력하세요:\n{url}\n\n"
                 "이 안내 창을 닫으면 My Bookshelf 가 종료됩니다. 쓰는 동안에는 열어 두세요.\n\n"
                 f"WebView2 를 설치하면 다음부터 앱 창으로 열립니다:\n{WEBVIEW2_DOWNLOAD}")
     return ("Microsoft WebView2, which draws the app window, is not installed on this "
-            "computer, so My Bookshelf opened in your default browser.\n\n"
+            "computer, so My Bookshelf opened in your default browser.\n"
+            f"If it did not open, type this address in your browser's address bar:\n{url}\n\n"
             "Closing this message quits My Bookshelf. Keep it open while you work.\n\n"
             f"Install WebView2 to use the app window next time:\n{WEBVIEW2_DOWNLOAD}")
 
@@ -586,7 +590,7 @@ def _run_in_browser(url: str, proc) -> int:
         _write_launch_log("Microsoft WebView2 is missing - opened in the default browser.", url)
         try:
             import ctypes
-            ctypes.windll.user32.MessageBoxW(0, _no_webview2_message(), APP_TITLE, 0x40)
+            ctypes.windll.user32.MessageBoxW(0, _no_webview2_message(url), APP_TITLE, 0x40)
         except Exception:
             while proc and proc.poll() is None:      # 안내 창을 못 띄우면 서버가 끝날 때까지
                 time.sleep(1)

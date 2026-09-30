@@ -83,6 +83,25 @@ class BrowserFallbackTest(unittest.TestCase):
         windll.user32.MessageBoxW.assert_called_once()
         stop.assert_called_once_with(proc)
 
+    def test_notice_gives_the_address_in_both_languages(self):
+        """브라우저가 없는 PC 에서도 직접 열 수 있게 주소를 적는다(오프라인 Sandbox 실측)."""
+        url = "http://127.0.0.1:8502/"
+        for lang, phrase in (("ko", "브라우저 주소창에 다음 주소를 입력하세요"),
+                             ("en", "type this address in your browser's address bar")):
+            with mock.patch("services.i18n.get_lang", return_value=lang):
+                msg = desktop._no_webview2_message(url)
+            self.assertIn(phrase, msg)
+            self.assertIn(url, msg)
+            self.assertIn(desktop.WEBVIEW2_DOWNLOAD, msg)
+
+    def test_notice_uses_the_real_server_address(self):
+        with mock.patch.object(desktop, "_open_in_browser", return_value=True), \
+             mock.patch.object(desktop, "_write_launch_log"), \
+             mock.patch.object(desktop, "_stop_server"), \
+             mock.patch("ctypes.windll", create=True) as windll:
+            desktop._run_in_browser("http://127.0.0.1:8503/", mock.Mock())
+        self.assertIn("http://127.0.0.1:8503/", windll.user32.MessageBoxW.call_args.args[1])
+
     def test_popup_goes_to_browser_too(self):
         with mock.patch.object(desktop, "_needs_browser_fallback", return_value=True), \
              mock.patch.object(desktop, "_open_in_browser", return_value=True) as open_:
