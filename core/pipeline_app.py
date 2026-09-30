@@ -622,7 +622,7 @@ def _short_model(model: str, tool: str = "") -> str:
     """`claude-sonnet-4-6` → `Sonnet 4.6`. 앞에 붙는 도구 이름(Claude)과 겹치는
     접두만 뗀다 — Codex의 `gpt-5.5`는 겹치지 않으므로 `GPT-5.5`로 살려 둔다."""
     if model in ("", "default"):
-        return "기본"
+        return t("기본")
     m = model
     if tool and m.lower().startswith(tool.lower() + "-"):
         m = m[len(tool) + 1:]
