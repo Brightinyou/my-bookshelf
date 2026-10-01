@@ -1107,16 +1107,15 @@ def clean_chapter_ko(ch_path: Path, engine: str, progress_cb=None) -> tuple[bool
 # 참고문헌은 번역해도 쓸모가 거의 없고, 줄바꿈에 잘린 서지 조각 때문에 «실패»만 늘고 AI
 # 사용량을 버린다. 장 제목이 참고문헌류와 **정확히** 같을 때만 — «부록»«주»(Notes)는
 # 설명문이 들어 있을 수 있어 건드리지 않는다. 번역하지 않고 원문을 번역본 자리에 둬서
-# 요약·EPUB 같은 다음 단계는 그대로 이어진다. 설정에서 끌 수 있다(기본 켜짐).
+# 요약·EPUB 같은 다음 단계는 그대로 이어진다.
+# ★설정 스위치는 두지 않는다 (2026-10-01 연구자 결정). 번역하면 저자명이 «버틀린(Butlin)»
+#   식으로, 책·논문 제목이 한국어로 바뀌어 서지로 쓸 수 없다. 대기열(pipeline_app 의
+#   _is_backmatter_file)도 늘 빼므로 스위치는 끄더라도 효과가 없었다.
 _REFERENCE_TITLES = _re.compile(
     r"(?:references?|bibliography|select(?:ed)? bibliography|works cited|literature cited|"
     r"reference list|sources cited|참고\s*문헌|인용\s*문헌|참고\s*자료\s*목록|문헌\s*목록|"
     r"literaturverzeichnis|bibliographie|références(?: bibliographiques)?|referencias|"
     r"bibliograf[ií]a|riferimenti bibliografici)", _re.I)
-
-
-def skip_reference_chapters() -> bool:
-    return bool(llm.get_pref("skip_reference_chapters", True))
 
 
 def is_reference_chapter(ch_path: Path) -> bool:
@@ -1153,7 +1152,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             previous_status = {}
         _save_json_atomic(status_path, {"state": "running", "engine": engine,
                                       "target": target_language(), "cache_version": planner.VERSION})
-        if skip_reference_chapters() and is_reference_chapter(ch_path):
+        if is_reference_chapter(ch_path):
             if want_plain:
                 ko_path.write_text(text.replace(_PAGE_TOKEN, "\f"), encoding="utf-8")
             if want_bilingual:
@@ -1168,7 +1167,7 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             _save_json_atomic(status_path, {"state": "complete", "engine": engine, "failed": 0,
                                             "target": target_language(), "skipped": "references"})
             append_log(f"참고문헌 장 — 번역하지 않고 원문 그대로 둠: {ch_path.name}")
-            return True, "참고문헌 장 — 번역하지 않고 원문 그대로 둠 (설정에서 바꿀 수 있음)"
+            return True, "참고문헌 장 — 번역하지 않고 원문 그대로 둠"
         if not needs_translation(ch_path):
             if want_plain:
                 ko_path.write_text(text.replace(_PAGE_TOKEN, "\f"), encoding="utf-8")

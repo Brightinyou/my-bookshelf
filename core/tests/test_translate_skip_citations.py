@@ -43,7 +43,7 @@ class ReferenceChapterTest(unittest.TestCase):
                   "01_Introduction.txt"):
             self.assertFalse(tr.is_reference_chapter(Path(n)), n)
 
-    def _run(self, skip_on: bool, want_plain: bool = True, want_bilingual: bool = False):
+    def _run(self, want_plain: bool = True, want_bilingual: bool = False):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         ch = Path(tmp.name) / "Some Paper" / "07_References.txt"
@@ -51,9 +51,7 @@ class ReferenceChapterTest(unittest.TestCase):
         ch.write_text("Butlin, P. and Long, R. (2025) Identifying indicators of consciousness in AI "
                       "systems. Trends Cogn. Sci. 29, 1-3.\n\nSome other entry in the reference list "
                       "that reads like a sentence and is quite long indeed.", encoding="utf-8")
-        with mock.patch.object(tr.llm, "get_pref",
-                               side_effect=lambda k, d=None: skip_on if k == "skip_reference_chapters" else d), \
-             mock.patch.object(tr.llm, "complete", return_value="한국어로 번역된 참고문헌 문장이다.") as call, \
+        with mock.patch.object(tr.llm, "complete", return_value="한국어로 번역된 참고문헌 문장이다.") as call, \
              mock.patch.object(tr, "target_language", return_value="ko"), \
              mock.patch.object(tr, "translate_title", return_value="참고문헌"), \
              mock.patch.object(tr.jobs, "stop_requested", return_value=False):
@@ -63,7 +61,7 @@ class ReferenceChapterTest(unittest.TestCase):
 
     def test_bilingual_only_still_writes_the_chapter(self):
         """대역본만 켜도 참고문헌 장이 대역본에서 빠지지 않는다(원문 | 원문)."""
-        ch, ok, msg, call = self._run(skip_on=True, want_plain=False, want_bilingual=True)
+        ch, ok, msg, call = self._run(want_plain=False, want_bilingual=True)
         self.assertTrue(ok, msg)
         call.assert_not_called()
         self.assertFalse(ch.with_name("07_References_ko.txt").exists())
@@ -74,7 +72,7 @@ class ReferenceChapterTest(unittest.TestCase):
             self.assertEqual(src.strip(), tgt.strip())
 
     def test_reference_chapter_is_kept_in_original_without_ai(self):
-        ch, ok, msg, call = self._run(skip_on=True)
+        ch, ok, msg, call = self._run()
         self.assertTrue(ok, msg)
         self.assertIn("참고문헌", msg)
         call.assert_not_called()
@@ -83,9 +81,11 @@ class ReferenceChapterTest(unittest.TestCase):
         status = json.loads(ch.with_name("07_References_ko.status.json").read_text(encoding="utf-8"))
         self.assertEqual(status.get("skipped"), "references")
 
-    def test_switch_off_translates_it(self):
-        _ch, _ok, _msg, call = self._run(skip_on=False)
-        self.assertTrue(call.called)
+    def test_no_switch_remains(self):
+        """스위치는 없앴다 (2026-10-01) — 설정 화면·설정값 어디에도 남지 않는다."""
+        src = (Path(__file__).resolve().parents[1] / "pipeline_app.py").read_text(encoding="utf-8")
+        self.assertNotIn("skip_reference_chapters", src)
+        self.assertFalse(hasattr(tr, "skip_reference_chapters"))
 
 
 class QueueFilterTest(unittest.TestCase):

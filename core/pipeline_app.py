@@ -64,7 +64,7 @@ from services.translate import (
     language_name, needs_translation, set_target_language, should_drop_paragraph,
     source_language, target_language, target_language_name, target_language_options,
     should_skip_translation, translate, translate_engine_options,
-    translate_one_chapter, skip_reference_chapters,
+    translate_one_chapter,
 )
 from services.chapters import (
     _is_small_document_for_whole_translation,
@@ -4302,13 +4302,6 @@ if _active_view == "settings":
     if _tgt_cur != "ko":
         st.caption(t("⚠️ 이미 만들어 둔 번역본·요약은 예전 도착언어 그대로 남아 있습니다 — "
                       "새 언어로 바꾸려면 해당 파일을 지우고 다시 처리하세요."))
-    # 참고문헌 장 건너뛰기 (2026-09-30 연구자 요청) — on_change 로 한 번만 저장한다.
-    st.toggle(t("참고문헌 장은 번역하지 않기"), value=skip_reference_chapters(),
-              key="skip_ref_chapters",
-              on_change=lambda: llm.set_pref("skip_reference_chapters",
-                                             bool(st.session_state.get("skip_ref_chapters"))),
-              help=t("장 제목이 References·Bibliography·참고문헌 등이면 번역하지 않고 원문을 그대로 둡니다. "
-                     "AI 사용량을 아끼고, 서지 조각 때문에 생기는 번역 실패를 없앱니다."))
 
     def _finish_compact_settings():
         _loading_ph.empty()
