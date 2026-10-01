@@ -206,8 +206,6 @@ _EN: dict[str, str] = {
         "Models cached by Codex. Use ‘Test connection and model’ to check account access.",
     "실행 시 결정": "Resolved at runtime",
     "연결·모델 확인": "Test connection and model",
-    "참고문헌 장은 번역하지 않기": "Do not translate reference chapters",
-    "장 제목이 References·Bibliography·참고문헌 등이면 번역하지 않고 원문을 그대로 둡니다. AI 사용량을 아끼고, 서지 조각 때문에 생기는 번역 실패를 없앱니다.": "Chapters titled References, Bibliography, etc. are kept in the original instead of being translated. This saves AI usage and avoids failures caused by citation fragments.",
     "연결과 모델을 함께 고릅니다. 고르면 바로 적용됩니다.": "Pick the connection and model together. It applies right away.",
     "사용량 한도에 걸리면 다른 구독 AI로 이어받기": "When one subscription AI hits its usage limit, continue with the other",
     "Claude CLI와 Codex CLI 사이에서만 넘겨받습니다. API 키(쓴 만큼 요금)로는 넘기지 않습니다.": "Only between Claude CLI and Codex CLI. It never switches to a pay-per-use API key.",
