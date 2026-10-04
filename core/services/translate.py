@@ -292,10 +292,20 @@ def build_translate_system(src_lang: str = "", target: str = "") -> str:
         "You are a professional theological/academic translator. "
         + src_hint +
         f"Translate the user's text into {tgt_name}. "
-        f"Proper nouns (personal names, place names): on FIRST mention write the {tgt_name} "
-        "rendering followed by the original in parentheses; "
-        f"if a name is listed below as already introduced, write the {tgt_name} form ONLY. "
-        "Preserve technical terms and scripture references as-is. "
+        # ★2026-10-04 연구자 요청: «고유명사·보통명사 다 번역하고 (원어)를 넣으면 된다».
+        #   예전 «Preserve technical terms as-is» 를 모델이 «학술 용어는 영어로 둔다»로 읽어
+        #   agent·accountability·ethics 같은 낱말이 본문에 영어로 남았다
+        #   (『AI and Ethics…』 109단락 중 42단락, 『In Our Image』 41%).
+        f"Translate EVERY word into {tgt_name}, including technical terms, key concepts and "
+        f"common nouns — do not leave source-language words in the running text. "
+        f"For proper nouns (personal names, place names, titles of works) and key technical terms, on their FIRST "
+        f"mention write the {tgt_name} rendering followed by the original in parentheses"
+        + (" (e.g. 책무성(accountability), 행위자(agent))" if target == "ko" else "")
+        + f"; afterwards write the {tgt_name} form only. "
+        f"If a term is listed below as already introduced, write the {tgt_name} form ONLY. "
+        "Keep as-is only: scripture references, a source-language word that the text discusses "
+        "as a word (e.g. the Spanish word responsabilidad), abbreviations such as AI, and "
+        "parenthetical citations (author, year, page), DOIs and URLs. "
         + style +
         "The text may be an incomplete fragment cut mid-sentence (PDF page breaks): "
         "translate it as-is anyway — NEVER comment on it, NEVER ask for more context, "
