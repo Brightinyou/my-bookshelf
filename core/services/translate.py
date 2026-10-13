@@ -206,6 +206,32 @@ def _translation_is_valid(src: str, out: str | None, target: str = "") -> bool:
     return True
 
 
+# ─── 용어 규칙 판 (2026-10-04) ────────────────────────────────────────────────
+# 지시문이 «학술 용어는 원어로 둔다»에서 «번역하고 첫 등장에 (원어)»로 바뀌었다.
+# 예전 규칙으로 번역돼 캐시에 남은 단락 가운데 본문(괄호 밖)에 원어 낱말이 많이
+# 남은 것만 다시 번역한다. 새 규칙으로 번역한 단락은 «terms» 표시를 달아 두므로
+# 원어가 정당하게 남은 단락(낱말 자체를 다루는 대목 등)을 되풀이 번역하지 않는다.
+TERMS_RULE = 2
+_LEFTOVER_MIN = 5
+_LATIN_WORD_RE = _re.compile(r"[A-Za-z][A-Za-z\-]{2,}")
+_PAREN_RE = _re.compile(r"\([^()]*\)")
+
+
+def leftover_source_words(translated: str) -> int:
+    """번역문 본문(괄호 밖)에 남은 라틴 문자 낱말 수 — 첫 등장 (원어) 는 세지 않는다."""
+    return len(_LATIN_WORD_RE.findall(_PAREN_RE.sub("", translated or "")))
+
+
+def needs_terms_redo(row: dict, target: str = "") -> bool:
+    """예전 용어 규칙으로 번역돼 본문에 원어가 많이 남은 캐시 단락인가."""
+    target = target or target_language()
+    if not isinstance(row, dict) or row.get("terms") == TERMS_RULE:
+        return False
+    if not langdetect.has_own_script(target):
+        return False   # 라틴 문자권 도착언어는 원어와 문자가 같아 셀 수 없다
+    return leftover_source_words(row.get("tgt", "")) >= _LEFTOVER_MIN
+
+
 _HEADING_LIKE_RE = _re.compile(r"^\s*(?:\d+(?:\.\d+)*|[IVXLC]+)\s+.+", _re.I)
 
 
@@ -292,10 +318,20 @@ def build_translate_system(src_lang: str = "", target: str = "") -> str:
         "You are a professional theological/academic translator. "
         + src_hint +
         f"Translate the user's text into {tgt_name}. "
-        f"Proper nouns (personal names, place names): on FIRST mention write the {tgt_name} "
-        "rendering followed by the original in parentheses; "
-        f"if a name is listed below as already introduced, write the {tgt_name} form ONLY. "
-        "Preserve technical terms and scripture references as-is. "
+        # ★2026-10-04 연구자 요청: «고유명사·보통명사 다 번역하고 (원어)를 넣으면 된다».
+        #   예전 «Preserve technical terms as-is» 를 모델이 «학술 용어는 영어로 둔다»로 읽어
+        #   agent·accountability·ethics 같은 낱말이 본문에 영어로 남았다
+        #   (『AI and Ethics…』 109단락 중 42단락, 『In Our Image』 41%).
+        f"Translate EVERY word into {tgt_name}, including technical terms, key concepts and "
+        f"common nouns — do not leave source-language words in the running text. "
+        f"For proper nouns (personal names, place names, titles of works) and key technical terms, on their FIRST "
+        f"mention write the {tgt_name} rendering followed by the original in parentheses"
+        + (" (e.g. 책무성(accountability), 행위자(agent))" if target == "ko" else "")
+        + f"; afterwards write the {tgt_name} form only. "
+        f"If a term is listed below as already introduced, write the {tgt_name} form ONLY. "
+        "Keep as-is only: scripture references, a source-language word that the text discusses "
+        "as a word (e.g. the Spanish word responsabilidad), abbreviations such as AI, and "
+        "parenthetical citations (author, year, page), DOIs and URLs. "
         + style +
         "The text may be an incomplete fragment cut mid-sentence (PDF page breaks): "
         "translate it as-is anyway — NEVER comment on it, NEVER ask for more context, "
@@ -1261,7 +1297,8 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
             if (cached and cached.get("src") == p and isinstance(cached.get("tgt"), str)
                     and (not cached.get("key") or cached["key"] == key)
                     and cached.get("status") == "translated"
-                    and _translation_is_valid(p, cached["tgt"], _target)):
+                    and _translation_is_valid(p, cached["tgt"], _target)
+                    and not needs_terms_redo(cached, _target)):
                 status = "translated"
                 tgt = cached.get("tgt", "")
                 out.append(tgt)
@@ -1269,6 +1306,8 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                 translated_n += 1
                 row = {"idx": idx, "id": unit["id"], "src": p, "tgt": tgt,
                        "status": status, "target": _target, "key": key, "kind": unit["kind"]}
+                if cached.get("terms"):
+                    row["terms"] = cached["terms"]
                 cached_rows[idx] = successful[key] = row
                 resumed_n += 1
                 if progress_cb:
@@ -1299,7 +1338,8 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                     bilingual_pairs.append((p, ko))
                     translated_n += 1
                     fail_streak = 0
-                    cached_rows[idx] = {"idx": idx, "src": p, "tgt": ko, "status": "translated"}
+                    cached_rows[idx] = {"idx": idx, "src": p, "tgt": ko, "status": "translated",
+                                        "terms": TERMS_RULE}
                     style_memory_add(p, ko)
                     if _used.get("switched_from"):
                         # 어느 단락부터 어느 AI 가 이어받았는지 남긴다 — 한도가 풀리면
