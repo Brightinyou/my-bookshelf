@@ -201,6 +201,14 @@ def _translation_is_valid(src: str, out: str | None, target: str = "") -> bool:
     # 무의미하므로 건너뛰고, 아래 '원문과 거의 같은가' 검사에 맡긴다(2026-08-15).
     if langdetect.has_own_script(target) and langdetect.script_ratio(comparison_out, target) < 0.08:
         return False
+    # 지시문이 첫 등장에 «마야(Maya)»처럼 원어를 괄호로 붙이게 한다. 짧은 줄(이름뿐인
+    # 소제목)에선 그 괄호 때문에 원문과 닮아 보여 «번역 안 됨»으로 떨어졌고, 몇 번을
+    # 다시 해도 같은 결과였다 (2026-10-13, «7.3.1 Maya.»). 원문에 있는 괄호 속 원어는
+    # 빼고 견준다.
+    comparison_out = _re.sub(
+        r"\s*\(([^()]{1,80})\)",
+        lambda m: "" if m.group(1).strip() and m.group(1).strip().lower() in comparison_src.lower() else m.group(0),
+        comparison_out).strip() or comparison_out
     if comparison_src and SequenceMatcher(None, comparison_src[:2000], comparison_out[:2000]).ratio() > 0.82:
         return False
     return True
@@ -245,6 +253,48 @@ def _translate_retry_prompt(paragraph: str, target: str = "") -> str:
         f"Output ONLY the {tgt} text.\n\n"
         f"{paragraph}"
     )
+
+
+# ─── 사용자가 정한 단락 (문제 도우미, 2026-10-13) ─────────────────────────────
+# 원문 단락의 내용으로 열쇠를 만든다 — 장을 다시 나눠 단락 번호가 바뀌어도 같은
+# 단락이면 결정이 따라간다.
+def override_path(ch_path: Path) -> Path:
+    return ch_path.with_name(ch_path.stem + out_suffix() + ".overrides.json")
+
+
+def override_key(paragraph: str) -> str:
+    norm = _re.sub(r"\s+", " ", paragraph or "").strip()
+    return hashlib.sha1(norm.encode("utf-8")).hexdigest()[:16]
+
+
+def load_overrides(ch_path: Path) -> dict[str, dict]:
+    try:
+        data = json.loads(override_path(ch_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, dict):
+        return {}
+    return {k: v for k, v in entries.items()
+            if isinstance(v, dict) and (v.get("action") == "keep"
+                                        or (v.get("action") == "manual" and isinstance(v.get("tgt"), str)
+                                            and v["tgt"].strip()))}
+
+
+def set_override(ch_path: Path, paragraph: str, action: str, tgt: str = "") -> None:
+    """action: "keep"(원문 유지) · "manual"(tgt 로 직접 번역) · "clear"(결정 지우기)."""
+    if action not in ("keep", "manual", "clear"):
+        raise ValueError(action)
+    if action == "manual" and not tgt.strip():
+        raise ValueError("빈 번역")
+    entries = load_overrides(ch_path)
+    key = override_key(paragraph)
+    if action == "clear":
+        entries.pop(key, None)
+    else:
+        entries[key] = {"action": action, "src": paragraph.strip()[:200],
+                        **({"tgt": tgt.strip()} if action == "manual" else {})}
+    _save_json_atomic(override_path(ch_path), {"version": 1, "entries": entries})
 
 
 def _translate_paragraph(paragraph: str, engine: str, glossary: dict | None = None,
@@ -889,6 +939,10 @@ def skip_reason(paragraph: str) -> str | None:
         return "빈칸"
     if len(p) <= 80 and _PAGE_NUMBER_ONLY.fullmatch(p):
         return "숫자·기호 보존"
+    # 표에서 떨어져 나온 «7 20 < 1 11 4 17» 같은 줄 — 글자가 하나도 없으면 번역할
+    # 말이 없다. AI 가 그대로 돌려주면 «실패»로 세어 장이 완성되지 못했다 (2026-10-13).
+    if len(p) <= 80 and not any(ch.isalpha() for ch in p):
+        return "숫자·기호 보존"
     if _looks_like_section_heading(p) or p.startswith("#"):
         return None
     if _re.fullmatch(r"(?:https?://\S+|doi:\s*10\.\S+)", p, _re.I):
@@ -1179,6 +1233,10 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
         status_path = ch_path.with_name(ch_path.stem + _suf + ".status.json")
         cache_path = ch_path.with_name(ch_path.stem + _suf + ".cache.json")
         audit_path = ch_path.with_name(ch_path.stem + _suf + ".audit.json")
+        # 사용자가 문제 도우미에서 정한 단락 — «원문 유지» 또는 «직접 넣은 번역».
+        # AI 에게 다시 묻지 않고 그대로 쓴다. 검사기에 매번 걸리는 짧은 줄 때문에
+        # 장 전체가 «부분완료»에 갇히던 문제의 탈출구다 (2026-10-13).
+        overrides = load_overrides(ch_path)
         previous_status = {}
         try:
             previous_status = json.loads(status_path.read_text(encoding="utf-8"))
@@ -1291,6 +1349,24 @@ def translate_one_chapter(ch_path: Path, engine: str, progress_cb=None,
                 break
             unit = plan["units"][idx - 1]
             key = planner.cache_key(unit, _target)
+            _ov = overrides.get(override_key(p))
+            if _ov:
+                if _ov["action"] == "manual":
+                    out.append(_ov["tgt"])
+                    bilingual_pairs.append((p, _ov["tgt"]))
+                    translated_n += 1
+                    cached_rows[idx] = {"idx": idx, "src": p, "tgt": _ov["tgt"],
+                                        "status": "translated", "reason": "사용자 입력"}
+                else:
+                    out.append(p)
+                    bilingual_pairs.append((p, p))
+                    preserved_n += 1
+                    cached_rows[idx] = {"idx": idx, "src": p, "tgt": p,
+                                        "status": "preserved", "reason": "사용자 결정: 원문 유지"}
+                cached_rows[idx].update(id=unit["id"], target=_target, key=key, kind=unit["kind"])
+                if progress_cb:
+                    progress_cb(idx, total, translated_n, preserved_n, dropped_n, failed_n, resumed_n, api_calls)
+                continue
             cached = successful.get(key) or (legacy.get(p) if not unit["context"] else None)
             # Never replay old preserved/dropped decisions before the current
             # policy. Successful text uses content/target/context, not row index.

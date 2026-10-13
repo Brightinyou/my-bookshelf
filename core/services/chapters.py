@@ -244,6 +244,7 @@ _CHAPTER_DERIVED_SUFFIXES = (
     + tuple(f"{_s}.txt" for _s in _DERIVED)
     + tuple(f"{_s}.partial.md" for _s in _DERIVED)
     + tuple(f"{_s}.progress.json" for _s in _DERIVED)
+    + tuple(f"{_s}.overrides.json" for _s in _DERIVED)
 )
 
 
