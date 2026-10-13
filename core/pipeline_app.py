@@ -3432,6 +3432,10 @@ if _active_view == "3_translate":
                 _run_start("tr3", _retry3)
             if _retry3:
                 st.caption(t("성공한 문단은 재사용하고 실패한 문단부터 다시 번역합니다."))
+                # 다시 해도 같은 단락이 계속 실패하는 경우가 많다 — 원인을 보여 주고
+                # 그 자리에서 풀거나 개발자에게 알리게 한다 (2026-10-13).
+                from services import ui_problem_helper
+                ui_problem_helper.render(_retry3, _run_start)
             _sel3 = _checklist(_tr_pend3, "tr3", height=280, viewable=True, preselect=True)
             _b3c1, _b3c2 = st.columns(2)
             _rs3 = _b3c1.button(tf("시작 (%d개)", len(_sel3)), icon=":material/play_arrow:", key="tr3_start",
