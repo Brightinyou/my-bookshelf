@@ -2219,8 +2219,11 @@ def _ai_options(providers) -> list[str]:
 
 
 def _split_opt(opt: str) -> tuple[str, str]:
-    p, _, m = opt.partition(":")
-    return p, m
+    """★화면이 앞 실행의 목록으로 고른 값을 보내면(그 사이 목록이 바뀜) Streamlit 은 원래
+    값 대신 보이는 글자(«Claude CLI · Claude Sonnet»)를 넘긴다. 그런 값은 ("", "") 로
+    버린다 — 예전에는 그 글자를 AI 이름으로 읽어 ValueError 가 났다 (2026-10-29)."""
+    p, _, m = str(opt or "").partition(":")
+    return (p, m) if p in llm.PROVIDERS and m else ("", "")
 
 
 def _apply_ai_choice(key: str, task: str) -> None:
@@ -2229,6 +2232,7 @@ def _apply_ai_choice(key: str, task: str) -> None:
     모델 → 기본값)에 화면이 끝없이 다시 그려진다(2026-09-30 테스트에서 발견)."""
     p, m = _split_opt(st.session_state.get(f"{key}_conn", ""))
     if not p:
+        st.session_state.pop(f"{key}_conn", None)   # 저장값으로 다시 그린다
         return
     try:
         if task:
@@ -2293,9 +2297,9 @@ def _render_model_editor(key: str, task: str = "") -> None:
     _err = st.session_state.pop(f"{key}_conn_error", "")
     if _err:
         st.error(_err)
-    if not chosen:
-        return
     provider, model = _split_opt(chosen)
+    if not provider:
+        return
     if st.button(t("연결·모델 확인"), key=f"{key}_check", width="stretch",
                  help=t("짧은 요청 1회로 사용 가능 여부를 확인합니다. 사용량이 소모됩니다.")):
         try:
@@ -2308,6 +2312,14 @@ def _render_model_editor(key: str, task: str = "") -> None:
             st.success(t("선택한 설정으로 응답을 받았습니다."))
         except Exception as exc:
             st.error(t("모델 또는 로그인 설정을 확인하세요.") + " " + str(exc)[-350:])
+
+
+def _apply_backup_choice() -> None:
+    p, m = _split_opt(st.session_state.get("cli_backup_choice", ""))
+    if p in llm.CLI_PROVIDERS:
+        llm.set_backup_provider_model(p, m)
+    else:
+        st.session_state.pop("cli_backup_choice", None)   # 저장값으로 다시 그린다
 
 
 def _render_failover_settings() -> None:
@@ -2327,9 +2339,7 @@ def _render_failover_settings() -> None:
             current = next((o for o in options if _bk and _split_opt(o)[0] == _bk[0]), options[0])
             llm.set_backup_provider_model(*_split_opt(current))
         st.selectbox(t("2순위 — 1순위를 쓸 수 없을 때 쓸 AI"), options, index=options.index(current),
-                     format_func=_ai_option_label, key="cli_backup_choice",
-                     on_change=lambda: llm.set_backup_provider_model(
-                         *_split_opt(st.session_state.get("cli_backup_choice", ""))))
+                     format_func=_ai_option_label, key="cli_backup_choice", on_change=_apply_backup_choice)
         if primary[0] in llm.CLI_PROVIDERS and st.button(
                 t("1순위·2순위 바꾸기"), icon=":material/swap_vert:", key="cli_priority_swap"):
             llm.set_cli_priority(_split_opt(current)[0])
