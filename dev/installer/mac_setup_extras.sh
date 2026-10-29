@@ -213,7 +213,7 @@ echo "  요약·번역에 쓸 AI 를 고릅니다. 구독이 있으면 추가 �
 echo
 echo "    ${C_B}1${C_0}) Claude Code CLI   ${C_D}${CLAUDE_SIZE}${C_0}   Claude Pro/Max 구독"
 echo "    ${C_B}2${C_0}) Codex CLI         ${C_D}${CODEX_SIZE}${C_0}   ChatGPT Plus/Pro 구독"
-echo "    ${C_B}3${C_0}) 둘 다 설치        ${C_D}${BOTH_SIZE}${C_0}   기본 작업 AI는 Codex"
+echo "    ${C_B}3${C_0}) 둘 다 설치        ${C_D}${BOTH_SIZE}${C_0}   먼저 쓸 AI는 다음에 고릅니다"
 echo "    ${C_B}4${C_0}) 나중에            ${C_D}0 MB${C_0}            앱에서 API 키를 직접 넣습니다"
 echo
 while true; do
@@ -281,6 +281,26 @@ if [ "$CLAUDE_OK" = "1" ] || [ "$CODEX_OK" = "1" ]; then
     register_cli_path
 fi
 
+# ★둘 다 준비되면 우선순위를 묻는다 (2026-10-29 연구자 요청 — 예전에는 무조건 Codex 가
+#   1순위였고, 다시 설치하면 고쳐 둔 순위도 덮어썼다). 기본값은 앞서 저장한 1순위.
+FIRST=""
+if [ "$AI" = "both" ]; then
+    _def=1
+    grep -Eq '"wiki_provider": *"codex_cli"' "$CONFIG_DIR/keys.json" 2>/dev/null && _def=2
+    echo
+    echo "  어느 AI 를 먼저 쓸까요? (앱 설정에서 언제든 바꿀 수 있습니다)"
+    echo "    ${C_B}1${C_0}) Claude 먼저 쓰고, 안 되면 Codex"
+    echo "    ${C_B}2${C_0}) Codex 먼저 쓰고, 안 되면 Claude"
+    while true; do
+        read -r -p "  선택 [1-2, 기본 $_def]: " pick
+        case "${pick:-$_def}" in
+            1) FIRST="claude"; break ;;
+            2) FIRST="codex"; break ;;
+            *) warn "1 또는 2를 입력한 뒤 Enter를 누르세요." ;;
+        esac
+    done
+fi
+
 # ── 2. 옵시디언 ──────────────────────────────────────────────
 head_ "2. 옵시디언"
 OBS=0
@@ -320,9 +340,9 @@ fi
 head_ "3. 설정 기록"
 if [ -x "$PY" ]; then
     mkdir -p "$CONFIG_DIR"
-    "$PY" - "$CONFIG_DIR" "$AI" "$OBS" <<'PYEOF'
+    "$PY" - "$CONFIG_DIR" "$AI" "$OBS" "$FIRST" <<'PYEOF'
 import json, os, sys
-cfg_dir, ai, obs = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+cfg_dir, ai, obs, first = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4]
 keys_file = os.path.join(cfg_dir, "keys.json")
 keys = {}
 if os.path.exists(keys_file):
@@ -341,10 +361,17 @@ if ai == "none":
 else:
     keys["pref_use_claude_cli"] = ai in ("claude", "both")
     keys["pref_use_codex_cli"] = ai in ("codex", "both")
-    # 둘 다 고른 경우 무인 설치의 기본값과 같은 Codex를 기본 작업 AI로 둔다.
-    prov = "claude_cli" if ai == "claude" else "codex_cli"
+    # 하나만 고르면 그것이 1순위, 둘 다면 위에서 고른 순서대로 (2026-10-29).
+    if ai == "both":
+        prov = f"{first or 'claude'}_cli"
+        keys["pref_cli_backup"] = {"provider": "claude_cli" if prov == "codex_cli" else "codex_cli",
+                                   "model": "default"}
+    else:
+        prov = "claude_cli" if ai == "claude" else "codex_cli"
+    # 1순위가 그대로면 앱에서 골라 둔 모델도 그대로 둔다.
+    if keys.get("wiki_provider") != prov or not keys.get("wiki_model"):
+        keys["wiki_model"] = "default"
     keys["wiki_provider"] = prov
-    keys["wiki_model"] = "default"
     keys["pref_translate_engine"] = f"{prov}:default"
 keys["pref_use_obsidian"] = obs
 keys.setdefault("pref_use_epub", True)

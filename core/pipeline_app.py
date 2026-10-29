@@ -2258,24 +2258,43 @@ def _render_model_editor(key: str, task: str = "") -> None:
             if task == "ocr" and p not in llm.CLI_PROVIDERS:
                 st.warning(t("이미지 재판독은 CLI 모델을 선택해 주세요."))
             return
+    _saved_p, _saved_m = llm.saved_provider_model(task)
     _stale = llm.unsupported_saved_model(task)
-    if _stale:
+    if _saved_p in llm.PROVIDERS and _saved_p not in providers:
+        if current[0] != _saved_p:
+            # 1순위가 꺼져 있어 2순위(또는 켜 둔 다른 구독 CLI)로 실행 중 (2026-10-29)
+            st.warning(tf("저장된 AI «%s»는 지금 꺼져 있거나 쓸 수 없어 «%s»로 실행합니다. 아래에서 다시 고르면 바로 저장됩니다.",
+                          _ai_option_label(f"{_saved_p}:{_saved_m}"), _ai_option_label(f"{current[0]}:{current[1]}")))
+        else:
+            st.warning(tf("저장된 AI «%s»는 지금 꺼져 있거나 쓸 수 없습니다. 아래에서 다시 고르면 바로 저장됩니다.",
+                          _ai_option_label(f"{_saved_p}:{_saved_m}")))
+    elif _stale:
         st.warning(tf("저장된 모델 «%s»는 이 컴퓨터의 CLI가 지원하는 목록에 없어 «CLI 기본 설정 따르기»로 실행합니다. 목록에서 다시 고르세요.", _stale))
     # ★«AI 연결»과 «모델»을 두 칸으로 나누지 않는다 (2026-09-30 연구자 요청). 예전에는
     #   연결만 바꾸고 [모델 적용]을 안 누르면 반쯤 바뀐 채 «선택한 AI 연결을 사용할 수
     #   없습니다»가 떴다. 한 칸에서 고르면 곧바로 저장한다.
     options = _ai_options(providers)
     _cur = f"{current[0]}:{current[1]}"
-    if _cur in options:
-        idx = options.index(_cur)
+    # ★저장값을 그대로 쓸 수 없으면 칸을 비워 «다시 고르세요»로 둔다. 예전에는 다른 항목
+    #   (첫 칸의 Claude 등)을 골라 둔 것처럼 보여 주기만 해서, 연구자가 그걸 그대로 두면
+    #   저장이 안 되고 경고가 끝없이 남았다 (2026-10-29).
+    _repick = (_saved_p in llm.PROVIDERS and _saved_p not in providers) or bool(_stale) or _cur not in options
+    if _repick:
+        # 앞 실행에서 칸에 남은 값도 지운다 — 고르면 on_change가 먼저 저장하므로 다음
+        # 실행에는 _repick이 풀린다.
+        idx = None
+        st.session_state.pop(f"{key}_conn", None)
     else:
-        idx = next((i for i, o in enumerate(options) if _split_opt(o)[0] == current[0]), 0)
+        idx = options.index(_cur)
     chosen = st.selectbox(t("AI 연결"), options, index=idx, format_func=_ai_option_label,
                           key=f"{key}_conn", on_change=_apply_ai_choice, args=(key, task),
+                          placeholder=t("다시 고르세요"),
                           help=t("연결과 모델을 함께 고릅니다. 고르면 바로 적용됩니다."))
     _err = st.session_state.pop(f"{key}_conn_error", "")
     if _err:
         st.error(_err)
+    if not chosen:
+        return
     provider, model = _split_opt(chosen)
     if st.button(t("연결·모델 확인"), key=f"{key}_check", width="stretch",
                  help=t("짧은 요청 1회로 사용 가능 여부를 확인합니다. 사용량이 소모됩니다.")):
@@ -2292,34 +2311,58 @@ def _render_model_editor(key: str, task: str = "") -> None:
 
 
 def _render_failover_settings() -> None:
-    """구독 CLI 이어받기 스위치와 2순위 AI (2026-09-30 연구자 요청)."""
+    """구독 CLI 2순위 AI·순위 바꾸기·이어받기 스위치 (2026-09-30 연구자 요청).
+
+    ★2순위는 이어받기를 켜지 않아도 보인다 — 1순위를 꺼 두거나 쓸 수 없으면 2순위로
+    실행하므로 순위는 늘 사용자가 정한다 (2026-10-29 연구자 요청)."""
     clis = [p for p in llm.CLI_PROVIDERS if llm.has_key(p)]
-    enabled = llm.failover_enabled()
-    on = st.toggle(t("사용량 한도에 걸리면 다른 구독 AI로 이어받기"), value=enabled and len(clis) >= 2,
+    primary = llm.default_provider_model()
+    if len(clis) >= 2 and primary[0] not in llm.CLI_PROVIDERS:
+        st.caption(t("1순위가 API 키 연결이면 이어받기가 쓰이지 않습니다. 1순위를 구독 CLI로 고르세요."))
+    options = _ai_options([p for p in clis if p != primary[0]]) if len(clis) >= 2 else []
+    if options:
+        _bk = llm.backup_provider_model()
+        current = f"{_bk[0]}:{_bk[1]}" if _bk else ""
+        if current not in options:
+            current = next((o for o in options if _bk and _split_opt(o)[0] == _bk[0]), options[0])
+            llm.set_backup_provider_model(*_split_opt(current))
+        st.selectbox(t("2순위 — 1순위를 쓸 수 없을 때 쓸 AI"), options, index=options.index(current),
+                     format_func=_ai_option_label, key="cli_backup_choice",
+                     on_change=lambda: llm.set_backup_provider_model(
+                         *_split_opt(st.session_state.get("cli_backup_choice", ""))))
+        if primary[0] in llm.CLI_PROVIDERS and st.button(
+                t("1순위·2순위 바꾸기"), icon=":material/swap_vert:", key="cli_priority_swap"):
+            llm.set_cli_priority(_split_opt(current)[0])
+            st.session_state.pop("ai_default_conn", None)
+            st.session_state.pop("cli_backup_choice", None)
+            st.rerun()
+    on = st.toggle(t("사용량 한도에 걸리면 다른 구독 AI로 이어받기"), value=llm.failover_enabled() and len(clis) >= 2,
                    key="cli_failover_toggle", disabled=len(clis) < 2,
                    on_change=lambda: llm.set_failover_enabled(bool(st.session_state.get("cli_failover_toggle"))),
                    help=t("Claude CLI와 Codex CLI 사이에서만 넘겨받습니다. API 키(쓴 만큼 요금)로는 넘기지 않습니다."))
     if len(clis) < 2:
         st.caption(t("Claude CLI와 Codex CLI를 둘 다 켜야 쓸 수 있습니다."))
+    elif on:
+        st.caption(t("이어받는 동안 앞 번역을 견본으로 넘겨 문체와 용어를 맞추고, 이어받은 구간은 번역 결과와 기록에 남깁니다. 한도에 걸린 AI는 1시간 동안 쉬게 합니다."))
+
+
+def _render_cli_priority_question() -> None:
+    """구독 CLI 를 하나 더 켜면 어느 것을 먼저 쓸지 묻는다 (2026-10-29 연구자 요청)."""
+    if not st.session_state.get("_ask_cli_priority"):
         return
-    if not on:
+    if not all(llm.has_key(p) for p in llm.CLI_PROVIDERS):
+        st.session_state.pop("_ask_cli_priority", None)
         return
-    primary = llm.default_provider_model()
-    if primary[0] not in llm.CLI_PROVIDERS:
-        st.caption(t("1순위가 API 키 연결이면 이어받기가 쓰이지 않습니다. 1순위를 구독 CLI로 고르세요."))
-    options = _ai_options([p for p in clis if p != primary[0]])
-    if not options:
-        return
-    _bk = llm.backup_provider_model()
-    current = f"{_bk[0]}:{_bk[1]}" if _bk else ""
-    if current not in options:
-        current = next((o for o in options if _bk and _split_opt(o)[0] == _bk[0]), options[0])
-        llm.set_backup_provider_model(*_split_opt(current))
-    st.selectbox(t("2순위 — 이어받을 AI"), options, index=options.index(current),
-                 format_func=_ai_option_label, key="cli_backup_choice",
-                 on_change=lambda: llm.set_backup_provider_model(
-                     *_split_opt(st.session_state.get("cli_backup_choice", ""))))
-    st.caption(t("이어받는 동안 앞 번역을 견본으로 넘겨 문체와 용어를 맞추고, 이어받은 구간은 번역 결과와 기록에 남깁니다. 한도에 걸린 AI는 1시간 동안 쉬게 합니다."))
+    st.info(t("Claude CLI와 Codex CLI를 둘 다 켰습니다. 어느 것을 먼저 쓸까요? 1순위를 쓸 수 없으면 다른 하나로 실행합니다."),
+            icon=":material/low_priority:")
+    _q1, _q2 = st.columns(2)
+    for _col, _prov, _label in ((_q1, "claude_cli", "Claude 먼저"), (_q2, "codex_cli", "Codex 먼저")):
+        if _col.button(t(_label), key=f"ask_priority_{_prov}", width="stretch"):
+            llm.set_cli_priority(_prov)
+            st.session_state.pop("_ask_cli_priority", None)
+            st.session_state.pop("ai_default_conn", None)
+            st.session_state.pop("cli_backup_choice", None)
+            st.rerun()
 
 
 def _task_model_caption(task: str):
@@ -4345,6 +4388,8 @@ if _active_view == "settings":
                 st.caption(tf("모델: `%s`", _cli_model_label("claude_cli")))
                 if _new_claude != _claude_enabled:
                     llm.set_claude_cli_enabled(_new_claude)
+                    if _new_claude and llm.has_key("codex_cli"):
+                        st.session_state["_ask_cli_priority"] = True   # 하나 더 켜면 순위를 묻는다
                     st.rerun()
             else:
                 st.caption(t("미설치"))
@@ -4361,11 +4406,14 @@ if _active_view == "settings":
                 st.caption(t("CLI 설정값") + ": " + (llm.codex_cli_model() or t("실행 시 결정")))
                 if _new_codex != _codex_enabled:
                     llm.set_codex_cli_enabled(_new_codex)
+                    if _new_codex and llm.has_key("claude_cli"):
+                        st.session_state["_ask_cli_priority"] = True   # 하나 더 켜면 순위를 묻는다
                     st.rerun()
             else:
                 st.caption(t("미설치"))
                 with st.expander(t("설치 방법 (명령 복사)")):
                     _render_cli_install_guide("codex")
+        _render_cli_priority_question()
 
         _render_wiki_length_slider("compact_home_wiki_length")
 

@@ -17,11 +17,14 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1
   powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI claude -Obsidian
+  powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -AI both -First claude   # Claude 먼저, 안 되면 Codex
   powershell -ExecutionPolicy Bypass -File .\install-mybookshelf.ps1 -NoLaunch   # 설치 뒤 앱을 열지 않는다
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('codex','claude','both','none')] [string] $AI = 'codex',
+    # -AI both 일 때 먼저 쓸 AI. 안 주면 이 PC에 저장된 순위를 지키고, 없으면 물어본다.
+    [ValidateSet('','claude','codex')] [string] $First = '',
     [switch] $Obsidian,
     [ValidateSet('ko','en')] [string] $Lang = 'ko',
     [string] $TargetLang = 'ko',
@@ -284,9 +287,23 @@ if ($NoPrefs) {
         'pref_use_codex_cli'            = $codexReady
     }
     if ($claudeReady -or $codexReady) {
-        $prov = if ($codexReady) { 'codex_cli' } else { 'claude_cli' }
+        # ★하나만 준비됐으면 그것이 1순위. 둘 다면 -First → 이 PC에 저장된 순위 → 물어보기
+        #   (2026-10-29 연구자 요청 — 예전에는 무조건 Codex 가 1순위였다).
+        if ($claudeReady -and $codexReady) {
+            $prov = if ($First) { "${First}_cli" }
+                    elseif ($keys['wiki_provider'] -in @('claude_cli', 'codex_cli')) { $keys['wiki_provider'] }
+                    else {
+                        $pick = Read-Host '먼저 쓸 AI — 1) Claude  2) Codex (기본 1)'
+                        if ($pick -eq '2') { 'codex_cli' } else { 'claude_cli' }
+                    }
+            $second = if ($prov -eq 'codex_cli') { 'claude_cli' } else { 'codex_cli' }
+            $prefs['pref_cli_backup'] = @{ provider = $second; model = 'default' }
+        } else {
+            $prov = if ($codexReady) { 'codex_cli' } else { 'claude_cli' }
+        }
+        # 1순위가 그대로면 앱에서 골라 둔 모델도 그대로 둔다.
+        $prefs['wiki_model'] = if ($keys['wiki_provider'] -eq $prov -and $keys['wiki_model']) { $keys['wiki_model'] } else { 'default' }
         $prefs['wiki_provider'] = $prov
-        $prefs['wiki_model'] = 'default'
         $prefs['pref_translate_engine'] = "${prov}:default"
     }
     foreach ($k in $prefs.Keys) { $keys[$k] = $prefs[$k] }

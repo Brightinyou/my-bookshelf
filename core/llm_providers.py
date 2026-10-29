@@ -146,21 +146,47 @@ def first_available_provider_model() -> tuple[str, str]:
 
 
 def default_provider_model() -> tuple[str, str]:
-    """App default. Preserve explicit model IDs, including IDs outside presets."""
+    """App default. Preserve explicit model IDs, including IDs outside presets.
+
+    ★1순위를 꺼 뒀거나 쓸 수 없으면 사용자가 정한 2순위로, 2순위도 없으면 켜 둔 다른
+    구독 CLI 로 실행한다 (2026-10-29 연구자 요청 — 예전에는 꺼진 1순위로 불러 실패했다).
+    API 키(쓴 만큼 요금)로는 넘기지 않는다. 넘길 곳이 없으면 저장값 그대로 둔다."""
     d = _load_all()
     prov = d.get("wiki_provider") or ""
     if prov not in PROVIDERS:
         return first_available_provider_model()
     model = d.get("wiki_model") or PROVIDERS[prov]["models"][0]
+    if not has_key(prov):
+        backup = backup_provider_model()
+        if backup and backup[0] != prov and has_key(backup[0]):
+            return backup
+        other = next((p for p in CLI_PROVIDERS if p != prov and has_key(p)), "")
+        if other:
+            return other, "default"
     return prov, supported_model(prov, model)
 
 
 def task_provider_model(task: str) -> tuple[str, str]:
     override = get_pref("task_models", {}).get(task)
     if isinstance(override, dict) and override.get("provider") in PROVIDERS and override.get("model"):
-        # Do not silently switch a deliberately configured but unavailable provider.
-        return override["provider"], supported_model(override["provider"], override["model"])
+        # 작업별로 고른 AI 를 꺼 두면 기본 AI 순위를 따른다 (2026-10-29).
+        if has_key(override["provider"]):
+            return override["provider"], supported_model(override["provider"], override["model"])
     return default_provider_model()
+
+
+def set_cli_priority(first: str) -> None:
+    """구독 CLI 둘의 순위를 정한다 — first 가 1순위, 다른 하나가 2순위. 각자 골라 둔
+    모델은 그대로 옮긴다(처음이면 CLI 기본 설정)."""
+    if first not in CLI_PROVIDERS:
+        raise ValueError("우선순위는 구독 CLI 만 정할 수 있습니다")
+    second = next(p for p in CLI_PROVIDERS if p != first)
+    d = _load_all()
+    raw_backup = d.get("pref_cli_backup") if isinstance(d.get("pref_cli_backup"), dict) else {}
+    models = {raw_backup.get("provider"): raw_backup.get("model"),
+              d.get("wiki_provider"): d.get("wiki_model")}
+    set_wiki_model(first, models.get(first) or "default")
+    set_backup_provider_model(second, models.get(second) or "default")
 
 
 def wiki_provider_model() -> tuple[str, str]:
@@ -262,14 +288,18 @@ def supported_model(provider: str, model: str) -> str:
     return model if not catalog or model in catalog else "default"
 
 
-def unsupported_saved_model(task: str = "") -> str:
-    """저장돼 있지만 이 컴퓨터에서 못 쓰는 모델 이름 (설정 화면 경고용)."""
+def saved_provider_model(task: str = "") -> tuple[str, str]:
+    """저장된 그대로의 (공급자, 모델) — 이 컴퓨터에 맞추기 전 값. 저장값이 없으면 ("", "")."""
     if task and isinstance(get_pref("task_models", {}).get(task), dict):
         o = get_pref("task_models", {})[task]
-        p, m = o.get("provider", ""), o.get("model", "")
-    else:
-        d = _load_all()
-        p, m = d.get("wiki_provider") or "", d.get("wiki_model") or ""
+        return o.get("provider", ""), o.get("model", "")
+    d = _load_all()
+    return d.get("wiki_provider") or "", d.get("wiki_model") or ""
+
+
+def unsupported_saved_model(task: str = "") -> str:
+    """저장돼 있지만 이 컴퓨터에서 못 쓰는 모델 이름 (설정 화면 경고용)."""
+    p, m = saved_provider_model(task)
     return m if m and supported_model(p, m) != m else ""
 
 

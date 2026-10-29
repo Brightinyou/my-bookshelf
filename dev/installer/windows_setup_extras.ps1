@@ -195,10 +195,32 @@ function Install-Obsidian {
     }
 }
 
+function Read-SavedFirst {
+    # 앞서 저장한 1순위 — 둘 다 고를 때 Enter 의 기본값으로 쓴다.
+    $keysFile = Join-Path $ConfigDir 'keys.json'
+    try { return [string](Get-Content $keysFile -Raw -Encoding UTF8 | ConvertFrom-Json).wiki_provider }
+    catch { return '' }
+}
+
+function Ask-First {
+    # ★둘 다 고르면 우선순위를 묻는다 (2026-10-29 연구자 요청 — 예전에는 무조건 Codex 가
+    #   1순위였고, 다시 설치하면 고쳐 둔 순위도 덮어썼다).
+    $default = if ((Read-SavedFirst) -eq 'codex_cli') { '2' } else { '1' }
+    Heading (L '우선순위' 'Priority')
+    Say (L '1) Claude 먼저 쓰고, 안 되면 Codex' '1) Claude first, then Codex')
+    Say (L '2) Codex 먼저 쓰고, 안 되면 Claude' '2) Codex first, then Claude')
+    Say (L '앱 설정에서 언제든 바꿀 수 있습니다.' 'You can change this any time in the app settings.')
+    $pick = Read-Host (L "1순위로 쓸 AI 번호 (기본 $default)" "Number of the AI to use first (default $default)")
+    if ([string]::IsNullOrWhiteSpace($pick)) { $pick = $default }
+    while ($pick -notin @('1', '2')) { $pick = Read-Host (L '1 또는 2를 입력하세요' 'Enter 1 or 2') }
+    if ($pick -eq '2') { 'codex_cli' } else { 'claude_cli' }
+}
+
 function Save-Preferences(
     [bool] $ClaudeReady,
     [bool] $CodexReady,
-    [bool] $ObsidianReady
+    [bool] $ObsidianReady,
+    [string] $First = ''
 ) {
     New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
     $keysFile = Join-Path $ConfigDir 'keys.json'
@@ -221,10 +243,17 @@ function Save-Preferences(
         $keys['pref_use_docx'] = $true
     }
     if ($ClaudeReady -or $CodexReady) {
-        $provider = if ($CodexReady) { 'codex_cli' } else { 'claude_cli' }
+        # 하나만 준비됐으면 그것이 1순위, 둘 다면 고른 순서대로 (2026-10-29).
+        $provider = if ($ClaudeReady -and $CodexReady) { $First }
+                    elseif ($CodexReady) { 'codex_cli' } else { 'claude_cli' }
+        # 1순위가 그대로면 앱에서 골라 둔 모델도 그대로 둔다.
+        if ($keys['wiki_provider'] -ne $provider -or -not $keys['wiki_model']) { $keys['wiki_model'] = 'default' }
         $keys['wiki_provider'] = $provider
-        $keys['wiki_model'] = 'default'
         $keys['pref_translate_engine'] = "${provider}:default"
+        if ($ClaudeReady -and $CodexReady) {
+            $second = if ($provider -eq 'codex_cli') { 'claude_cli' } else { 'codex_cli' }
+            $keys['pref_cli_backup'] = @{ provider = $second; model = 'default' }
+        }
     }
     [IO.File]::WriteAllText(
         $keysFile,
@@ -258,7 +287,7 @@ Clear-Host
 Heading (L 'AI CLI 선택' 'Choose an AI CLI')
 Say (L '1) Claude Code CLI   - Claude Pro/Max 구독' '1) Claude Code CLI   - Claude Pro/Max subscription')
 Say (L '2) Codex CLI         - ChatGPT Plus/Pro 구독' '2) Codex CLI         - ChatGPT Plus/Pro subscription')
-Say (L '3) 둘 다             - 기본 AI 는 Codex' '3) Both              - Codex is the default AI')
+Say (L '3) 둘 다             - 어느 것을 먼저 쓸지 다음에 고릅니다' '3) Both              - choose which to use first next')
 Say (L '4) 나중에            - 앱 설정에서 연결' '4) Later             - connect from app settings')
 Write-Host ''
 
@@ -305,7 +334,8 @@ if ($obsidianReady) {
     }
 }
 
-Save-Preferences $claudeReady $codexReady $obsidianReady
+$first = if ($claudeReady -and $codexReady) { Ask-First } else { '' }
+Save-Preferences $claudeReady $codexReady $obsidianReady $first
 if ($claudeReady) { Start-Login 'claude' }
 if ($codexReady) { Start-Login 'codex' }
 

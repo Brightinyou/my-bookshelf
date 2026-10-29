@@ -18,6 +18,8 @@
 #   bash install-mybookshelf.sh
 #   bash install-mybookshelf.sh --ai both --obsidian --launch
 #   bash install-mybookshelf.sh --ai claude --ai codex --obsidian --launch
+#   bash install-mybookshelf.sh --ai both --first claude   # Claude 먼저, 안 되면 Codex
+#     (--first 를 안 주면 이 맥에 저장된 순위를 지키고, 없으면 물어본다)
 #   bash install-mybookshelf.sh --no-login          # 로그인 창을 열지 않는다
 #   bash install-mybookshelf.sh --no-launch         # 설치 뒤 앱을 열지 않는다 (기본은 연다)
 #
@@ -35,7 +37,7 @@ PY_VERSION="3.14.6"
 PY_URL="https://www.python.org/ftp/python/${PY_VERSION}/python-${PY_VERSION}-macos11.pkg"
 PY_SHA="d3c9fff52214847e4fab03e9eaf53dd2a8e51e3534aa0b61f201b749f86bef28"
 
-AI="codex"; AI_SPECIFIED=0; WANT_CLAUDE=0; WANT_CODEX=1
+AI="codex"; AI_SPECIFIED=0; WANT_CLAUDE=0; WANT_CODEX=1; FIRST=""
 OBSIDIAN=0; LANG_UI="ko"; TARGET_LANG="ko"
 WIKI_PCT=30; NO_PREFS=0; LAUNCH=1
 MANUAL=()
@@ -57,6 +59,7 @@ add_ai() {
 while [ $# -gt 0 ]; do
     case "$1" in
         --ai)          [ $# -ge 2 ] || { echo "--ai 뒤에 값이 필요합니다"; exit 2; }; add_ai "$2"; shift 2 ;;
+        --first)       case "${2:-}" in claude|codex) FIRST="$2" ;; *) echo "--first 는 claude·codex 중 하나"; exit 2 ;; esac; shift 2 ;;
         --obsidian)    OBSIDIAN=1; shift ;;
         --lang)        LANG_UI="${2:-ko}"; shift 2 ;;
         --target-lang) TARGET_LANG="${2:-ko}"; shift 2 ;;
@@ -367,9 +370,17 @@ if [ "$NO_PREFS" = "1" ]; then
     say "건너뜁니다 — 앱 설정 탭에서 직접 고르세요."
 else
     mkdir -p "$CONFIG_DIR"
-    "$PY" - "$CONFIG_DIR" "$TARGET_LANG" "$WIKI_PCT" "$OBSIDIAN" "$AI" "$LANG_UI" <<'PYEOF'
+    # ★둘 다 쓰면 우선순위는 사용자가 정한다 (2026-10-29 연구자 요청 — 예전에는 무조건
+    #   Codex 가 1순위였다). --first → 저장된 순위 → 물어보기(기본 Claude).
+    if [ "$AI" = "both" ] && [ -z "$FIRST" ] && \
+       ! grep -Eq '"wiki_provider": *"(claude|codex)_cli"' "$CONFIG_DIR/keys.json" 2>/dev/null; then
+        pick=""
+        [ -t 0 ] && read -r -p "  먼저 쓸 AI — 1) Claude  2) Codex [기본 1]: " pick
+        if [ "$pick" = "2" ]; then FIRST="codex"; else FIRST="claude"; fi
+    fi
+    "$PY" - "$CONFIG_DIR" "$TARGET_LANG" "$WIKI_PCT" "$OBSIDIAN" "$AI" "$LANG_UI" "$FIRST" <<'PYEOF'
 import json, os, sys
-cfg_dir, target_lang, pct, obsidian, ai, ui_lang = sys.argv[1:7]
+cfg_dir, target_lang, pct, obsidian, ai, ui_lang, first = sys.argv[1:8]
 obsidian = obsidian == "1"
 keys_file = os.path.join(cfg_dir, "keys.json")
 # 기존 파일이 있으면 병합한다 — 이미 들어 있는 API 키를 지우면 안 된다.
@@ -394,9 +405,17 @@ keys.update({
     "pref_use_codex_cli": ai in ("codex", "both"),
 })
 if ai != "none":
-    prov = "claude_cli" if ai == "claude" else "codex_cli"
+    if ai == "both":
+        saved = keys.get("wiki_provider")
+        prov = f"{first}_cli" if first else (saved if saved in ("claude_cli", "codex_cli") else "claude_cli")
+        keys["pref_cli_backup"] = {"provider": "claude_cli" if prov == "codex_cli" else "codex_cli",
+                                   "model": "default"}
+    else:
+        prov = "claude_cli" if ai == "claude" else "codex_cli"
+    # 1순위가 그대로면 앱에서 골라 둔 모델도 그대로 둔다.
+    if keys.get("wiki_provider") != prov or not keys.get("wiki_model"):
+        keys["wiki_model"] = "default"
     keys["wiki_provider"] = prov
-    keys["wiki_model"] = "default"
     keys["pref_translate_engine"] = f"{prov}:default"
 with open(keys_file, "w", encoding="utf-8") as f:
     json.dump(keys, f, ensure_ascii=False, indent=2)
