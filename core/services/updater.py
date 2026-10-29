@@ -123,6 +123,54 @@ def check_for_update(timeout: int = 4) -> dict | None:
     }
 
 
+def list_releases(timeout: int = 6, limit: int = 20) -> tuple[list[dict], str]:
+    """최근 정식 릴리스 목록(새 버전 먼저). 반환: (목록, 오류문구).
+
+    이전 버전으로 되돌리기(롤백)에 쓴다 (2026-10-30 연구자 요청 — "잘 안되면 이전
+    버전으로 롤백할 수도 있게"). 설치 파일은 업데이트와 똑같은 길로 받아 깐다:
+    Windows 설치 프로그램은 버전 비교 없이 같은 AppId 위에 덮어쓰고, macOS 헬퍼는
+    번들을 통째로 바꾸므로 낮은 버전도 그대로 들어간다. 초안·시험판은 뺀다."""
+    if sys.platform not in ("win32", "darwin"):
+        return [], "앱 내 업데이트는 Windows·macOS에서만 지원됩니다."
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{_repo()}/releases?per_page={limit}",
+            headers={"Accept": "application/vnd.github+json",
+                     "User-Agent": "MyBookshelf-Updater"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.load(r)
+    except Exception as e:
+        append_log(f"릴리스 목록 확인 실패: {type(e).__name__} {str(e)[:80]}")
+        return [], f"릴리스 목록을 불러오지 못했습니다: {str(e)[:160]}"
+    out = []
+    for rel in data if isinstance(data, list) else []:
+        if rel.get("draft") or rel.get("prerelease"):
+            continue
+        out.append({
+            "tag": rel.get("tag_name", ""),
+            "published": (rel.get("published_at") or "")[:10],
+            "notes": (rel.get("body") or "").strip(),
+            "page_url": rel.get("html_url", ""),
+            "asset_url": _pick_asset_url(rel.get("assets", [])),
+        })
+    out.sort(key=lambda r: _parse_ver(r["tag"]), reverse=True)
+    return out, ""
+
+
+def rollback_candidates(releases: list[dict]) -> list[dict]:
+    """지금 버전보다 낮고 설치 파일이 붙어 있는 릴리스(가까운 것 먼저)."""
+    cur = _parse_ver(APP_VERSION)
+    return [r for r in releases if r.get("asset_url") and _parse_ver(r.get("tag", "")) < cur]
+
+
+def install_target(rel: dict) -> dict:
+    """릴리스 하나를 설치 흐름(_do_update)이 받는 모양으로 바꾼다."""
+    return {"available": True, "current": APP_VERSION, "latest": rel.get("tag", ""),
+            "notes": rel.get("notes", ""), "page_url": rel.get("page_url", ""),
+            "asset_url": rel.get("asset_url", "")}
+
+
 def download_installer(asset_url: str, progress_cb=None) -> tuple[Path | None, str]:
     """설치 자산을 임시폴더에 받고 검증. 반환: (경로 또는 None, 오류문구).
     Windows=Setup.exe(MZ), macOS=업데이트 zip(PK)."""

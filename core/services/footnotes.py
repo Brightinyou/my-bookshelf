@@ -150,6 +150,38 @@ def _note_marks(line: str) -> list[tuple[int, int]]:
     return marks
 
 
+# 각주 하나로 볼 수 있는 최대 길이. 쪽 아래 각주는 길어도 한 쪽을 넘지 않는다.
+MAX_NOTE_CHARS = 2500
+# 각주 안에 빈 줄로 떨어진 이만큼 긴 문단이 있으면 본문 산문이다
+PROSE_PARA_CHARS = 400
+
+
+def _plausible_note_chain(lines: list[str], chain: list[int]) -> bool:
+    """번호 사슬이 정말 쪽 아래 각주 블록처럼 생겼는가.
+
+    ★번호 붙은 **절 제목**을 각주로 보면 안 된다 (2026-10-30 연구자 보고 — 로자
+    『Resonance』 EPUB 4·11·14·15장). 쪽 구분이 없는 번역본(_ko.txt)은 장 전체가
+    한 «쪽»이라, `1 …`·`3 제도적 요인: …` 같은 절 제목이 오름차순 사슬로 잡히고
+    그 아래 본문이 통째로 각주 본문이 됐다 — 각주 하나가 7,884자·12,659자였고,
+    EPUB 은 그 «각주»를 표시를 만난 다른 장으로 옮겨 본문이 뒤섞이거나 빠졌다.
+    각주는 쪽 아래의 짧은 글이고, 빈 줄로 떨어진 긴 산문 문단을 품지 않는다."""
+    for k, i in enumerate(chain):
+        end = chain[k + 1] if k + 1 < len(chain) else len(lines)
+        span = lines[i:end]
+        if sum(len(x.strip()) for x in span) > MAX_NOTE_CHARS:
+            return False
+        # 첫 빈 줄 **뒤에** 이어지는 문단 — 각주 첫 줄이 이어지는 꼬리가 아니라 따로 선 문단
+        after_blank, para = False, 0
+        for x in span[1:] + [""]:
+            if x.strip():
+                para += len(x.strip())
+                continue
+            if after_blank and para >= PROSE_PARA_CHARS:
+                return False
+            after_blank, para = True, 0
+    return True
+
+
 def _split_notes(page: str) -> tuple[str, list[tuple[int, str]]]:
     """한 쪽을 (본문, [(번호, 각주본문)])으로 가른다.
 
@@ -176,7 +208,7 @@ def _split_notes(page: str) -> tuple[str, list[tuple[int, str]]]:
                 chain.append(i)
                 last = n
         # 그 블록 아래로 본문이 다시 나오면 각주 블록이 아니다
-        if chain and len(chain) >= len(best):
+        if chain and len(chain) >= len(best) and _plausible_note_chain(lines, chain):
             best = chain
     if not best:
         return page, []
