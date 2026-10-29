@@ -77,7 +77,8 @@ class PriorityFallbackTest(_Prefs):
 def _app_source(body: str) -> str:
     source = APP.read_text(encoding="utf-8")
     names = {"_ai_option_label", "_ai_options", "_split_opt", "_render_failover_settings",
-             "_render_cli_priority_question", "_apply_backup_choice"}
+             "_render_cli_priority_question", "_apply_backup_choice", "_ai_pick_key", "_renew_ai_picks",
+             "_apply_ai_choice", "_render_model_editor"}
     definitions = "\n\n".join(ast.get_source_segment(source, node)
         for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name in names)
     return "import streamlit as st\nimport llm_providers as llm\nfrom services.i18n import t, tf\n" \
@@ -110,6 +111,26 @@ class PrioritySettingsUiTest(_Prefs):
         self.assertEqual(llm.backup_provider_model()[0], "codex_cli")
         self.assertFalse(app.exception, [x.message for x in app.exception])
 
+    def test_순위를_바꾸면_칸_이름을_새로_붙여_예전_값이_되돌리지_못한다(self):
+        """연구자 화면: «1순위·2순위 바꾸기»를 눌러도 계속 «gpt-6-sol › Claude Sonnet» (2026-10-29).
+        서버 쪽 값만 지우면 브라우저 칸이 예전 값(Codex 1순위)을 다시 보내 on_change 가 되돌렸다.
+        AppTest 는 브라우저가 쥔 예전 값을 흉내 내지 못하므로, 칸 이름이 바뀌는지를 본다."""
+        llm.set_wiki_model("codex_cli", "default")
+        llm.set_backup_provider_model("claude_cli", "sonnet")
+        app = AppTest.from_string(_app_source(
+            '_render_model_editor(_ai_pick_key("ai_default"))\n_render_failover_settings()\n'),
+            default_timeout=10).run()
+        self.assertEqual({w.key for w in app.selectbox}, {"ai_default_conn", "cli_backup_choice"})
+        app.button(key="cli_priority_swap").click().run()
+        app.run()
+        self.assertEqual({w.key for w in app.selectbox}, {"ai_default_1_conn", "cli_backup_choice_1"})
+        self.assertEqual(llm.saved_provider_model(), ("claude_cli", "sonnet"))
+        self.assertEqual(llm.backup_provider_model(), ("codex_cli", "default"))
+        app.selectbox(key="cli_backup_choice_1").select_index(0).run()   # 새 칸에서 고르면 저장된다
+        self.assertEqual(llm.backup_provider_model()[0], "codex_cli")
+        self.assertEqual(llm.saved_provider_model(), ("claude_cli", "sonnet"))
+        self.assertFalse(app.exception, [x.message for x in app.exception])
+
     def test_보이는_글자로_넘어온_2순위는_오류_없이_버린다(self):
         """연구자 화면: «ValueError: 이어받을 AI 는 구독 CLI 만 고를 수 있습니다» (2026-10-29).
         화면이 보낸 글자가 지금 목록에 없으면 Streamlit selectbox 의 deserialize 는 원래 값
@@ -124,7 +145,7 @@ class PrioritySettingsUiTest(_Prefs):
             '_render_failover_settings()\n'), default_timeout=10).run()
         self.assertFalse(app.exception, [x.message for x in app.exception])
         self.assertEqual(llm.backup_provider_model(), ("claude_cli", "sonnet"))   # 저장값 유지
-        self.assertEqual(app.selectbox(key="cli_backup_choice").value, "claude_cli:sonnet")
+        self.assertEqual(app.selectbox(key="cli_backup_choice_1").value, "claude_cli:sonnet")   # 새 칸으로 다시 그림
 
     def test_AI_이름이_아닌_값은_나누지_않는다(self):
         ns = {}
