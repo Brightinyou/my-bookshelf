@@ -2314,12 +2314,25 @@ def _render_model_editor(key: str, task: str = "") -> None:
             st.error(t("모델 또는 로그인 설정을 확인하세요.") + " " + str(exc)[-350:])
 
 
-def _apply_backup_choice() -> None:
-    p, m = _split_opt(st.session_state.get("cli_backup_choice", ""))
+def _ai_pick_key(base: str) -> str:
+    """순위를 바꾸면 «AI 연결»·«2순위» 칸에 새 이름을 붙인다 (2026-10-29 연구자 요청 —
+    «1순위·2순위 바꾸기»를 눌러도 계속 Codex 가 1순위였다). ★서버 쪽 값만 지우면
+    브라우저의 칸은 예전 값을 쥐고 있다가 다음 조작 때 다시 보내고, on_change 가 그 값을
+    «새로 고른 것»으로 저장해 순위를 되돌렸다."""
+    gen = st.session_state.get("_ai_pick_gen", 0)
+    return f"{base}_{gen}" if gen else base
+
+
+def _renew_ai_picks() -> None:
+    st.session_state["_ai_pick_gen"] = st.session_state.get("_ai_pick_gen", 0) + 1
+
+
+def _apply_backup_choice(key: str = "cli_backup_choice") -> None:
+    p, m = _split_opt(st.session_state.get(key, ""))
     if p in llm.CLI_PROVIDERS:
         llm.set_backup_provider_model(p, m)
     else:
-        st.session_state.pop("cli_backup_choice", None)   # 저장값으로 다시 그린다
+        _renew_ai_picks()   # 저장값으로 다시 그린다
 
 
 def _render_failover_settings() -> None:
@@ -2339,12 +2352,12 @@ def _render_failover_settings() -> None:
             current = next((o for o in options if _bk and _split_opt(o)[0] == _bk[0]), options[0])
             llm.set_backup_provider_model(*_split_opt(current))
         st.selectbox(t("2순위 — 1순위를 쓸 수 없을 때 쓸 AI"), options, index=options.index(current),
-                     format_func=_ai_option_label, key="cli_backup_choice", on_change=_apply_backup_choice)
+                     format_func=_ai_option_label, key=_ai_pick_key("cli_backup_choice"),
+                     on_change=_apply_backup_choice, args=(_ai_pick_key("cli_backup_choice"),))
         if primary[0] in llm.CLI_PROVIDERS and st.button(
                 t("1순위·2순위 바꾸기"), icon=":material/swap_vert:", key="cli_priority_swap"):
             llm.set_cli_priority(_split_opt(current)[0])
-            st.session_state.pop("ai_default_conn", None)
-            st.session_state.pop("cli_backup_choice", None)
+            _renew_ai_picks()
             st.rerun()
     on = st.toggle(t("사용량 한도에 걸리면 다른 구독 AI로 이어받기"), value=llm.failover_enabled() and len(clis) >= 2,
                    key="cli_failover_toggle", disabled=len(clis) < 2,
@@ -2370,8 +2383,7 @@ def _render_cli_priority_question() -> None:
         if _col.button(t(_label), key=f"ask_priority_{_prov}", width="stretch"):
             llm.set_cli_priority(_prov)
             st.session_state.pop("_ask_cli_priority", None)
-            st.session_state.pop("ai_default_conn", None)
-            st.session_state.pop("cli_backup_choice", None)
+            _renew_ai_picks()
             st.rerun()
 
 
@@ -4377,7 +4389,7 @@ if _active_view == "settings":
             _render_storage_locations()
         # ── AI 설정은 목록에 넣지 않고 여기서 바로 보여 준다 (연구자 요청) ──
         st.markdown("#### " + t("AI 설정"))
-        _render_model_editor("ai_default")
+        _render_model_editor(_ai_pick_key("ai_default"))
         _render_failover_settings()
         with st.expander(t("작업별 AI 설정")):
             for _task, _label in (("translate", "번역"), ("summary", "문서요약"),
