@@ -3387,9 +3387,12 @@ if _active_view == "3_translate":
                 queue_add("tab3_ready", [str(_ch3_path.relative_to(cfg.BASE_DIR))])
                 _staged3 += 1
             st.session_state["_tr3_uploaded_tokens"] = sorted(_seen3)
+            # 새로 등록한 게 있을 때만 rerun — 업로더는 파일을 계속 들고 있어서
+            # 무조건 rerun하면 매번 여기서 멈춰 아래 '번역 대기'가 그려지지 않았다
+            # (다른 메뉴에 갔다 와야 보였음, 2026-10-29).
             if _staged3:
                 st.success(tf("번역 대기에 %d개 등록됨 — 아래에서 [▶ 시작]", _staged3))
-            st.rerun()
+                st.rerun()
 
         # ── 번역 대기 (큐 기반) ──────────────────────────────
         _q3_rels = queue_list("tab3_ready")
@@ -3609,9 +3612,10 @@ if _active_view == "4_summary":
                 queue_remove("tab4_failed", [str(_ch4_path.relative_to(cfg.BASE_DIR))])
                 _staged4n += 1
             st.session_state["_summ4_uploaded_tokens"] = sorted(_seen4)
+            # 번역 탭과 같은 이유로 새로 등록한 게 있을 때만 rerun (2026-10-29).
             if _staged4n:
                 st.success(tf("요약 대기에 %d개 등록됨 — 아래에서 [▶ 시작]", _staged4n))
-            st.rerun()
+                st.rerun()
 
         # ── 요약 대기 (큐 기반) ──────────────────────────────
         _q4_rels = queue_list("tab4_ready")
