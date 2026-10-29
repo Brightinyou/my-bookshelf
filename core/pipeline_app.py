@@ -56,6 +56,7 @@ from services.pipeline_queue import (
 )
 from services.convert import OCR_REQUIRED_MSG, _do_ocr_only, pdf_to_txt
 from services import updater
+from services import bugreport
 from services.translate import (
     DERIVED_SUFFIXES as _DERIVED, find_translation, has_translation, out_suffix, translation_status,
     _needs_translation, _paragraph_already_target, _split_paragraphs_robust,
@@ -511,6 +512,46 @@ with st.container(key="app_brand"):
         f"font-weight:400;vertical-align:middle'>{APP_VERSION}</span>",
         unsafe_allow_html=True,
     )
+# ── 새 버전·새 오류 알림 (2026-10-30) ─────────────────────────────────
+# 첫 화면(작업 메뉴)도 아래에서 st.stop() 으로 끝나므로 그보다 **앞**에서 정의한다.
+def _update_info() -> dict:
+    """새 버전 정보(세션에 한 번만 묻는다). 없거나 확인 실패면 빈 dict."""
+    if sys.platform not in ("win32", "darwin"):
+        return {}
+    if "_update_info" not in st.session_state:
+        st.session_state["_update_info"] = updater.check_for_update() or {}
+    return st.session_state.get("_update_info") or {}
+
+
+def _render_error_notice() -> None:
+    """새 오류가 로그에 남았으면 작은 안내 띠를 둔다 — 팝업이 아니다
+    (2026-10-30 연구자 요청 — "오류 발생시 로그파일과 함께 개발자에게 이메일").
+    누르면 설정의 «오류 보고»로 간다. 이미 본 오류(시각 기준)는 다시 알리지 않는다."""
+    if st.session_state.get("_run_lock") or st.session_state.get("active_view") == "settings":
+        return
+    _stamp = bugreport.last_error_stamp()
+    _seen = llm.get_pref("bug_seen_stamp", None)
+    if _seen is None:
+        # 처음 실행 — 예전 로그의 오래된 오류로 알리지 않는다. 지금부터 생기는 것만.
+        llm.set_pref("bug_seen_stamp", _stamp)
+        return
+    if not _stamp or _stamp == _seen:
+        return
+    with st.container(border=True, key="error_notice"):
+        st.warning(t("오류가 기록되었습니다. 로그와 함께 개발자에게 알릴 수 있습니다."),
+                   icon=":material/bug_report:")
+        _c1, _c2 = st.columns(2)
+        if _c1.button(t("오류 보고하기"), icon=":material/mail:", key="err_notice_report",
+                      type="primary", width="stretch"):
+            st.session_state["active_view"] = "settings"
+            st.session_state["settings_panel"] = "home"
+            st.session_state["_open_bug_report"] = True
+            st.rerun()
+        if _c2.button(t("닫기"), key="err_notice_close", width="stretch"):
+            llm.set_pref("bug_seen_stamp", _stamp)
+            st.rerun()
+
+
 # ── 별창: 장 구분 편집 작업창 (2026-09-21) ──────────────────────────
 # 옵시디언을 깔고 처음 열어도 우리 위키 폴더가 보이게 한다 — 세션마다 한 번 (2026-09-30).
 # ★첫 화면(작업 메뉴)은 아래에서 st.stop() 으로 끝나므로 그보다 **앞**에 둔다. 처음엔
@@ -836,11 +877,14 @@ if not _active_view:
     for _tid, _title, _desc in TASKS:
         _clicked = st.query_params.get("view") == _tid
         _mico = f'<span class="msr" style="font-size:1.2rem">{_stage_icon(_tid)}</span>'
+        _mlabel = t(_stage_label(_tid, _title))
+        if _tid == "settings" and _update_info().get("available"):
+            _mlabel += " — " + t("새 버전 있음")     # 팝업 대신 메뉴 카드에 표시 (2026-10-30)
         st.markdown(
             f'<a class="menu-card" href="?view={_tid}" target="_self" '
             f'title="{_html_escape(t(_stage_desc(_tid, _desc)), quote=True)}" '
-            f'aria-label="{_html_escape(t(_stage_label(_tid, _title)), quote=True)}">'
-            f'<span class="menu-title">{_mico}{_html_escape(t(_stage_label(_tid, _title)))}</span>'
+            f'aria-label="{_html_escape(_mlabel, quote=True)}">'
+            f'<span class="menu-title">{_mico}{_html_escape(_mlabel)}</span>'
             f'</a>',
             unsafe_allow_html=True,
         )
@@ -848,6 +892,7 @@ if not _active_view:
             st.session_state["active_view"] = _tid
             st.query_params.clear()
             st.rerun()
+    _render_error_notice()
     _loading_ph.empty()
     st.session_state["_app_loaded"] = True
     st.stop()
@@ -865,8 +910,19 @@ _STAGE_TASKS = [
 # 영어 UI면 번역 탭(3_translate)을 내비에서 제외 (2026-07-10)
 _run_lock = st.session_state.get("_run_lock")
 _nav_tasks = list(_STAGE_TASKS)
+
+
+def _nav_label(tid: str, label: str) -> str:
+    if tid == "5_wiki":
+        return t("문서출력")
+    # 새 버전이 있으면 팝업 대신 «설정» 탭에 표시만 붙인다 (2026-10-30 연구자 요청)
+    if tid == "settings" and _update_info().get("available"):
+        return t(label) + " ●"
+    return t(label)
+
+
 st.markdown(navigation_html(
-    [(tid, t("문서출력") if tid == "5_wiki" else t(label)) for tid, label in _nav_tasks],
+    [(tid, _nav_label(tid, label)) for tid, label in _nav_tasks],
     _active_view, bool(_run_lock), t("작업 단계")), unsafe_allow_html=True)
 if st.query_params.get("view") in {tid for tid, _ in _STAGE_TASKS}:
     _view = st.query_params.get("view")
@@ -1035,7 +1091,7 @@ def _do_update(info: dict) -> None:
         st.session_state["_updating"] = False
         st.session_state["_update_error"] = _preflight_error
         st.rerun()
-    st.markdown(f"### {t('업데이트 설치 중')}")
+    st.markdown(f"### {tf('%s 설치 중', info.get('latest') or t('새 버전'))}")
     st.info(t("설치 파일을 내려받는 중입니다…"))
     _bar = st.progress(0.0)
     _path, _err = updater.download_installer(
@@ -1055,7 +1111,11 @@ def _do_update(info: dict) -> None:
 
 
 def _render_update_notice() -> None:
-    """새 버전 감지 시 반자동 업데이트 팝업 (Windows·macOS). 실패는 모두 안내형으로 폴백."""
+    """업데이트 설치 진행과 직전 실패 안내만 그린다 (Windows·macOS).
+
+    ★팝업을 띄우지 않는다 (2026-10-30 연구자 요청 — "매번 업데이트할 때마다
+    업데이트창을 띄우니 오히려 불편"). 새 버전은 상단 «설정» 탭의 표시(●)와
+    설정 화면 맨 위의 안내 상자로만 알리고, 설치는 사용자가 거기서 고른다."""
     if sys.platform not in ("win32", "darwin"):
         return
     # 직전 시도가 조용히 실패했으면(헬퍼가 남긴 결과 파일) 먼저 알린다.
@@ -1071,55 +1131,124 @@ def _render_update_notice() -> None:
             + " — " + (_res.get("reason") or t("원인을 알 수 없습니다"))
         )
         st.caption(t("자세한 기록: ~/Library/Application Support/MyBookshelf/update.log"))
-    if "_update_info" not in st.session_state:
-        st.session_state["_update_info"] = updater.check_for_update() or {}
-    info = st.session_state.get("_update_info") or {}
-    if not info.get("available") or st.session_state.get("_update_dismissed"):
-        return
-    # 이 버전을 이미 '나중에'로 미뤘다면 다시 묻지 않는다 — 세션이 아니라
-    # 설정 파일에 저장해 앱을 재시작해도 유지되고, 더 새 버전이 나오면
-    # (latest 값이 달라지므로) 다시 안내한다 (2026-07-25).
-    if info.get("latest") and info["latest"] == llm.get_pref("update_dismissed_version", ""):
-        return
-
-    # '지금 업데이트' 클릭 시 팝업을 닫고 본문에 진행 상황을 그대로 보여준다.
-    # 실패하면 _do_update가 이 플래그를 다시 꺼서 팝업이 재등장한다 (2026-07-25).
+    _update_info()      # 시작할 때 한 번 조용히 확인해 둔다 — 설정 탭 표시에 쓴다
+    # 설정 화면에서 «지금 업데이트»·«되돌리기»를 누르면 본문에 진행 상황을 보여 준다.
+    # 실패하면 _do_update 가 이 플래그를 끄고, 오류는 설정 화면의 업데이트 칸에 뜬다.
     if st.session_state.get("_updating"):
-        _do_update(info)
+        _do_update(st.session_state.get("_update_target") or _update_info())
+
+
+def _start_install(target: dict) -> None:
+    st.session_state["_update_target"] = target
+    st.session_state["_updating"] = True
+    st.rerun()
+
+
+def _render_settings_update_notice() -> None:
+    """설정 화면 맨 위 — 새 버전이 있으면 바뀐 내용과 함께 눈에 띄게 알린다(팝업 아님)."""
+    _err = st.session_state.pop("_update_error", None)
+    if _err:
+        st.error(_err)
+        st.warning(t("아래 '브라우저로 받기'로 직접 내려받아 설치해 주세요."))
+    info = _update_info()
+    if not info.get("available"):
         return
-
-    def _render_body():
-        _err = st.session_state.pop("_update_error", None)
-        if _err:
-            st.error(_err)
-            st.warning(t("아래 '브라우저로 받기'로 직접 내려받아 설치해 주세요."))
-        st.write(tf("새 버전 **%s** 이(가) 나왔습니다. (현재 %s)", info["latest"], info["current"]))
+    with st.container(border=True, key="settings_update_notice"):
+        st.markdown("### :material/new_releases: "
+                    + tf("새 버전 %s 이(가) 나왔습니다", info["latest"]))
+        st.caption(tf("지금 쓰는 버전: %s · 업데이트는 원할 때만 설치됩니다.", info["current"]))
+        st.markdown("**" + t("바뀐 내용") + "**")
         if info.get("notes"):
-            with st.expander(t("변경 내용 보기")):
-                st.markdown(info["notes"][:1500])
-        st.caption(t("업데이트하면 앱이 닫혔다가 자동으로 다시 열립니다."))
-        _c1, _c2, _c3 = st.columns(3)
-        if _c1.button(t("지금 업데이트"), type="primary", width="stretch", key="upd_now"):
-            st.session_state["_updating"] = True
-            st.rerun()
-        if _c2.button(t("브라우저로 받기"), width="stretch", key="upd_browser"):
+            with st.container(height=260, key="settings_update_notes"):
+                st.markdown(info["notes"])
+        else:
+            st.caption(t("이 버전에는 변경 내용 설명이 없습니다."))
+        st.caption(t("업데이트하면 앱이 닫혔다가 자동으로 다시 열립니다. 문제가 생기면 "
+                     "아래 «이전 버전으로 되돌리기»로 돌아갈 수 있습니다."))
+        _c1, _c2 = st.columns(2)
+        if _c1.button(t("지금 업데이트"), type="primary", icon=":material/system_update:",
+                      key="settings_upd_now", width="stretch"):
+            _start_install(info)
+        if _c2.button(t("브라우저로 받기"), icon=":material/open_in_new:",
+                      key="settings_upd_browser", width="stretch"):
             updater.open_release_page(info.get("page_url", ""))
-            llm.set_pref("update_dismissed_version", info.get("latest", ""))
-            st.session_state["_update_dismissed"] = True
-            st.rerun()
-        if _c3.button(t("나중에"), width="stretch", key="upd_later"):
-            llm.set_pref("update_dismissed_version", info.get("latest", ""))
-            st.session_state["_update_dismissed"] = True
-            st.rerun()
 
-    if hasattr(st, "dialog"):
-        @st.dialog(t("업데이트 사용 가능"))
-        def _update_dialog():
-            _render_body()
-        _update_dialog()
-    else:
-        with st.container(border=True):
-            _render_body()
+
+def _render_rollback_panel() -> None:
+    """이전 버전으로 되돌리기 (2026-10-30 연구자 요청). 업데이트와 같은 설치 길을 쓴다."""
+    if sys.platform not in ("win32", "darwin"):
+        return
+    with st.expander(t("이전 버전으로 되돌리기"), icon=":material/history:"):
+        st.caption(t("새 버전에서 문제가 생기면 예전 버전을 다시 설치합니다. "
+                     "책·번역본·설정·API 키는 그대로 두고 프로그램만 바뀝니다."))
+        if st.button(t("이전 버전 목록 불러오기"), icon=":material/refresh:",
+                     key="settings_rb_load", width="stretch"):
+            _rels, _err = updater.list_releases()
+            st.session_state["_rollback_list"] = updater.rollback_candidates(_rels)
+            st.session_state["_rollback_err"] = _err
+        if st.session_state.get("_rollback_err"):
+            st.warning(st.session_state["_rollback_err"])
+        _cands = st.session_state.get("_rollback_list")
+        if _cands is None:
+            return
+        if not _cands:
+            if not st.session_state.get("_rollback_err"):
+                st.info(t("되돌릴 수 있는 이전 버전이 없습니다."))
+            return
+        _pick = st.selectbox(
+            t("되돌릴 버전"), range(len(_cands)), key="settings_rb_pick",
+            format_func=lambda i: f"{_cands[i]['tag']}  ({_cands[i]['published']})")
+        _rel = _cands[_pick]
+        if _rel.get("notes"):
+            st.caption(tf("%s 의 변경 내용", _rel["tag"]))
+            with st.container(height=200, key="settings_rb_notes"):
+                st.markdown(_rel["notes"])
+        st.caption(t("이전 버전은 새 버전에서 추가된 기능·설정을 모를 수 있습니다. "
+                     "문제가 고쳐진 새 버전이 나오면 «업데이트 확인»으로 다시 올릴 수 있습니다."))
+        _ok = st.checkbox(tf("%s 으(로) 되돌리는 것을 확인합니다", _rel["tag"]),
+                          key="settings_rb_confirm")
+        if st.button(tf("%s 으(로) 되돌리기", _rel["tag"]), type="primary", disabled=not _ok,
+                     icon=":material/history:", key="settings_rb_go", width="stretch"):
+            _start_install(updater.install_target(_rel))
+
+
+def _render_bug_report_panel() -> None:
+    """개발자에게 오류 알리기 — 가린 로그 묶음(zip)을 만들고 메일 창을 연다."""
+    with st.expander(t("개발자에게 오류 알리기 (로그 첨부)"), icon=":material/bug_report:",
+                     expanded=bool(st.session_state.pop("_open_bug_report", False))):
+        _errs = bugreport.recent_errors(10)
+        if _errs:
+            st.caption(t("최근 오류 기록"))
+            st.code("\n".join(_errs), language=None)
+        else:
+            st.caption(t("최근 기록된 오류가 없습니다. 그래도 이상한 점이 있으면 알려 주세요."))
+        _note = st.text_area(t("무슨 일이 있었나요 (선택)"), key="settings_bug_note", height=80)
+        st.caption(tf("로그 묶음에는 앱 로그·업데이트 기록만 들어가고 책 본문은 들어가지 않습니다. "
+                      "컴퓨터 사용자 이름·메일·전화번호는 가립니다. 받는 사람: %s",
+                      bugreport.helper.FEEDBACK_EMAIL))
+        if st.button(t("로그 묶음 만들고 메일 쓰기"), type="primary", icon=":material/mail:",
+                     key="settings_bug_send", width="stretch"):
+            try:
+                _bundle = bugreport.build_bundle(_note)
+            except OSError as _exc:
+                st.error(tf("로그 묶음을 만들지 못했습니다: %s", _exc))
+            else:
+                bugreport.reveal(_bundle)
+                _opened = bugreport.open_mail(bugreport.mail_url(_note, _bundle))
+                st.session_state["_bug_last"] = (str(_bundle), _opened)
+                llm.set_pref("bug_seen_stamp", bugreport.last_error_stamp())
+        _last = st.session_state.get("_bug_last")
+        if _last:
+            _path, _opened = _last
+            st.success(tf("로그 묶음을 저장했습니다: %s", _path))
+            if _opened:
+                st.info(t("메일 창이 열렸습니다. 탐색기에서 골라 둔 zip 파일을 메일에 끌어다 붙인 뒤 "
+                          "[보내기]를 누르세요."))
+            else:
+                st.warning(tf("메일 프로그램을 열지 못했습니다. %s 앞으로 직접 메일을 쓰고 위 zip 파일을 붙여 주세요.",
+                              bugreport.helper.FEEDBACK_EMAIL))
+            st.link_button(t("메일 다시 열기"), bugreport.mail_url(_note, Path(_path)),
+                           icon=":material/mail:", width="stretch")
 
 
 def _render_stage_completion_notice() -> None:
@@ -1923,6 +2052,7 @@ def _render_folder_setting(
 # 방금 처리한 목록 바로 아래에 있어야 눈이 가는 자리에 있다.
 _render_ocr_notice()
 _render_update_notice()
+_render_error_notice()
 
 
 def _checklist_keys(items: list[dict], prefix: str) -> list[str]:
@@ -4383,6 +4513,7 @@ if _active_view == "settings":
 
     _settings_panel = st.session_state.get("settings_panel", "home")
     if _settings_panel == "home":
+        _render_settings_update_notice()
         with st.expander(t("화면과 저장 위치")):
             _font_scale_controls()
             st.caption(t("창 크기는 앱을 정상 종료할 때 저장됩니다."))
@@ -4465,19 +4596,19 @@ if _active_view == "settings":
         if _upc2.button(t("업데이트 확인"), icon=":material/system_update:", key="compact_check_update",
                         width="stretch"):
             _upd_info = updater.check_for_update()
+            st.session_state["_update_info"] = _upd_info if (_upd_info or {}).get("available") else {}
             if _upd_info and _upd_info.get("available"):
-                st.session_state["_update_info"] = _upd_info
-                st.session_state.pop("_update_dismissed", None)
-                # 수동으로 확인한 거라, 예전에 이 버전을 '나중에'로 미뤄뒀어도
-                # 항상 팝업을 보여준다 (2026-07-25).
-                llm.set_pref("update_dismissed_version", "")
-                st.rerun()
+                st.rerun()          # 맨 위 안내 상자에 새 버전과 바뀐 내용이 뜬다
             elif _upd_info and _upd_info.get("error"):
                 st.warning(_upd_info["error"])
             elif sys.platform not in ("win32", "darwin"):
                 st.info(t("앱 내 업데이트는 Windows·macOS에서만 지원됩니다."))
             else:
                 st.success(t("최신 버전을 사용 중입니다."))
+        _render_rollback_panel()
+
+        st.markdown("#### " + t("오류 보고"))
+        _render_bug_report_panel()
 
         with st.expander(t("저작권 및 사용 주의"), expanded=False):
             st.markdown(t(
