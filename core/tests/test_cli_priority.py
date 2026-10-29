@@ -77,7 +77,7 @@ class PriorityFallbackTest(_Prefs):
 def _app_source(body: str) -> str:
     source = APP.read_text(encoding="utf-8")
     names = {"_ai_option_label", "_ai_options", "_split_opt", "_render_failover_settings",
-             "_render_cli_priority_question"}
+             "_render_cli_priority_question", "_apply_backup_choice"}
     definitions = "\n\n".join(ast.get_source_segment(source, node)
         for node in ast.parse(source).body if isinstance(node, ast.FunctionDef) and node.name in names)
     return "import streamlit as st\nimport llm_providers as llm\nfrom services.i18n import t, tf\n" \
@@ -109,6 +109,29 @@ class PrioritySettingsUiTest(_Prefs):
         self.assertEqual(llm.saved_provider_model()[0], "claude_cli")
         self.assertEqual(llm.backup_provider_model()[0], "codex_cli")
         self.assertFalse(app.exception, [x.message for x in app.exception])
+
+    def test_보이는_글자로_넘어온_2순위는_오류_없이_버린다(self):
+        """연구자 화면: «ValueError: 이어받을 AI 는 구독 CLI 만 고를 수 있습니다» (2026-10-29).
+        화면이 보낸 글자가 지금 목록에 없으면 Streamlit selectbox 의 deserialize 는 원래 값
+        대신 그 글자(«Claude CLI · Claude Opus»)를 돌려준다 — 그 값이 콜백에 들어온 경우."""
+        llm.set_wiki_model("codex_cli", "default")
+        llm.set_backup_provider_model("claude_cli", "sonnet")
+        app = AppTest.from_string(_app_source(
+            'if not st.session_state.get("_seeded"):\n'
+            '    st.session_state["_seeded"] = True\n'
+            '    st.session_state["cli_backup_choice"] = "Claude CLI · Claude Opus"\n'
+            '    _apply_backup_choice()\n'
+            '_render_failover_settings()\n'), default_timeout=10).run()
+        self.assertFalse(app.exception, [x.message for x in app.exception])
+        self.assertEqual(llm.backup_provider_model(), ("claude_cli", "sonnet"))   # 저장값 유지
+        self.assertEqual(app.selectbox(key="cli_backup_choice").value, "claude_cli:sonnet")
+
+    def test_AI_이름이_아닌_값은_나누지_않는다(self):
+        ns = {}
+        exec(_app_source(""), ns)
+        self.assertEqual(ns["_split_opt"]("claude_cli:sonnet"), ("claude_cli", "sonnet"))
+        for bad in ("Claude CLI · Claude Opus", "", None, "claude_cli:", "x:y"):
+            self.assertEqual(ns["_split_opt"](bad), ("", ""), bad)
 
 
 class InstallerPriorityTest(unittest.TestCase):
