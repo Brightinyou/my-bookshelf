@@ -524,11 +524,11 @@ def _update_info() -> dict:
 
 
 def _render_error_notice() -> None:
-    """새 오류가 로그에 남았으면 작은 안내 띠를 둔다 — 팝업이 아니다
+    """새 오류가 로그에 남았으면 설정 화면 맨 위에 작은 안내 띠를 둔다 — 팝업이 아니다
     (2026-10-30 연구자 요청 — "오류 발생시 로그파일과 함께 개발자에게 이메일").
-    누르면 설정의 «오류 보고»로 간다. 이미 본 오류(시각 기준)는 다시 알리지 않는다."""
-    if st.session_state.get("_run_lock") or st.session_state.get("active_view") == "settings":
-        return
+    ★메뉴·작업 화면에는 띄우지 않는다 (2026-10-30 연구자 요청 — "메뉴마다 띄울 필요는
+    없고, 설정창에만 두자"). 누르면 아래 «오류 보고» 칸이 펼쳐진다. 이미 본 오류(시각
+    기준)는 다시 알리지 않는다."""
     _stamp = bugreport.last_error_stamp()
     _seen = llm.get_pref("bug_seen_stamp", None)
     if _seen is None:
@@ -543,8 +543,6 @@ def _render_error_notice() -> None:
         _c1, _c2 = st.columns(2)
         if _c1.button(t("오류 보고하기"), icon=":material/mail:", key="err_notice_report",
                       type="primary", width="stretch"):
-            st.session_state["active_view"] = "settings"
-            st.session_state["settings_panel"] = "home"
             st.session_state["_open_bug_report"] = True
             st.rerun()
         if _c2.button(t("닫기"), key="err_notice_close", width="stretch"):
@@ -892,7 +890,6 @@ if not _active_view:
             st.session_state["active_view"] = _tid
             st.query_params.clear()
             st.rerun()
-    _render_error_notice()
     _loading_ph.empty()
     st.session_state["_app_loaded"] = True
     st.stop()
@@ -2052,7 +2049,6 @@ def _render_folder_setting(
 # 방금 처리한 목록 바로 아래에 있어야 눈이 가는 자리에 있다.
 _render_ocr_notice()
 _render_update_notice()
-_render_error_notice()
 
 
 def _checklist_keys(items: list[dict], prefix: str) -> list[str]:
@@ -4514,6 +4510,7 @@ if _active_view == "settings":
     _settings_panel = st.session_state.get("settings_panel", "home")
     if _settings_panel == "home":
         _render_settings_update_notice()
+        _render_error_notice()
         with st.expander(t("화면과 저장 위치")):
             _font_scale_controls()
             st.caption(t("창 크기는 앱을 정상 종료할 때 저장됩니다."))
