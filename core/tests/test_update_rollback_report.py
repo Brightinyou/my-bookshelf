@@ -80,6 +80,15 @@ class NoUpdatePopupTest(unittest.TestCase):
         self.assertIn("_render_rollback_panel()", src)
         self.assertIn("_render_bug_report_panel()", src)
 
+    def test_오류_알림은_설정_화면에만(self):
+        """메뉴·작업 화면마다 띄우지 않는다 (2026-10-30 연구자 요청)."""
+        src = (CORE / "pipeline_app.py").read_text(encoding="utf-8")
+        calls = [ln.strip() for ln in src.splitlines()
+                 if "_render_error_notice()" in ln and not ln.lstrip().startswith("def ")]
+        self.assertEqual(calls, ["_render_error_notice()"])
+        pos = src.index("        _render_settings_update_notice()\n        _render_error_notice()")
+        self.assertGreater(pos, src.index('if _settings_panel == "home":'))
+
 
 class BugReportTest(unittest.TestCase):
     def setUp(self):
